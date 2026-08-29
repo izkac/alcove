@@ -26,6 +26,9 @@ export type LayoutId = (typeof LAYOUT_IDS)[number]
 export const DENSITY_IDS = ["comfortable", "compact", "tiny"] as const
 export type Density = (typeof DENSITY_IDS)[number]
 
+export const ALCOVE_VIEWS = ["panel", "canvas"] as const
+export type AlcoveView = (typeof ALCOVE_VIEWS)[number]
+
 export type DesktopIcon = {
   id: string
   name: string
@@ -33,16 +36,36 @@ export type DesktopIcon = {
   extension?: string
   alcoveId: string | null
   groupHint: string
+  path?: string
+  imageUrl?: string
+  /** Row inside the owning Alcove's canvas. Null/absent = "Everything else". */
+  groupId?: string | null
+}
+
+export type IconGroup = {
+  id: string
+  name: string
 }
 
 export type Alcove = {
   id: string
   name: string
   color: AlcoveColor
+  glyph?: string
   collapsed: boolean
   isInbox: boolean
   order: number
   page: number
+  /** Canvas rows, in render order. */
+  groups?: IconGroup[]
+  /** Forces an open mode; absent means pick by item count. */
+  view?: AlcoveView
+}
+
+/** One open, decayed to `at`. Score is meaningless without its timestamp. */
+export type FrecencyEntry = {
+  score: number
+  at: number
 }
 
 export type SuggestedGroup = {
@@ -68,4 +91,12 @@ export type DesktopState = {
   focusMode: boolean
   focusedAlcoveId: string | null
   highlightedIconId: string | null
+  /** Open history behind the frequent strip, keyed by icon id. */
+  frecency: Record<string, FrecencyEntry>
+  /** Fixed-length slots; an icon keeps its index until something evicts it. */
+  topSlots: (string | null)[]
+  /** Slots the user locked — never evicted. */
+  topKeep: string[]
+  /** Icons banned from the strip. */
+  topHide: string[]
 }

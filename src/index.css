@@ -122,15 +122,30 @@
     @apply border-border outline-ring/50;
     }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background: transparent;
     }
   html {
     @apply font-sans;
+    background: transparent;
     }
   html,
   body,
   #root {
     height: 100%;
     margin: 0;
+    }
+
+  [data-drag-source] {
+    opacity: 0.4;
+    }
+
+  [data-drop-hover] {
+    background-color: rgb(255 255 255 / 0.1);
+    box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 0.4);
+    }
+
+  .alcove-icon-tile {
+    contain: layout style;
     }
 }

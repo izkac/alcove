@@ -12,13 +12,18 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ALCOVE_COLOR_IDS } from "@/types"
 import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
+import {
+  AlcoveGlyphGrid,
+  defaultAlcoveGlyph,
+  type AlcoveGlyphId,
+} from "@/lib/alcove-glyphs"
 import { cn } from "@/lib/utils"
 import type { AlcoveColor } from "@/types"
 
 type CreateAlcoveDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCreate: (name: string, color: AlcoveColor) => void
+  onCreate: (name: string, color: AlcoveColor, glyph: string) => void
   seedName?: string
 }
 
@@ -30,11 +35,17 @@ export function CreateAlcoveDialog({
 }: CreateAlcoveDialogProps) {
   const [name, setName] = useState(seedName)
   const [color, setColor] = useState<AlcoveColor>("violet")
+  const [glyph, setGlyph] = useState<AlcoveGlyphId>(() =>
+    defaultAlcoveGlyph("new", seedName),
+  )
+  const [glyphTouched, setGlyphTouched] = useState(false)
 
   useEffect(() => {
     if (open) {
       setName(seedName)
       setColor("violet")
+      setGlyph(defaultAlcoveGlyph("new", seedName))
+      setGlyphTouched(false)
     }
   }, [open, seedName])
 
@@ -45,6 +56,8 @@ export function CreateAlcoveDialog({
         if (next) {
           setName(seedName)
           setColor("violet")
+          setGlyph(defaultAlcoveGlyph("new", seedName))
+          setGlyphTouched(false)
         }
         onOpenChange(next)
       }}
@@ -65,12 +78,26 @@ export function CreateAlcoveDialog({
               value={name}
               autoFocus
               placeholder="Client A, Downloads, Games…"
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => {
+                const next = event.target.value
+                setName(next)
+                if (!glyphTouched) setGlyph(defaultAlcoveGlyph("new", next))
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && name.trim()) {
-                  onCreate(name, color)
+                  onCreate(name, color, glyph)
                   onOpenChange(false)
                 }
+              }}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Icon</Label>
+            <AlcoveGlyphGrid
+              value={glyph}
+              onChange={(next) => {
+                setGlyphTouched(true)
+                setGlyph(next)
               }}
             />
           </div>
@@ -100,7 +127,7 @@ export function CreateAlcoveDialog({
           <Button
             disabled={!name.trim()}
             onClick={() => {
-              onCreate(name, color)
+              onCreate(name, color, glyph)
               onOpenChange(false)
             }}
           >

@@ -14,6 +14,7 @@ export function buildInbox(): Alcove {
     id: INBOX_ID,
     name: "Inbox",
     color: "amber",
+    glyph: "inbox",
     collapsed: false,
     isInbox: true,
     order: 0,

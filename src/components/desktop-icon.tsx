@@ -1,94 +1,127 @@
+import { memo } from "react"
 import type { PointerEvent } from "react"
 import { IconGlyph } from "@/components/icon-glyph"
 import {
-  ContextMenu,
-  ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
-  ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { cn } from "@/lib/utils"
-import type { Alcove, DesktopIcon } from "@/types"
+import type { Alcove, DesktopIcon, IconGroup } from "@/types"
 
 type DesktopIconTileProps = {
   icon: DesktopIcon
   size: number
   highlighted?: boolean
-  dimmed?: boolean
-  alcoves: Alcove[]
-  pinned: boolean
-  onOpen: () => void
-  onRename: () => void
-  onTogglePin: () => void
-  onMove: (alcoveId: string) => void
-  onNewAlcove: () => void
+  onOpen: (icon: DesktopIcon) => void
   onPointerDown?: (icon: DesktopIcon, event: PointerEvent) => void
 }
 
-export function DesktopIconTile({
+export const DesktopIconTile = memo(function DesktopIconTile({
   icon,
   size,
   highlighted,
-  dimmed,
+  onOpen,
+  onPointerDown,
+}: DesktopIconTileProps) {
+  return (
+    <button
+      type="button"
+      data-desktop-icon={icon.id}
+      onPointerDown={(event) => onPointerDown?.(icon, event)}
+      onDoubleClick={(event) => {
+        event.stopPropagation()
+        onOpen(icon)
+      }}
+      className={cn(
+        "alcove-icon-tile flex w-full touch-none flex-col items-center gap-1 rounded-lg px-1 py-1.5 text-center text-white/95 outline-none",
+        "hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/50",
+        highlighted && "bg-sky-400/25 ring-2 ring-sky-300",
+      )}
+    >
+      <IconGlyph icon={icon} size={size} />
+      <span className="line-clamp-2 w-full text-[11px] leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">
+        {icon.name}
+      </span>
+    </button>
+  )
+})
+
+type IconContextItemsProps = {
+  icon: DesktopIcon
+  alcoves: Alcove[]
+  pinned: boolean
+  groups?: IconGroup[]
+  onOpen: (icon: DesktopIcon) => void
+  onRename: (icon: DesktopIcon) => void
+  onTogglePin: (iconId: string) => void
+  onMove: (iconId: string, alcoveId: string) => void
+  onMoveToGroup?: (iconId: string, groupId: string | null) => void
+  onNewAlcove: (icon: DesktopIcon) => void
+}
+
+export function IconContextItems({
+  icon,
   alcoves,
   pinned,
+  groups,
   onOpen,
   onRename,
   onTogglePin,
   onMove,
+  onMoveToGroup,
   onNewAlcove,
-  onPointerDown,
-}: DesktopIconTileProps) {
+}: IconContextItemsProps) {
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <button
-          type="button"
-          data-desktop-icon={icon.id}
-          onPointerDown={(event) => onPointerDown?.(icon, event)}
-          onDoubleClick={(event) => {
-            event.stopPropagation()
-            onOpen()
-          }}
-          className={cn(
-            "flex w-full touch-none flex-col items-center gap-1 rounded-lg px-1 py-1.5 text-center text-white/95 outline-none",
-            "hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/50",
-            highlighted && "bg-sky-400/25 ring-2 ring-sky-300",
-            dimmed && "opacity-40",
-          )}
-        >
-          <IconGlyph icon={icon} size={size} />
-          <span className="line-clamp-2 w-full text-[11px] leading-tight drop-shadow-sm">
-            {icon.name}
-          </span>
-        </button>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuItem onSelect={onOpen}>Open</ContextMenuItem>
-        <ContextMenuItem onSelect={onRename}>Rename</ContextMenuItem>
-        <ContextMenuItem onSelect={onTogglePin}>
-          {pinned ? "Unpin from rail" : "Pin to rail"}
-        </ContextMenuItem>
-        <ContextMenuSeparator />
+    <>
+      <ContextMenuItem onSelect={() => onOpen(icon)}>Open</ContextMenuItem>
+      <ContextMenuItem onSelect={() => onRename(icon)}>Rename</ContextMenuItem>
+      <ContextMenuItem onSelect={() => onTogglePin(icon.id)}>
+        {pinned ? "Unpin from desktop" : "Pin to desktop"}
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      {groups && groups.length > 0 && onMoveToGroup ? (
         <ContextMenuSub>
-          <ContextMenuSubTrigger>Move to</ContextMenuSubTrigger>
+          <ContextMenuSubTrigger>Move to group</ContextMenuSubTrigger>
           <ContextMenuSubContent>
-            {alcoves.map((alcove) => (
+            {groups.map((group) => (
               <ContextMenuItem
-                key={alcove.id}
-                disabled={alcove.id === icon.alcoveId}
-                onSelect={() => onMove(alcove.id)}
+                key={group.id}
+                disabled={group.id === icon.groupId}
+                onSelect={() => onMoveToGroup(icon.id, group.id)}
               >
-                {alcove.name}
+                {group.name}
               </ContextMenuItem>
             ))}
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              disabled={!icon.groupId}
+              onSelect={() => onMoveToGroup(icon.id, null)}
+            >
+              Everything else
+            </ContextMenuItem>
           </ContextMenuSubContent>
         </ContextMenuSub>
-        <ContextMenuItem onSelect={onNewAlcove}>New Alcove with this</ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+      ) : null}
+      <ContextMenuSub>
+        <ContextMenuSubTrigger>Move to</ContextMenuSubTrigger>
+        <ContextMenuSubContent>
+          {alcoves.map((alcove) => (
+            <ContextMenuItem
+              key={alcove.id}
+              disabled={alcove.id === icon.alcoveId}
+              onSelect={() => onMove(icon.id, alcove.id)}
+            >
+              {alcove.name}
+            </ContextMenuItem>
+          ))}
+        </ContextMenuSubContent>
+      </ContextMenuSub>
+      <ContextMenuItem onSelect={() => onNewAlcove(icon)}>
+        New Alcove with this
+      </ContextMenuItem>
+    </>
   )
 }

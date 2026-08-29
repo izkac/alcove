@@ -5,7 +5,11 @@ import {
   INCOMING_FILES,
   SAMPLE_ICONS,
 } from "@/data/sample"
+import { defaultAlcoveGlyph } from "@/lib/alcove-glyphs"
 import { pageSize } from "@/lib/density"
+import { TOP_SLOTS, pruneFrecency, recordOpen, refreshSlots } from "@/lib/frecency"
+import { mergeHarvest, toDesktopIcon } from "@/lib/harvest-merge"
+import type { HarvestedIcon } from "@/lib/harvest-merge"
 import {
   applySnapshot,
   buildInbox,
@@ -14,15 +18,27 @@ import {
   suggestionsFromIcons,
 } from "@/lib/organize"
 import { loadDesktopState, saveDesktopState } from "@/lib/storage"
+import { invoke, isTauri } from "@/lib/tauri"
 import type {
   Alcove,
   AlcoveColor,
+  AlcoveView,
   Density,
   DesktopIcon,
   DesktopState,
   LayoutId,
   SuggestedGroup,
 } from "@/types"
+
+const emptySlots = (): (string | null)[] =>
+  Array.from({ length: TOP_SLOTS }, () => null)
+
+const topDefaults = () => ({
+  frecency: {},
+  topSlots: emptySlots(),
+  topKeep: [] as string[],
+  topHide: [] as string[],
+})
 
 function sampleIcons(): DesktopIcon[] {
   return SAMPLE_ICONS.map((icon) => ({ ...icon, alcoveId: null }))
@@ -40,6 +56,7 @@ function onboardingState(): DesktopState {
     focusMode: false,
     focusedAlcoveId: INBOX_ID,
     highlightedIconId: null,
+    ...topDefaults(),
   }
 }
 
@@ -56,6 +73,32 @@ function emptyDesktopState(): DesktopState {
     focusMode: false,
     focusedAlcoveId: INBOX_ID,
     highlightedIconId: null,
+    ...topDefaults(),
+  }
+}
+
+function applyHarvest(current: DesktopState, harvested: HarvestedIcon[]): DesktopState {
+  const sampleOnly = current.icons.every((icon) => !icon.path)
+  if (sampleOnly) {
+    return {
+      ...onboardingState(),
+      icons: harvested.map((item) => toDesktopIcon(item, null)),
+      pinIds: [],
+    }
+  }
+  const merged = mergeHarvest(current, harvested, INBOX_ID)
+  const ids = new Set(merged.icons.map((icon) => icon.id))
+  const exists = (id: string) => ids.has(id)
+  const frecency = pruneFrecency(merged.frecency, exists)
+  return {
+    ...merged,
+    frecency,
+    topSlots: refreshSlots(merged.topSlots, frecency, {
+      now: Date.now(),
+      exists,
+      keep: merged.topKeep,
+      hide: merged.topHide,
+    }),
   }
 }
 
@@ -67,6 +110,23 @@ export function useAlcoveDesktop() {
   useEffect(() => {
     saveDesktopState(state)
   }, [state])
+
+  useEffect(() => {
+    if (!isTauri()) return
+    let cancelled = false
+    invoke<HarvestedIcon[]>("list_desktop_icons")
+      .then((harvested) => {
+        if (!cancelled && harvested.length > 0) {
+          setState((current) => applyHarvest(current, harvested))
+        }
+      })
+      .catch((error) => {
+        console.error("Could not read Desktop folder", error)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const sortedAlcoves = useMemo(
     () => [...state.alcoves].sort((a, b) => a.order - b.order),
@@ -89,6 +149,7 @@ export function useAlcoveDesktop() {
           id: group.id,
           name: group.name.trim() || group.id,
           color: group.color,
+          glyph: defaultAlcoveGlyph(group.id, group.name),
           collapsed: false,
           isInbox: false,
           order: index + 1,
@@ -124,6 +185,20 @@ export function useAlcoveDesktop() {
   }, [])
 
   const loadSample = useCallback(() => {
+    if (isTauri()) {
+      invoke<HarvestedIcon[]>("list_desktop_icons")
+        .then((harvested) => {
+          setState({
+            ...onboardingState(),
+            icons: harvested.map((item) => toDesktopIcon(item, null)),
+            pinIds: [],
+          })
+        })
+        .catch((error) => {
+          console.error("Could not read Desktop folder", error)
+        })
+      return
+    }
     setState(onboardingState())
   }, [])
 
@@ -216,13 +291,24 @@ export function useAlcoveDesktop() {
     }))
   }, [])
 
+  const setAlcoveGlyph = useCallback((alcoveId: string, glyph: string) => {
+    setState((current) => ({
+      ...current,
+      alcoves: current.alcoves.map((alcove) =>
+        alcove.id === alcoveId ? { ...alcove, glyph } : alcove,
+      ),
+    }))
+  }, [])
+
   const deleteAlcove = useCallback((alcoveId: string) => {
     setState((current) => {
       const target = current.alcoves.find((alcove) => alcove.id === alcoveId)
       if (!target || target.isInbox) return current
       const alcoves = current.alcoves.filter((alcove) => alcove.id !== alcoveId)
       const icons = current.icons.map((icon) =>
-        icon.alcoveId === alcoveId ? { ...icon, alcoveId: INBOX_ID } : icon,
+        icon.alcoveId === alcoveId
+          ? { ...icon, alcoveId: INBOX_ID, groupId: null }
+          : icon,
       )
       const strip = (snap: Record<string, boolean>) => {
         const next = { ...snap }
@@ -244,14 +330,16 @@ export function useAlcoveDesktop() {
   }, [])
 
   const createAlcove = useCallback(
-    (name: string, color: AlcoveColor, iconIds: string[] = []) => {
+    (name: string, color: AlcoveColor, iconIds: string[] = [], glyph?: string) => {
       const id = crypto.randomUUID()
+      const trimmed = name.trim() || "New Alcove"
       setState((current) => {
         const order = current.alcoves.reduce((max, alcove) => Math.max(max, alcove.order), 0) + 1
         const alcove: Alcove = {
           id,
-          name: name.trim() || "New Alcove",
+          name: trimmed,
           color,
+          glyph: glyph ?? defaultAlcoveGlyph(id, trimmed),
           collapsed: false,
           isInbox: false,
           order,
@@ -288,7 +376,8 @@ export function useAlcoveDesktop() {
     setState((current) => ({
       ...current,
       icons: current.icons.map((icon) =>
-        icon.id === iconId ? { ...icon, alcoveId } : icon,
+        // Groups belong to one Alcove, so leaving one drops the row.
+        icon.id === iconId ? { ...icon, alcoveId, groupId: null } : icon,
       ),
       focusedAlcoveId: alcoveId,
       alcoves: current.alcoves.map((alcove) =>
@@ -318,6 +407,153 @@ export function useAlcoveDesktop() {
       return { ...current, pinIds: [...current.pinIds, iconId] }
     })
   }, [])
+
+  /** Records an open and re-seats the frequent strip. */
+  const noteOpen = useCallback((iconId: string) => {
+    setState((current) => {
+      const now = Date.now()
+      const frecency = recordOpen(current.frecency, iconId, now)
+      const ids = new Set(current.icons.map((icon) => icon.id))
+      return {
+        ...current,
+        frecency,
+        topSlots: refreshSlots(current.topSlots, frecency, {
+          now,
+          exists: (id) => ids.has(id),
+          keep: current.topKeep,
+          hide: current.topHide,
+        }),
+      }
+    })
+  }, [])
+
+  const toggleTopKeep = useCallback((iconId: string) => {
+    setState((current) => ({
+      ...current,
+      topKeep: current.topKeep.includes(iconId)
+        ? current.topKeep.filter((id) => id !== iconId)
+        : [...current.topKeep, iconId],
+    }))
+  }, [])
+
+  const hideFromTop = useCallback((iconId: string) => {
+    setState((current) => {
+      const topHide = current.topHide.includes(iconId)
+        ? current.topHide
+        : [...current.topHide, iconId]
+      const ids = new Set(current.icons.map((icon) => icon.id))
+      return {
+        ...current,
+        topHide,
+        topKeep: current.topKeep.filter((id) => id !== iconId),
+        topSlots: refreshSlots(current.topSlots, current.frecency, {
+          now: Date.now(),
+          exists: (id) => ids.has(id),
+          keep: current.topKeep,
+          hide: topHide,
+        }),
+      }
+    })
+  }, [])
+
+  const clearTopStrip = useCallback(() => {
+    setState((current) => ({ ...current, ...topDefaults() }))
+  }, [])
+
+  const setAlcoveView = useCallback((alcoveId: string, view: AlcoveView) => {
+    setState((current) => ({
+      ...current,
+      alcoves: current.alcoves.map((alcove) =>
+        alcove.id === alcoveId ? { ...alcove, view } : alcove,
+      ),
+    }))
+  }, [])
+
+  const createGroup = useCallback((alcoveId: string, name: string, iconIds: string[] = []) => {
+    const id = crypto.randomUUID()
+    setState((current) => {
+      const iconSet = new Set(iconIds)
+      return {
+        ...current,
+        alcoves: current.alcoves.map((alcove) =>
+          alcove.id === alcoveId
+            ? {
+                ...alcove,
+                groups: [...(alcove.groups ?? []), { id, name: name.trim() || "New group" }],
+              }
+            : alcove,
+        ),
+        icons: current.icons.map((icon) =>
+          iconSet.has(icon.id) ? { ...icon, alcoveId, groupId: id } : icon,
+        ),
+      }
+    })
+    return id
+  }, [])
+
+  const renameGroup = useCallback((alcoveId: string, groupId: string, name: string) => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    setState((current) => ({
+      ...current,
+      alcoves: current.alcoves.map((alcove) =>
+        alcove.id === alcoveId
+          ? {
+              ...alcove,
+              groups: (alcove.groups ?? []).map((group) =>
+                group.id === groupId ? { ...group, name: trimmed } : group,
+              ),
+            }
+          : alcove,
+      ),
+    }))
+  }, [])
+
+  /** Deleting a row keeps its icons — they fall back to "Everything else". */
+  const deleteGroup = useCallback((alcoveId: string, groupId: string) => {
+    setState((current) => ({
+      ...current,
+      alcoves: current.alcoves.map((alcove) =>
+        alcove.id === alcoveId
+          ? { ...alcove, groups: (alcove.groups ?? []).filter((group) => group.id !== groupId) }
+          : alcove,
+      ),
+      icons: current.icons.map((icon) =>
+        icon.alcoveId === alcoveId && icon.groupId === groupId
+          ? { ...icon, groupId: null }
+          : icon,
+      ),
+    }))
+  }, [])
+
+  const moveGroup = useCallback((alcoveId: string, groupId: string, delta: number) => {
+    setState((current) => ({
+      ...current,
+      alcoves: current.alcoves.map((alcove) => {
+        if (alcove.id !== alcoveId) return alcove
+        const groups = [...(alcove.groups ?? [])]
+        const from = groups.findIndex((group) => group.id === groupId)
+        const to = from + delta
+        if (from < 0 || to < 0 || to >= groups.length) return alcove
+        const [moved] = groups.splice(from, 1)
+        groups.splice(to, 0, moved)
+        return { ...alcove, groups }
+      }),
+    }))
+  }, [])
+
+  const moveIconToGroup = useCallback(
+    (iconId: string, alcoveId: string, groupId: string | null) => {
+      setState((current) => ({
+        ...current,
+        icons: current.icons.map((icon) =>
+          icon.id === iconId ? { ...icon, alcoveId, groupId } : icon,
+        ),
+        focusedAlcoveId: alcoveId,
+      }))
+    },
+    [],
+  )
 
   const dropIncomingFile = useCallback(() => {
     setState((current) => {
@@ -404,6 +640,15 @@ export function useAlcoveDesktop() {
     [state.icons, state.pinIds],
   )
 
+  /** Slot order is the render order — nulls are trailing empty slots. */
+  const topIcons = useMemo(
+    () =>
+      state.topSlots
+        .map((id) => (id ? state.icons.find((icon) => icon.id === id) : undefined))
+        .filter((icon): icon is DesktopIcon => Boolean(icon)),
+    [state.icons, state.topSlots],
+  )
+
   return {
     state,
     sortedAlcoves,
@@ -411,6 +656,7 @@ export function useAlcoveDesktop() {
     inboxCount,
     suggestions,
     pinnedIcons,
+    topIcons,
     organize,
     startEmpty,
     loadSample,
@@ -421,11 +667,22 @@ export function useAlcoveDesktop() {
     setAlcovePage,
     renameAlcove,
     recolorAlcove,
+    setAlcoveGlyph,
     deleteAlcove,
     createAlcove,
     moveIcon,
     renameIcon,
     togglePin,
+    noteOpen,
+    toggleTopKeep,
+    hideFromTop,
+    clearTopStrip,
+    setAlcoveView,
+    createGroup,
+    renameGroup,
+    deleteGroup,
+    moveGroup,
+    moveIconToGroup,
     dropIncomingFile,
     revealIcon,
     setFocusMode,

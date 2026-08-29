@@ -1,5 +1,6 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AlcoveChip } from "@/components/alcove-chip"
-import { DesktopIconTile } from "@/components/desktop-icon"
+import { DesktopIconTile, IconContextItems } from "@/components/desktop-icon"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -11,12 +12,14 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { ALCOVE_COLOR_IDS } from "@/types"
 import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
-import { DENSITY_CONFIG, pageSize } from "@/lib/density"
+import { AlcoveGlyphGrid, resolveAlcoveGlyph } from "@/lib/alcove-glyphs"
+import { DENSITY_CONFIG } from "@/lib/density"
 import { cn } from "@/lib/utils"
 import type { Alcove, AlcoveColor, Density, DesktopIcon } from "@/types"
-import { ChevronLeft, ChevronRight, Inbox } from "lucide-react"
+import { Inbox, Maximize2, Search } from "lucide-react"
 import type { PointerEvent } from "react"
 
 type AlcovePanelProps = {
@@ -28,9 +31,9 @@ type AlcovePanelProps = {
   highlightedIconId: string | null
   dimmed?: boolean
   onToggle: () => void
-  onPage: (page: number) => void
   onRename: () => void
   onRecolor: (color: AlcoveColor) => void
+  onSetGlyph: (glyph: string) => void
   onDelete: () => void
   onOpenIcon: (icon: DesktopIcon) => void
   onRenameIcon: (icon: DesktopIcon) => void
@@ -40,7 +43,7 @@ type AlcovePanelProps = {
   onFocus: () => void
   onDropIncoming?: () => void
   onIconPointerDown?: (icon: DesktopIcon, event: PointerEvent) => void
-  draggingIconId?: string | null
+  onExpandCanvas?: () => void
 }
 
 export function AlcovePanel(props: AlcovePanelProps) {
@@ -76,9 +79,9 @@ function ExpandedAlcove({
   highlightedIconId,
   dimmed,
   onToggle,
-  onPage,
   onRename,
   onRecolor,
+  onSetGlyph,
   onDelete,
   onOpenIcon,
   onRenameIcon,
@@ -88,25 +91,63 @@ function ExpandedAlcove({
   onFocus,
   onDropIncoming,
   onIconPointerDown,
-  draggingIconId,
+  onExpandCanvas,
 }: AlcovePanelProps) {
   const config = DENSITY_CONFIG[density]
-  const size = pageSize(density)
-  const pageCount = Math.max(1, Math.ceil(icons.length / size))
-  const page = Math.min(alcove.page, pageCount - 1)
-  const visible = icons.slice(page * size, page * size + size)
+  const [query, setQuery] = useState("")
   const styles = ALCOVE_COLOR_STYLES[alcove.color]
   const emptyInbox = alcove.isInbox && icons.length === 0
+  const ctxIconRef = useRef<DesktopIcon | null>(null)
+  const [menuIcon, setMenuIcon] = useState<DesktopIcon | null>(null)
+  const openRef = useRef(onOpenIcon)
+  const handleOpen = useCallback((icon: DesktopIcon) => {
+    openRef.current(icon)
+  }, [])
+  useEffect(() => {
+    openRef.current = onOpenIcon
+  }, [onOpenIcon])
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    if (!needle) return icons
+    return icons.filter((icon) => icon.name.toLowerCase().includes(needle))
+  }, [icons, query])
+  const rowHeight = config.icon + 36
+  const gridMaxHeight = config.rows * rowHeight
+
+  useEffect(() => {
+    if (!highlightedIconId) return
+    const node = document.querySelector(
+      `[data-desktop-icon="${CSS.escape(highlightedIconId)}"]`,
+    )
+    node?.scrollIntoView({ block: "nearest" })
+  }, [highlightedIconId])
 
   return (
-    <ContextMenu>
+    <ContextMenu
+      onOpenChange={(open) => {
+        if (open) setMenuIcon(ctxIconRef.current)
+        else setMenuIcon(null)
+      }}
+    >
       <ContextMenuTrigger asChild>
         <section
           data-alcove-id={alcove.id}
           onPointerDown={onFocus}
+          onContextMenuCapture={(event) => {
+            const node = event.target
+            if (!(node instanceof Element)) {
+              ctxIconRef.current = null
+              return
+            }
+            const host = node.closest("[data-desktop-icon]")
+            const id = host instanceof HTMLElement ? host.dataset.desktopIcon : undefined
+            ctxIconRef.current = id
+              ? (filtered.find((icon) => icon.id === id) ?? null)
+              : null
+          }}
           style={{ width: config.panel }}
           className={cn(
-            "flex max-w-full flex-col overflow-hidden rounded-2xl border border-white/15 bg-white/10 shadow-2xl backdrop-blur-2xl transition-opacity duration-200",
+            "flex max-h-[min(78vh,760px)] max-w-full flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/55 shadow-2xl transition-opacity duration-200",
             styles.glow,
             dimmed && "opacity-25",
           )}
@@ -120,39 +161,41 @@ function ExpandedAlcove({
             >
               {alcove.isInbox ? <Inbox className="size-3.5 opacity-80" /> : null}
               <span className="truncate">{alcove.name}</span>
-              <span className="text-xs font-normal text-white/60">{icons.length}</span>
+              <span className="text-xs font-normal text-white/60">
+                {query.trim()
+                  ? `${filtered.length}/${icons.length}`
+                  : icons.length}
+              </span>
             </button>
-            {pageCount > 1 ? (
-              <div className="flex items-center gap-0.5">
-                <Button
-                  size="icon-xs"
-                  variant="ghost"
-                  className="text-white hover:bg-white/10"
-                  disabled={page === 0}
-                  onClick={() => onPage(page - 1)}
-                >
-                  <ChevronLeft />
-                </Button>
-                <span className="text-[10px] text-white/70">
-                  {page + 1}/{pageCount}
-                </span>
-                <Button
-                  size="icon-xs"
-                  variant="ghost"
-                  className="text-white hover:bg-white/10"
-                  disabled={page >= pageCount - 1}
-                  onClick={() => onPage(page + 1)}
-                >
-                  <ChevronRight />
-                </Button>
-              </div>
+            {onExpandCanvas ? (
+              <button
+                type="button"
+                title="Spread across the desktop"
+                onClick={onExpandCanvas}
+                className="flex size-7 items-center justify-center rounded-lg text-white/60 transition hover:bg-white/10 hover:text-white"
+              >
+                <Maximize2 className="size-3.5" />
+              </button>
             ) : null}
           </header>
+          {emptyInbox ? null : (
+            <div className="relative px-3 pb-2">
+              <Search className="pointer-events-none absolute top-1/2 left-5 size-3.5 -translate-y-1/2 text-white/45" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Filter icons…"
+                aria-label={`Filter ${alcove.name}`}
+                className="h-8 border-white/15 bg-white/10 pr-2 pl-8 text-white placeholder:text-white/40 md:text-xs dark:bg-white/10"
+              />
+            </div>
+          )}
           <div
-            className="grid px-2 pb-3"
+            className="grid overflow-y-auto px-2 pb-3"
             style={{
               gridTemplateColumns: `repeat(${config.cols}, minmax(0, 1fr))`,
-              minHeight: emptyInbox ? 120 : config.rows * (config.icon + 36),
+              minHeight: emptyInbox ? 120 : Math.min(filtered.length, config.cols) > 0 ? rowHeight : 120,
+              maxHeight: emptyInbox ? undefined : gridMaxHeight,
             }}
           >
             {emptyInbox ? (
@@ -172,65 +215,72 @@ function ExpandedAlcove({
                   </Button>
                 ) : null}
               </div>
+            ) : filtered.length === 0 ? (
+              <div className="col-span-full px-4 py-8 text-center text-sm text-white/70">
+                No icons match “{query.trim()}”.
+              </div>
             ) : (
-              visible.map((icon) => (
+              filtered.map((icon) => (
                 <DesktopIconTile
                   key={icon.id}
                   icon={icon}
                   size={config.icon}
                   highlighted={highlightedIconId === icon.id}
-                  dimmed={draggingIconId === icon.id}
-                  alcoves={allAlcoves}
-                  pinned={pinIds.includes(icon.id)}
-                  onOpen={() => onOpenIcon(icon)}
-                  onRename={() => onRenameIcon(icon)}
-                  onTogglePin={() => onTogglePin(icon.id)}
-                  onMove={(alcoveId) => onMoveIcon(icon.id, alcoveId)}
-                  onNewAlcove={() => onNewAlcoveWith(icon)}
+                  onOpen={handleOpen}
                   onPointerDown={onIconPointerDown}
                 />
               ))
             )}
           </div>
-          {pageCount > 1 ? (
-            <div className="flex justify-center gap-1 pb-2">
-              {Array.from({ length: pageCount }, (_, index) => (
-                <button
-                  key={index}
-                  type="button"
-                  aria-label={`Page ${index + 1}`}
-                  onClick={() => onPage(index)}
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    index === page ? "bg-white" : "bg-white/35",
-                  )}
-                />
-              ))}
-            </div>
-          ) : null}
         </section>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem onSelect={onToggle}>Collapse to chip</ContextMenuItem>
-        <ContextMenuItem onSelect={onRename}>Rename</ContextMenuItem>
-        <ContextMenuSub>
-          <ContextMenuSubTrigger>Color</ContextMenuSubTrigger>
-          <ContextMenuSubContent>
-            {ALCOVE_COLOR_IDS.map((color) => (
-              <ContextMenuItem key={color} onSelect={() => onRecolor(color)}>
-                {ALCOVE_COLOR_STYLES[color].label}
-              </ContextMenuItem>
-            ))}
-          </ContextMenuSubContent>
-        </ContextMenuSub>
-        {!alcove.isInbox ? (
+        {menuIcon ? (
+          <IconContextItems
+            icon={menuIcon}
+            alcoves={allAlcoves}
+            pinned={pinIds.includes(menuIcon.id)}
+            onOpen={onOpenIcon}
+            onRename={onRenameIcon}
+            onTogglePin={onTogglePin}
+            onMove={onMoveIcon}
+            onNewAlcove={onNewAlcoveWith}
+          />
+        ) : (
           <>
-            <ContextMenuSeparator />
-            <ContextMenuItem variant="destructive" onSelect={onDelete}>
-              Delete Alcove
-            </ContextMenuItem>
+            <ContextMenuItem onSelect={onToggle}>Collapse to chip</ContextMenuItem>
+            <ContextMenuItem onSelect={onRename}>Rename</ContextMenuItem>
+            {!alcove.isInbox ? (
+              <ContextMenuSub>
+                <ContextMenuSubTrigger>Icon</ContextMenuSubTrigger>
+                <ContextMenuSubContent className="w-[232px] p-2">
+                  <AlcoveGlyphGrid
+                    value={resolveAlcoveGlyph(alcove)}
+                    onChange={onSetGlyph}
+                  />
+                </ContextMenuSubContent>
+              </ContextMenuSub>
+            ) : null}
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>Color</ContextMenuSubTrigger>
+              <ContextMenuSubContent>
+                {ALCOVE_COLOR_IDS.map((color) => (
+                  <ContextMenuItem key={color} onSelect={() => onRecolor(color)}>
+                    {ALCOVE_COLOR_STYLES[color].label}
+                  </ContextMenuItem>
+                ))}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+            {!alcove.isInbox ? (
+              <>
+                <ContextMenuSeparator />
+                <ContextMenuItem variant="destructive" onSelect={onDelete}>
+                  Delete Alcove
+                </ContextMenuItem>
+              </>
+            ) : null}
           </>
-        ) : null}
+        )}
       </ContextMenuContent>
     </ContextMenu>
   )

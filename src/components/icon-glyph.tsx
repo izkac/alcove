@@ -1,3 +1,4 @@
+import { memo } from "react"
 import type { DesktopIcon } from "@/types"
 import { cn } from "@/lib/utils"
 import {
@@ -39,7 +40,22 @@ type IconGlyphProps = {
   className?: string
 }
 
-export function IconGlyph({ icon, size, className }: IconGlyphProps) {
+export const IconGlyph = memo(function IconGlyph({ icon, size, className }: IconGlyphProps) {
+  if (icon.imageUrl) {
+    return (
+      <img
+        src={icon.imageUrl}
+        width={size}
+        height={size}
+        alt=""
+        draggable={false}
+        decoding="async"
+        className={cn("bg-transparent object-contain drop-shadow-[0_1px_1px_rgba(0,0,0,0.45)]", className)}
+        style={{ width: size, height: size }}
+        aria-hidden
+      />
+    )
+  }
   const { bg, Icon } = faceFor(icon)
   const glyph = Math.round(size * 0.46)
   return (
@@ -55,4 +71,4 @@ export function IconGlyph({ icon, size, className }: IconGlyphProps) {
       <Icon style={{ width: glyph, height: glyph }} strokeWidth={1.75} />
     </div>
   )
-}
+})
