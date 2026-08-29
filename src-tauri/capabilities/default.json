@@ -1,0 +1,27 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "main",
+    "bar"
+  ],
+  "permissions": [
+    "core:default",
+    "allow-attach-to-desktop",
+    "allow-detach-from-desktop",
+    "allow-desktop-attached",
+    "allow-list-desktop-icons",
+    "allow-open-desktop-item",
+    "allow-recycle-bin",
+    "allow-show-recycle-bin-menu",
+    "allow-empty-recycle-bin",
+    "allow-recycle-bin-properties",
+    "allow-desktop-background",
+    "allow-set-windows-taskbar-hidden",
+    "allow-windows-taskbar-hidden",
+    "allow-list-running-windows",
+    "allow-activate-window",
+    "allow-focus-desktop"
+  ]
+}

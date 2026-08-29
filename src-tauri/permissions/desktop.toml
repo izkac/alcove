@@ -1,0 +1,74 @@
+[[permission]]
+identifier = "allow-attach-to-desktop"
+description = "Pin Alcove to the Windows desktop layer"
+commands.allow = ["attach_to_desktop"]
+
+[[permission]]
+identifier = "allow-detach-from-desktop"
+description = "Restore Explorer icons and show Alcove as a window"
+commands.allow = ["detach_from_desktop"]
+
+[[permission]]
+identifier = "allow-desktop-attached"
+description = "Read whether Alcove is pinned to the desktop"
+commands.allow = ["desktop_attached"]
+
+[[permission]]
+identifier = "allow-list-desktop-icons"
+description = "Read files and icons from the Windows Desktop folder"
+commands.allow = ["list_desktop_icons"]
+
+[[permission]]
+identifier = "allow-open-desktop-item"
+description = "Open a Desktop file with its default app"
+commands.allow = ["open_desktop_item"]
+
+[[permission]]
+identifier = "allow-recycle-bin"
+description = "Read the Recycle Bin name and icon"
+commands.allow = ["recycle_bin"]
+
+[[permission]]
+identifier = "allow-show-recycle-bin-menu"
+description = "Show the Windows Recycle Bin context menu"
+commands.allow = ["show_recycle_bin_menu"]
+
+[[permission]]
+identifier = "allow-empty-recycle-bin"
+description = "Empty the Windows Recycle Bin"
+commands.allow = ["empty_recycle_bin"]
+
+[[permission]]
+identifier = "allow-recycle-bin-properties"
+description = "Open Recycle Bin properties"
+commands.allow = ["recycle_bin_properties"]
+
+[[permission]]
+identifier = "allow-desktop-background"
+description = "Read the Windows desktop wallpaper and background color"
+commands.allow = ["desktop_background"]
+
+[[permission]]
+identifier = "allow-set-windows-taskbar-hidden"
+description = "Toggle Windows taskbar auto-hide"
+commands.allow = ["set_windows_taskbar_hidden"]
+
+[[permission]]
+identifier = "allow-windows-taskbar-hidden"
+description = "Read whether the Windows taskbar is auto-hidden"
+commands.allow = ["windows_taskbar_hidden"]
+
+[[permission]]
+identifier = "allow-list-running-windows"
+description = "List open application windows for the taskbar"
+commands.allow = ["list_running_windows"]
+
+[[permission]]
+identifier = "allow-activate-window"
+description = "Focus or restore another application window"
+commands.allow = ["activate_window"]
+
+[[permission]]
+identifier = "allow-focus-desktop"
+description = "Bring the Alcove desktop window to the front"
+commands.allow = ["focus_desktop"]
