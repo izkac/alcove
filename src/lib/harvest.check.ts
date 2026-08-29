@@ -68,6 +68,8 @@ function harvested(icon: DesktopIcon) {
     groupHint: icon.groupHint,
     path: icon.path!,
     imageUrl: "data:image/png;base64,xx",
+    byteSize: icon.byteSize,
+    modifiedAt: icon.modifiedAt,
   }
 }
 
@@ -107,6 +109,8 @@ const zip: DesktopIcon = {
   groupHint: "installers",
   path: "C:\\Users\\me\\Downloads\\a.zip",
   groupId: "zips",
+  byteSize: 2048,
+  modifiedAt: 1_700_000_000_000,
 }
 
 const withLive = {
@@ -146,6 +150,15 @@ assert.equal(
   afterLive.icons.find((icon) => icon.path === zip.path)?.groupId,
   "zips",
   "groups inside a live folder survive a re-read",
+)
+assert.equal(
+  afterLive.icons.find((icon) => icon.path === zip.path)?.byteSize,
+  2048,
+  "size survives a live-folder re-read",
+)
+assert.equal(
+  afterLive.icons.find((icon) => icon.path === zip.path)?.modifiedAt,
+  1_700_000_000_000,
 )
 assert.equal(
   afterLive.icons.find((icon) => icon.path === delphi.path)?.alcoveId,

@@ -44,6 +44,10 @@ export type DesktopIcon = {
   groupHint: string
   path?: string
   imageUrl?: string
+  /** File length in bytes. Absent for folders. */
+  byteSize?: number | null
+  /** Last write time, milliseconds since Unix epoch. */
+  modifiedAt?: number | null
   /** Row inside the owning Alcove's canvas. Null/absent = "Everything else". */
   groupId?: string | null
 }

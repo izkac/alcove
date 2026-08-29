@@ -157,9 +157,11 @@ function ExpandedAlcove({
           }}
           style={{
             width:
-              alcove.folderPath && (itemView === "list" || itemView === "details")
-                ? Math.max(config.panel, 720)
-                : config.panel,
+              alcove.folderPath && itemView === "details"
+                ? Math.max(config.panel, 900)
+                : alcove.folderPath && itemView === "list"
+                  ? Math.max(config.panel, 720)
+                  : config.panel,
           }}
           className={cn(
             "flex max-h-[min(78vh,760px)] max-w-full flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/55 shadow-2xl transition-opacity duration-200",

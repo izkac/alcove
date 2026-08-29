@@ -10,6 +10,8 @@ pub struct HarvestedIcon {
     pub group_hint: String,
     pub path: String,
     pub image_url: String,
+    pub byte_size: Option<u64>,
+    pub modified_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -144,6 +146,12 @@ mod win {
         }
     }
 
+    fn unix_ms(time: std::time::SystemTime) -> Option<i64> {
+        time.duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .and_then(|span| i64::try_from(span.as_millis()).ok())
+    }
+
     fn harvest_one(
         path: &Path,
         jumbo: Option<&IImageList>,
@@ -171,6 +179,16 @@ mod win {
             String::new()
         };
         let path_str = path.to_string_lossy().to_string();
+        let meta = std::fs::metadata(path).ok();
+        let byte_size = if is_dir {
+            None
+        } else {
+            meta.as_ref().map(|m| m.len())
+        };
+        let modified_at = meta
+            .as_ref()
+            .and_then(|m| m.modified().ok())
+            .and_then(unix_ms);
         Ok(HarvestedIcon {
             id: path_str.clone(),
             name: display,
@@ -179,6 +197,8 @@ mod win {
             group_hint: group_hint.to_string(),
             path: path_str,
             image_url,
+            byte_size,
+            modified_at,
         })
     }
 

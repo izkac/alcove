@@ -9,6 +9,8 @@ export type HarvestedIcon = {
   groupHint: string
   path: string
   imageUrl: string
+  byteSize?: number | null
+  modifiedAt?: number | null
 }
 
 function asKind(kind: string): IconKind {
@@ -31,6 +33,8 @@ export function toDesktopIcon(
     groupHint: harvested.groupHint,
     path: harvested.path,
     imageUrl: harvested.imageUrl,
+    byteSize: harvested.byteSize ?? null,
+    modifiedAt: harvested.modifiedAt ?? null,
     groupId,
   }
 }
