@@ -131,13 +131,30 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
     setRename({ kind: "group", id, alcoveId: openAlcove.id, value: "New group" })
   }
 
+  const frequentStrip =
+    state.phase === "ready" ? (
+      <FrequentStrip
+        edge={state.stripEdge}
+        icons={desktop.topIcons}
+        keepIds={state.topKeep}
+        onOpen={openIcon}
+        onToggleKeep={desktop.toggleTopKeep}
+        onHide={desktop.hideFromTop}
+        onReveal={(iconId) => {
+          desktop.revealIcon(iconId)
+          const icon = state.icons.find((item) => item.id === iconId)
+          if (icon?.alcoveId) setOpenAlcoveId(icon.alcoveId)
+        }}
+      />
+    ) : null
+
   return (
     <div className="relative flex h-svh min-h-0 flex-col overflow-hidden text-white">
       <Wallpaper />
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <main
-            className="relative flex min-h-0 flex-1 flex-col"
+            className="relative flex h-full min-h-0 flex-1"
             onDoubleClick={(event) => {
               if (event.target === event.currentTarget) setCreateOpen(true)
             }}
@@ -145,34 +162,13 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
             {emptyDesktop ? (
               <EmptyDesktopHint onCreate={() => setCreateOpen(true)} />
             ) : null}
-            {state.phase === "ready" ? (
-              <FrequentStrip
-                icons={desktop.topIcons}
-                keepIds={state.topKeep}
-                onOpen={openIcon}
-                onToggleKeep={desktop.toggleTopKeep}
-                onHide={desktop.hideFromTop}
-                onReveal={(iconId) => {
-                  desktop.revealIcon(iconId)
-                  const icon = state.icons.find((item) => item.id === iconId)
-                  if (icon?.alcoveId) setOpenAlcoveId(icon.alcoveId)
-                }}
-              />
-            ) : null}
-            <div
-              className="relative z-10 flex min-h-0 flex-1 gap-4 p-4 pb-2 md:p-6"
-              onPointerDown={(event) => {
-                if (event.target === event.currentTarget) setOpenAlcoveId(null)
-              }}
-              onDoubleClick={(event) => {
-                if (event.target === event.currentTarget) setCreateOpen(true)
-              }}
-            >
-              {state.phase === "onboarding" ? (
+            {state.phase === "onboarding" ? (
+              <div className="relative z-10 flex min-h-0 flex-1 p-4 md:p-6">
                 <ScatteredPreview icons={state.icons} />
-              ) : (
-                <>
-                  <ShelfRail
+              </div>
+            ) : (
+              <>
+                <ShelfRail
                     alcoves={sortedAlcoves}
                     countFor={(alcoveId) => iconsIn(alcoveId).length}
                     openAlcoveId={openAlcoveId}
@@ -181,6 +177,7 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
                         current === alcoveId ? null : alcoveId,
                       )
                       desktop.setFocusedAlcove(alcoveId)
+                      desktop.refreshLiveFolder(alcoveId)
                     }}
                     onSearch={() => setSearchOpen(true)}
                     onNewAlcove={() => setCreateOpen(true)}
@@ -194,17 +191,30 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
                     }
                     onRecolor={desktop.recolorAlcove}
                     onSetGlyph={desktop.setAlcoveGlyph}
+                    onLinkFolder={(alcove) => {
+                      if (!isTauri()) return
+                      invoke<string | null>("pick_folder")
+                        .then((path) => {
+                          if (path) desktop.setAlcoveFolder(alcove.id, path)
+                        })
+                        .catch(() => undefined)
+                    }}
+                    onUnlinkFolder={(alcoveId) =>
+                      desktop.setAlcoveFolder(alcoveId, null)
+                    }
                     onDelete={(alcoveId) => {
                       desktop.deleteAlcove(alcoveId)
                       if (openAlcoveId === alcoveId) setOpenAlcoveId(null)
                     }}
                   />
-                  <div
-                    className={
-                      openView === "canvas"
-                        ? "flex min-h-0 flex-1"
-                        : "flex min-h-0 flex-1 items-start overflow-auto"
-                    }
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                    {state.stripEdge !== "bottom" ? frequentStrip : null}
+                    <div
+                      className={
+                        openView === "canvas"
+                          ? "relative z-10 flex min-h-0 flex-1 p-4 md:p-6"
+                          : "relative z-10 flex min-h-0 flex-1 items-start overflow-auto p-4 md:p-6"
+                      }
                     onPointerDown={(event) => {
                       if (event.target === event.currentTarget) setOpenAlcoveId(null)
                     }}
@@ -261,6 +271,9 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
                         onMoveIconToGroup={(iconId, groupId) =>
                           desktop.moveIconToGroup(iconId, openAlcove.id, groupId)
                         }
+                        onFolderView={(view) =>
+                          desktop.setFolderView(openAlcove.id, view)
+                        }
                       />
                     ) : openAlcove ? (
                       <AlcovePanel
@@ -305,12 +318,16 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
                           openAlcove.isInbox ? desktop.dropIncomingFile : undefined
                         }
                         onIconPointerDown={onPointerDown}
+                        onFolderView={(view) =>
+                          desktop.setFolderView(openAlcove.id, view)
+                        }
                       />
                     ) : null}
+                    </div>
+                    {state.stripEdge === "bottom" ? frequentStrip : null}
                   </div>
                 </>
               )}
-            </div>
           </main>
         </ContextMenuTrigger>
         <ContextMenuContent>
@@ -342,12 +359,13 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
           setCreateOpen(open)
           if (!open) setCreateWithIcon(null)
         }}
-        onCreate={(name, color: AlcoveColor, glyph) => {
+        onCreate={(name, color: AlcoveColor, glyph, folderPath) => {
           desktop.createAlcove(
             name,
             color,
-            createWithIcon ? [createWithIcon.id] : [],
+            folderPath ? [] : createWithIcon ? [createWithIcon.id] : [],
             glyph,
+            folderPath,
           )
         }}
       />
@@ -388,10 +406,12 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
         layoutId={state.layoutId}
         density={state.density}
         focusMode={state.focusMode}
+        stripEdge={state.stripEdge}
         desktopAttached={desktopAttached}
         onLayout={desktop.setLayout}
         onDensity={desktop.setDensity}
         onFocusMode={desktop.setFocusMode}
+        onStripEdge={desktop.setStripEdge}
         onCollapseAll={() => {
           desktop.collapseAll()
           setOpenAlcoveId(null)

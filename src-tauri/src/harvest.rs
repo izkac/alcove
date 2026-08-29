@@ -12,6 +12,14 @@ pub struct HarvestedIcon {
     pub image_url: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownFolder {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecycleBin {
@@ -47,7 +55,8 @@ mod win {
     use windows::Win32::UI::Controls::IImageList;
     use windows::Win32::UI::Shell::{
         SHCreateItemFromParsingName, SHGetFileInfoW, SHGetKnownFolderPath, SHGetStockIconInfo,
-        ExtractIconExW, SHDefExtractIconW, ShellExecuteW, FOLDERID_Desktop, FOLDERID_PublicDesktop,
+        ExtractIconExW, SHDefExtractIconW, ShellExecuteW, FOLDERID_Desktop, FOLDERID_Documents,
+        FOLDERID_Downloads, FOLDERID_Pictures, FOLDERID_PublicDesktop, FOLDERID_Screenshots,
         IShellItemImageFactory, KF_FLAG_DEFAULT, SHFILEINFOW, SHGFI_DISPLAYNAME, SHGFI_SYSICONINDEX,
         SHGSI_SYSICONINDEX, SHSTOCKICONINFO, SIID_RECYCLER, SIID_RECYCLERFULL, SIIGBF_BIGGERSIZEOK,
         SIIGBF_ICONONLY, SHIL_EXTRALARGE, SHIL_JUMBO,
@@ -95,7 +104,7 @@ mod win {
         let jumbo = jumbo_list().ok();
         let mut icons = Vec::new();
         for path in paths {
-            match harvest_one(&path, jumbo.as_ref()) {
+            match harvest_one(&path, jumbo.as_ref(), true) {
                 Ok(icon) => icons.push(icon),
                 Err(err) => log::warn!("skip {}: {err}", path.display()),
             }
@@ -135,7 +144,11 @@ mod win {
         }
     }
 
-    fn harvest_one(path: &Path, jumbo: Option<&IImageList>) -> Result<HarvestedIcon, String> {
+    fn harvest_one(
+        path: &Path,
+        jumbo: Option<&IImageList>,
+        extract_icon: bool,
+    ) -> Result<HarvestedIcon, String> {
         let display = display_name(path);
         let ext = path
             .extension()
@@ -143,15 +156,19 @@ mod win {
             .map(|ext| ext.to_ascii_lowercase());
         let is_dir = path.is_dir();
         let (kind, group_hint) = classify(is_dir, ext.as_deref());
-        let image_url = match icon_png(path, jumbo) {
-            Ok(png) => format!(
-                "data:image/png;base64,{}",
-                base64::engine::general_purpose::STANDARD.encode(png)
-            ),
-            Err(err) => {
-                log::warn!("icon {}: {err}", path.display());
-                String::new()
+        let image_url = if extract_icon {
+            match icon_png(path, jumbo) {
+                Ok(png) => format!(
+                    "data:image/png;base64,{}",
+                    base64::engine::general_purpose::STANDARD.encode(png)
+                ),
+                Err(err) => {
+                    log::warn!("icon {}: {err}", path.display());
+                    String::new()
+                }
             }
+        } else {
+            String::new()
         };
         let path_str = path.to_string_lossy().to_string();
         Ok(HarvestedIcon {
@@ -942,6 +959,165 @@ mod win {
         Ok(buf)
     }
 
+    const FOLDER_LIST_CAP: usize = 400;
+
+    pub fn list_folder(path: &str) -> Result<Vec<HarvestedIcon>, String> {
+        let root = PathBuf::from(path.trim());
+        if !root.is_dir() {
+            return Err(format!("not a folder: {path}"));
+        }
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        }
+        let started = std::time::Instant::now();
+        let result = list_folder_inner(&root);
+        unsafe {
+            CoUninitialize();
+        }
+        if let Ok(icons) = &result {
+            log::info!(
+                "listed {} items in {} ({}ms)",
+                icons.len(),
+                root.display(),
+                started.elapsed().as_millis()
+            );
+        }
+        result
+    }
+
+    fn list_folder_inner(root: &Path) -> Result<Vec<HarvestedIcon>, String> {
+        let mut paths = Vec::new();
+        collect_folder(root, &mut paths);
+        paths.sort_by(|a, b| {
+            let ma = a.metadata().and_then(|meta| meta.modified()).ok();
+            let mb = b.metadata().and_then(|meta| meta.modified()).ok();
+            mb.cmp(&ma).then_with(|| a.file_name().cmp(&b.file_name()))
+        });
+        if paths.len() > FOLDER_LIST_CAP {
+            log::warn!(
+                "{} has {} items; showing the {} newest",
+                root.display(),
+                paths.len(),
+                FOLDER_LIST_CAP
+            );
+            paths.truncate(FOLDER_LIST_CAP);
+        }
+        let jumbo = jumbo_list().ok();
+        let mut icons = Vec::new();
+        for path in paths {
+            let ext = path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.to_ascii_lowercase());
+            let extract = path.is_dir()
+                || matches!(
+                    ext.as_deref(),
+                    Some("lnk") | Some("url") | Some("exe") | Some("msc") | Some("ico")
+                );
+            match harvest_one(&path, jumbo.as_ref(), extract) {
+                Ok(icon) => icons.push(icon),
+                Err(err) => log::warn!("skip {}: {err}", path.display()),
+            }
+        }
+        Ok(icons)
+    }
+
+    pub fn known_folders() -> Vec<super::KnownFolder> {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        }
+        let mut out = Vec::new();
+        push_known(&mut out, "downloads", "Downloads", &FOLDERID_Downloads);
+        if let Some(path) = screenshot_folder() {
+            out.push(super::KnownFolder {
+                id: "screenshots".into(),
+                name: "Screenshots".into(),
+                path,
+            });
+        }
+        push_known(&mut out, "documents", "Documents", &FOLDERID_Documents);
+        push_known(&mut out, "pictures", "Pictures", &FOLDERID_Pictures);
+        push_known(&mut out, "desktop", "Desktop", &FOLDERID_Desktop);
+        unsafe {
+            CoUninitialize();
+        }
+        out
+    }
+
+    fn push_known(
+        out: &mut Vec<super::KnownFolder>,
+        id: &str,
+        name: &str,
+        guid: &windows::core::GUID,
+    ) {
+        if let Ok(path) = known_folder(guid) {
+            if path.is_dir() {
+                out.push(super::KnownFolder {
+                    id: id.into(),
+                    name: name.into(),
+                    path: path.to_string_lossy().into_owned(),
+                });
+            }
+        }
+    }
+
+    fn screenshot_folder() -> Option<String> {
+        if let Ok(path) = known_folder(&FOLDERID_Screenshots) {
+            if path.is_dir() {
+                return Some(path.to_string_lossy().into_owned());
+            }
+        }
+        let pictures = known_folder(&FOLDERID_Pictures).ok()?;
+        let fallback = pictures.join("Screenshots");
+        fallback
+            .is_dir()
+            .then(|| fallback.to_string_lossy().into_owned())
+    }
+
+    pub fn pick_folder(hwnd: isize) -> Result<Option<String>, String> {
+        use windows::core::Interface;
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::System::Com::{
+            CoCreateInstance, CLSCTX_INPROC_SERVER,
+        };
+        use windows::Win32::UI::Shell::{
+            FileOpenDialog, IFileDialog, IFileOpenDialog, IModalWindow, IShellItem,
+            FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS, SIGDN_FILESYSPATH,
+        };
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        }
+        let result = (|| -> Result<Option<String>, String> {
+            unsafe {
+                let dialog: IFileOpenDialog =
+                    CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)
+                        .map_err(|err| err.to_string())?;
+                let file_dialog: IFileDialog = dialog.cast().map_err(|err| err.to_string())?;
+                let mut options = file_dialog.GetOptions().map_err(|err| err.to_string())?;
+                options |= FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM;
+                file_dialog
+                    .SetOptions(options)
+                    .map_err(|err| err.to_string())?;
+                let owner = HWND(hwnd as *mut core::ffi::c_void);
+                let modal: IModalWindow = dialog.cast().map_err(|err| err.to_string())?;
+                if modal.Show(Some(owner)).is_err() {
+                    return Ok(None);
+                }
+                let item: IShellItem = file_dialog.GetResult().map_err(|err| err.to_string())?;
+                let pwstr = item
+                    .GetDisplayName(SIGDN_FILESYSPATH)
+                    .map_err(|err| err.to_string())?;
+                let path = pwstr.to_string().map_err(|err| err.to_string())?;
+                CoTaskMemFree(Some(pwstr.0 as *const _ as *const std::ffi::c_void));
+                Ok(Some(path))
+            }
+        })();
+        unsafe {
+            CoUninitialize();
+        }
+        result
+    }
+
     pub fn open_item(path: &str) -> Result<(), String> {
         let hstring = HSTRING::from(path);
         let result = unsafe {
@@ -967,6 +1143,18 @@ mod win {
 
     pub fn list_icons() -> Result<Vec<HarvestedIcon>, String> {
         Err("desktop harvest is Windows-only".into())
+    }
+
+    pub fn list_folder(_path: &str) -> Result<Vec<HarvestedIcon>, String> {
+        Err("folder listing is Windows-only".into())
+    }
+
+    pub fn known_folders() -> Vec<super::KnownFolder> {
+        Vec::new()
+    }
+
+    pub fn pick_folder(_hwnd: isize) -> Result<Option<String>, String> {
+        Err("folder picker is Windows-only".into())
     }
 
     pub fn open_item(_path: &str) -> Result<(), String> {
@@ -1003,6 +1191,18 @@ mod win {
 
 pub fn list_icons() -> Result<Vec<HarvestedIcon>, String> {
     win::list_icons()
+}
+
+pub fn list_folder(path: &str) -> Result<Vec<HarvestedIcon>, String> {
+    win::list_folder(path)
+}
+
+pub fn known_folders() -> Vec<KnownFolder> {
+    win::known_folders()
+}
+
+pub fn pick_folder(hwnd: isize) -> Result<Option<String>, String> {
+    win::pick_folder(hwnd)
 }
 
 pub fn open_item(path: &str) -> Result<(), String> {

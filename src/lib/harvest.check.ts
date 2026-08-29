@@ -3,7 +3,7 @@
  * has to survive that merge. Run: npm run check
  */
 import assert from "node:assert/strict"
-import { mergeHarvest } from "./harvest-merge.ts"
+import { mergeHarvest, mergeLiveFolder } from "./harvest-merge.ts"
 import type { Alcove, DesktopIcon, DesktopState } from "../types.ts"
 
 const apps: Alcove = {
@@ -50,6 +50,7 @@ function state(icons: DesktopIcon[]): DesktopState {
     layoutId: "work",
     layoutSnapshots: { work: {}, home: {}, clean: {} },
     focusMode: false,
+    stripEdge: "top",
     focusedAlcoveId: "apps",
     highlightedIconId: null,
     frecency: {},
@@ -88,5 +89,68 @@ const stale = mergeHarvest(
   "inbox",
 )
 assert.equal(stale.icons[0]?.groupId, null, "a deleted group does not come back")
+
+const downloads: Alcove = {
+  ...apps,
+  id: "downloads",
+  name: "Downloads",
+  folderPath: "C:\\Users\\me\\Downloads",
+  folderView: "list",
+  groups: [{ id: "zips", name: "Zips" }],
+}
+
+const zip: DesktopIcon = {
+  id: "C:\\Users\\me\\Downloads\\a.zip",
+  name: "a.zip",
+  kind: "installer",
+  alcoveId: "downloads",
+  groupHint: "installers",
+  path: "C:\\Users\\me\\Downloads\\a.zip",
+  groupId: "zips",
+}
+
+const withLive = {
+  ...state([delphi, zip]),
+  alcoves: [apps, downloads],
+}
+
+const afterDesktop = mergeHarvest(withLive, [harvested(delphi)], "inbox")
+assert.equal(
+  afterDesktop.alcoves.find((alcove) => alcove.id === "downloads")?.folderView,
+  "list",
+  "folder view choice survives a Desktop re-read",
+)
+assert.equal(
+  afterDesktop.icons.find((icon) => icon.path === zip.path)?.groupId,
+  "zips",
+  "a live-folder drawer survives a Desktop re-read",
+)
+assert.equal(
+  afterDesktop.icons.find((icon) => icon.path === delphi.path)?.alcoveId,
+  "apps",
+)
+
+const afterLive = mergeLiveFolder(withLive, "downloads", [
+  harvested(zip),
+  {
+    id: "C:\\Users\\me\\Downloads\\b.pdf",
+    name: "b.pdf",
+    kind: "document",
+    groupHint: "documents",
+    path: "C:\\Users\\me\\Downloads\\b.pdf",
+    imageUrl: "data:image/png;base64,xx",
+  },
+])
+assert.equal(afterLive.icons.filter((icon) => icon.alcoveId === "downloads").length, 2)
+assert.equal(
+  afterLive.icons.find((icon) => icon.path === zip.path)?.groupId,
+  "zips",
+  "groups inside a live folder survive a re-read",
+)
+assert.equal(
+  afterLive.icons.find((icon) => icon.path === delphi.path)?.alcoveId,
+  "apps",
+  "Desktop icons stay put when a live folder refreshes",
+)
 
 console.log("harvest merge: all checks passed")

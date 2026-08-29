@@ -11,7 +11,7 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { DENSITY_CONFIG } from "@/lib/density"
 import { invoke, isTauri } from "@/lib/tauri"
-import type { Density, LayoutId } from "@/types"
+import type { Density, LayoutId, StripEdge } from "@/types"
 
 type SettingsDialogProps = {
   open: boolean
@@ -19,10 +19,12 @@ type SettingsDialogProps = {
   layoutId: LayoutId
   density: Density
   focusMode: boolean
+  stripEdge: StripEdge
   desktopAttached?: boolean | null
   onLayout: (id: LayoutId) => void
   onDensity: (density: Density) => void
   onFocusMode: (on: boolean) => void
+  onStripEdge: (edge: StripEdge) => void
   onCollapseAll: () => void
   onDropIncoming: () => void
   onLoadSample: () => void
@@ -86,6 +88,28 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 {DENSITY_CONFIG[density].label}
               </Button>
             ))}
+          </div>
+        </section>
+
+        <section className="flex flex-col gap-2">
+          <p className="text-xs font-medium text-muted-foreground">
+            Frequent items
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              size="sm"
+              variant={props.stripEdge === "top" ? "secondary" : "outline"}
+              onClick={() => props.onStripEdge("top")}
+            >
+              Top
+            </Button>
+            <Button
+              size="sm"
+              variant={props.stripEdge === "bottom" ? "secondary" : "outline"}
+              onClick={() => props.onStripEdge("bottom")}
+            >
+              Bottom
+            </Button>
           </div>
         </section>
 

@@ -94,6 +94,7 @@ export function defaultAlcoveGlyph(id: string, name: string): AlcoveGlyphId {
   if (/\b(videos?|movies?|films?)\b/.test(text)) return "film"
   if (/\b(code|dev|git)\b/.test(text)) return "code"
   if (/\b(downloads?)\b/.test(text)) return "download"
+  if (/\b(screenshots?|captures?)\b/.test(text)) return "camera"
   if (/\b(mail|email)\b/.test(text)) return "mail"
   if (/\b(work|clients?|jobs?|office)\b/.test(text)) return "briefcase"
   if (/\b(web|www|sites?)\b/.test(text)) return "globe"

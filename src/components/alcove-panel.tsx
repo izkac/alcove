@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AlcoveChip } from "@/components/alcove-chip"
 import { DesktopIconTile, IconContextItems } from "@/components/desktop-icon"
+import { FolderItems } from "@/components/folder-items"
+import { FolderViewSwitch } from "@/components/folder-view-switch"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -17,8 +19,10 @@ import { ALCOVE_COLOR_IDS } from "@/types"
 import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
 import { AlcoveGlyphGrid, resolveAlcoveGlyph } from "@/lib/alcove-glyphs"
 import { DENSITY_CONFIG } from "@/lib/density"
+import { folderIconSize, folderViewFor } from "@/lib/folder-view"
+import { folderLeaf } from "@/lib/harvest-merge"
 import { cn } from "@/lib/utils"
-import type { Alcove, AlcoveColor, Density, DesktopIcon } from "@/types"
+import type { Alcove, AlcoveColor, Density, DesktopIcon, FolderView } from "@/types"
 import { Inbox, Maximize2, Search } from "lucide-react"
 import type { PointerEvent } from "react"
 
@@ -44,6 +48,7 @@ type AlcovePanelProps = {
   onDropIncoming?: () => void
   onIconPointerDown?: (icon: DesktopIcon, event: PointerEvent) => void
   onExpandCanvas?: () => void
+  onFolderView?: (view: FolderView) => void
 }
 
 export function AlcovePanel(props: AlcovePanelProps) {
@@ -92,11 +97,16 @@ function ExpandedAlcove({
   onDropIncoming,
   onIconPointerDown,
   onExpandCanvas,
+  onFolderView,
 }: AlcovePanelProps) {
   const config = DENSITY_CONFIG[density]
   const [query, setQuery] = useState("")
   const styles = ALCOVE_COLOR_STYLES[alcove.color]
   const emptyInbox = alcove.isInbox && icons.length === 0
+  const itemView = alcove.folderPath ? folderViewFor(alcove) : "icons"
+  const itemSize = alcove.folderPath
+    ? folderIconSize(itemView, config.icon)
+    : config.icon
   const ctxIconRef = useRef<DesktopIcon | null>(null)
   const [menuIcon, setMenuIcon] = useState<DesktopIcon | null>(null)
   const openRef = useRef(onOpenIcon)
@@ -145,7 +155,12 @@ function ExpandedAlcove({
               ? (filtered.find((icon) => icon.id === id) ?? null)
               : null
           }}
-          style={{ width: config.panel }}
+          style={{
+            width:
+              alcove.folderPath && (itemView === "list" || itemView === "details")
+                ? Math.max(config.panel, 720)
+                : config.panel,
+          }}
           className={cn(
             "flex max-h-[min(78vh,760px)] max-w-full flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/55 shadow-2xl transition-opacity duration-200",
             styles.glow,
@@ -160,13 +175,23 @@ function ExpandedAlcove({
               className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-medium text-white"
             >
               {alcove.isInbox ? <Inbox className="size-3.5 opacity-80" /> : null}
-              <span className="truncate">{alcove.name}</span>
+              <span className="min-w-0 truncate">
+                {alcove.name}
+                {alcove.folderPath ? (
+                  <span className="ml-1.5 font-normal text-white/45">
+                    {folderLeaf(alcove.folderPath)}
+                  </span>
+                ) : null}
+              </span>
               <span className="text-xs font-normal text-white/60">
                 {query.trim()
                   ? `${filtered.length}/${icons.length}`
                   : icons.length}
               </span>
             </button>
+            {alcove.folderPath && onFolderView ? (
+              <FolderViewSwitch value={itemView} onChange={onFolderView} />
+            ) : null}
             {onExpandCanvas ? (
               <button
                 type="button"
@@ -191,12 +216,25 @@ function ExpandedAlcove({
             </div>
           )}
           <div
-            className="grid overflow-y-auto px-2 pb-3"
-            style={{
-              gridTemplateColumns: `repeat(${config.cols}, minmax(0, 1fr))`,
-              minHeight: emptyInbox ? 120 : Math.min(filtered.length, config.cols) > 0 ? rowHeight : 120,
-              maxHeight: emptyInbox ? undefined : gridMaxHeight,
-            }}
+            className={
+              alcove.folderPath
+                ? "min-h-0 overflow-y-auto px-2 pb-3"
+                : "grid overflow-y-auto px-2 pb-3"
+            }
+            style={
+              alcove.folderPath
+                ? {
+                    minHeight: 120,
+                    maxHeight: itemView === "icons" || itemView === "large"
+                      ? gridMaxHeight
+                      : Math.max(gridMaxHeight, 420),
+                  }
+                : {
+                    gridTemplateColumns: `repeat(${config.cols}, minmax(0, 1fr))`,
+                    minHeight: emptyInbox ? 120 : Math.min(filtered.length, config.cols) > 0 ? rowHeight : 120,
+                    maxHeight: emptyInbox ? undefined : gridMaxHeight,
+                  }
+            }
           >
             {emptyInbox ? (
               <div className="col-span-full flex flex-col items-center justify-center gap-2 px-4 py-6 text-center">
@@ -219,6 +257,16 @@ function ExpandedAlcove({
               <div className="col-span-full px-4 py-8 text-center text-sm text-white/70">
                 No icons match “{query.trim()}”.
               </div>
+            ) : alcove.folderPath ? (
+              <FolderItems
+                items={filtered}
+                view={itemView}
+                iconSize={itemSize}
+                highlightedIconId={highlightedIconId}
+                empty={`No icons match “${query.trim()}”.`}
+                onOpen={handleOpen}
+                onPointerDown={onIconPointerDown}
+              />
             ) : (
               filtered.map((icon) => (
                 <DesktopIconTile

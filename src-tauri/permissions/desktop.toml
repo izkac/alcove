@@ -19,6 +19,21 @@ description = "Read files and icons from the Windows Desktop folder"
 commands.allow = ["list_desktop_icons"]
 
 [[permission]]
+identifier = "allow-list-folder-icons"
+description = "Read files and icons from a chosen folder"
+commands.allow = ["list_folder_icons"]
+
+[[permission]]
+identifier = "allow-list-known-folders"
+description = "List Windows known folders such as Downloads"
+commands.allow = ["list_known_folders"]
+
+[[permission]]
+identifier = "allow-pick-folder"
+description = "Open a folder picker"
+commands.allow = ["pick_folder"]
+
+[[permission]]
 identifier = "allow-open-desktop-item"
 description = "Open a Desktop file with its default app"
 commands.allow = ["open_desktop_item"]

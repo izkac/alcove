@@ -28,6 +28,8 @@ type ShelfRailProps = {
   onRename: (alcove: Alcove) => void
   onRecolor: (alcoveId: string, color: AlcoveColor) => void
   onSetGlyph: (alcoveId: string, glyph: string) => void
+  onLinkFolder: (alcove: Alcove) => void
+  onUnlinkFolder: (alcoveId: string) => void
   onDelete: (alcoveId: string) => void
 }
 
@@ -42,6 +44,8 @@ export function ShelfRail({
   onRename,
   onRecolor,
   onSetGlyph,
+  onLinkFolder,
+  onUnlinkFolder,
   onDelete,
 }: ShelfRailProps) {
   const inbox = alcoves.find((alcove) => alcove.isInbox)
@@ -49,7 +53,7 @@ export function ShelfRail({
   const inboxCount = countFor(INBOX_ID)
 
   return (
-    <div className="flex h-full w-[76px] flex-col items-center gap-2.5 overflow-y-auto rounded-2xl border border-white/15 bg-black/40 py-3 shadow-2xl backdrop-blur-2xl">
+    <div className="flex h-full w-[76px] shrink-0 flex-col items-center gap-2.5 overflow-y-auto border-r border-white/15 bg-black/55 py-3 shadow-2xl backdrop-blur-2xl">
       {inbox ? (
         <button
           type="button"
@@ -124,6 +128,16 @@ export function ShelfRail({
                   ))}
                 </ContextMenuSubContent>
               </ContextMenuSub>
+              <ContextMenuSeparator />
+              {alcove.folderPath ? (
+                <ContextMenuItem onSelect={() => onUnlinkFolder(alcove.id)}>
+                  Stop mirroring folder
+                </ContextMenuItem>
+              ) : (
+                <ContextMenuItem onSelect={() => onLinkFolder(alcove)}>
+                  Mirror a folder…
+                </ContextMenuItem>
+              )}
               <ContextMenuSeparator />
               <ContextMenuItem
                 variant="destructive"

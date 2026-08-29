@@ -7,12 +7,13 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { cn } from "@/lib/utils"
-import type { DesktopIcon } from "@/types"
+import type { DesktopIcon, StripEdge } from "@/types"
 import { Pin } from "lucide-react"
 
 type FrequentStripProps = {
   icons: DesktopIcon[]
   keepIds: string[]
+  edge?: StripEdge
   onOpen: (icon: DesktopIcon) => void
   onToggleKeep: (iconId: string) => void
   onHide: (iconId: string) => void
@@ -20,12 +21,14 @@ type FrequentStripProps = {
 }
 
 /**
- * The things you actually open, held at the top edge. Slot order comes from the
- * caller and deliberately does not re-sort by rank — see lib/frecency.
+ * The things you actually open, held at the top or bottom edge (Settings).
+ * Slot order comes from the caller and deliberately does not re-sort by rank —
+ * see lib/frecency.
  */
 export function FrequentStrip({
   icons,
   keepIds,
+  edge = "top",
   onOpen,
   onToggleKeep,
   onHide,
@@ -35,7 +38,12 @@ export function FrequentStrip({
 
   return (
     // In flow, so the desktop below it never has to know the strip's height.
-    <div className="relative z-20 flex shrink-0 justify-center px-4 pt-3 md:px-6">
+    <div
+      className={cn(
+        "relative z-20 flex shrink-0 justify-center px-4 md:px-6",
+        edge === "bottom" ? "pt-1 pb-3" : "pt-3 pb-1",
+      )}
+    >
       <div className="flex items-end gap-1 rounded-2xl border border-white/15 bg-black/40 px-2 py-1.5 shadow-2xl backdrop-blur-2xl">
         {icons.map((icon) => {
           const kept = keepIds.includes(icon.id)

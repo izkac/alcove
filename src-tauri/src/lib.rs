@@ -34,6 +34,31 @@ fn list_desktop_icons() -> Result<Vec<harvest::HarvestedIcon>, String> {
 }
 
 #[tauri::command]
+fn list_folder_icons(path: String) -> Result<Vec<harvest::HarvestedIcon>, String> {
+    harvest::list_folder(&path)
+}
+
+#[tauri::command]
+fn list_known_folders() -> Vec<harvest::KnownFolder> {
+    harvest::known_folders()
+}
+
+#[tauri::command]
+fn pick_folder(window: WebviewWindow) -> Result<Option<String>, String> {
+    let hwnd = window
+        .hwnd()
+        .map(|handle| handle.0 as isize)
+        .map_err(|err| err.to_string())?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    window
+        .run_on_main_thread(move || {
+            let _ = tx.send(harvest::pick_folder(hwnd));
+        })
+        .map_err(|err| err.to_string())?;
+    rx.recv().map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
 fn open_desktop_item(path: String) -> Result<(), String> {
     harvest::open_item(&path)
 }
@@ -120,6 +145,9 @@ pub fn run() {
             detach_from_desktop,
             desktop_attached,
             list_desktop_icons,
+            list_folder_icons,
+            list_known_folders,
+            pick_folder,
             open_desktop_item,
             recycle_bin,
             show_recycle_bin_menu,

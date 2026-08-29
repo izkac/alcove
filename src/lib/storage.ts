@@ -1,5 +1,5 @@
 import { TOP_SLOTS } from "@/lib/frecency"
-import type { DesktopState } from "@/types"
+import { FOLDER_VIEWS, type DesktopState, type FolderView } from "@/types"
 
 const STORAGE_KEY = "alcove.desktop.v1"
 
@@ -11,6 +11,9 @@ function migrate(state: DesktopState): DesktopState {
     alcoves: state.alcoves.map((alcove) => ({
       ...alcove,
       groups: alcove.groups ?? [],
+      folderView: FOLDER_VIEWS.includes(alcove.folderView as FolderView)
+        ? alcove.folderView
+        : undefined,
     })),
     icons: state.icons.map((icon) => ({
       ...icon,
@@ -20,6 +23,7 @@ function migrate(state: DesktopState): DesktopState {
     topSlots: Array.from({ length: TOP_SLOTS }, (_, index) => slots[index] ?? null),
     topKeep: state.topKeep ?? [],
     topHide: state.topHide ?? [],
+    stripEdge: state.stripEdge === "bottom" ? "bottom" : "top",
   }
 }
 

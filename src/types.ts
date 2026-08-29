@@ -29,6 +29,12 @@ export type Density = (typeof DENSITY_IDS)[number]
 export const ALCOVE_VIEWS = ["panel", "canvas"] as const
 export type AlcoveView = (typeof ALCOVE_VIEWS)[number]
 
+export const FOLDER_VIEWS = ["icons", "large", "list", "details"] as const
+export type FolderView = (typeof FOLDER_VIEWS)[number]
+
+export const STRIP_EDGES = ["top", "bottom"] as const
+export type StripEdge = (typeof STRIP_EDGES)[number]
+
 export type DesktopIcon = {
   id: string
   name: string
@@ -60,6 +66,10 @@ export type Alcove = {
   groups?: IconGroup[]
   /** Forces an open mode; absent means pick by item count. */
   view?: AlcoveView
+  /** When set, this drawer lists that folder instead of holding Desktop items. */
+  folderPath?: string | null
+  /** Layout for a live-folder drawer. Ignored when folderPath is empty. */
+  folderView?: FolderView
 }
 
 /** One open, decayed to `at`. Score is meaningless without its timestamp. */
@@ -89,6 +99,8 @@ export type DesktopState = {
   layoutId: LayoutId
   layoutSnapshots: LayoutSnapshots
   focusMode: boolean
+  /** Frequent strip sits on this screen edge. */
+  stripEdge: StripEdge
   focusedAlcoveId: string | null
   highlightedIconId: string | null
   /** Open history behind the frequent strip, keyed by icon id. */

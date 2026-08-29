@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { PointerEvent } from "react"
 import { DesktopIconTile, IconContextItems } from "@/components/desktop-icon"
+import { FolderItems } from "@/components/folder-items"
+import { FolderViewSwitch } from "@/components/folder-view-switch"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -16,9 +18,11 @@ import { Input } from "@/components/ui/input"
 import { AlcoveGlyphGrid, AlcoveGlyphMark, resolveAlcoveGlyph } from "@/lib/alcove-glyphs"
 import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
 import { DENSITY_CONFIG } from "@/lib/density"
+import { folderIconSize, folderViewFor } from "@/lib/folder-view"
+import { folderLeaf } from "@/lib/harvest-merge"
 import { ALCOVE_COLOR_IDS } from "@/types"
 import { cn } from "@/lib/utils"
-import type { Alcove, AlcoveColor, Density, DesktopIcon, IconGroup } from "@/types"
+import type { Alcove, AlcoveColor, Density, DesktopIcon, FolderView, IconGroup } from "@/types"
 import { ChevronDown, ChevronUp, FolderPlus, Minimize2, Search, X } from "lucide-react"
 
 type AlcoveCanvasProps = {
@@ -44,6 +48,7 @@ type AlcoveCanvasProps = {
   onDeleteGroup: (groupId: string) => void
   onMoveGroup: (groupId: string, delta: number) => void
   onMoveIconToGroup: (iconId: string, groupId: string | null) => void
+  onFolderView?: (view: FolderView) => void
 }
 
 const UNGROUPED = "Everything else"
@@ -79,6 +84,7 @@ export function AlcoveCanvas({
   onDeleteGroup,
   onMoveGroup,
   onMoveIconToGroup,
+  onFolderView,
 }: AlcoveCanvasProps) {
   const [query, setQuery] = useState("")
   const config = DENSITY_CONFIG[density]
@@ -118,8 +124,23 @@ export function AlcoveCanvas({
     return { byGroup, loose }
   }, [filtered, groups])
 
+  const itemView = alcove.folderPath ? folderViewFor(alcove) : "icons"
+  const itemSize = alcove.folderPath
+    ? folderIconSize(itemView, config.icon)
+    : config.icon
+
   const grid = (items: DesktopIcon[], empty: string) =>
-    items.length === 0 ? (
+    alcove.folderPath ? (
+      <FolderItems
+        items={items}
+        view={itemView}
+        iconSize={itemSize}
+        highlightedIconId={highlightedIconId}
+        empty={empty}
+        onOpen={handleOpen}
+        onPointerDown={onIconPointerDown}
+      />
+    ) : items.length === 0 ? (
       <p className="px-1 py-3 text-xs text-white/40">{empty}</p>
     ) : (
       <div
@@ -158,6 +179,14 @@ export function AlcoveCanvas({
               <span className="ml-2 text-xs text-white/55">
                 {query.trim() ? `${filtered.length}/${icons.length}` : icons.length}
               </span>
+              {alcove.folderPath ? (
+                <span
+                  className="mt-0.5 block max-w-[28rem] truncate text-[11px] text-white/45"
+                  title={alcove.folderPath}
+                >
+                  {folderLeaf(alcove.folderPath)}
+                </span>
+              ) : null}
             </button>
           </ContextMenuTrigger>
           <ContextMenuContent>
@@ -191,6 +220,9 @@ export function AlcoveCanvas({
             className="h-8 border-white/15 bg-white/10 pr-2 pl-8 text-white placeholder:text-white/40 md:text-xs dark:bg-white/10"
           />
         </div>
+        {alcove.folderPath && onFolderView ? (
+          <FolderViewSwitch value={itemView} onChange={onFolderView} />
+        ) : null}
         <Button
           size="sm"
           variant="ghost"

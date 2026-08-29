@@ -105,10 +105,13 @@ export function IconContextItems({
           </ContextMenuSubContent>
         </ContextMenuSub>
       ) : null}
+      {!alcoves.find((alcove) => alcove.id === icon.alcoveId)?.folderPath ? (
       <ContextMenuSub>
         <ContextMenuSubTrigger>Move to</ContextMenuSubTrigger>
         <ContextMenuSubContent>
-          {alcoves.map((alcove) => (
+          {alcoves
+            .filter((alcove) => !alcove.folderPath)
+            .map((alcove) => (
             <ContextMenuItem
               key={alcove.id}
               disabled={alcove.id === icon.alcoveId}
@@ -119,9 +122,12 @@ export function IconContextItems({
           ))}
         </ContextMenuSubContent>
       </ContextMenuSub>
+      ) : null}
+      {!alcoves.find((alcove) => alcove.id === icon.alcoveId)?.folderPath ? (
       <ContextMenuItem onSelect={() => onNewAlcove(icon)}>
         New Alcove with this
       </ContextMenuItem>
+      ) : null}
     </>
   )
 }

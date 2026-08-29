@@ -8,7 +8,7 @@ import {
 import { defaultAlcoveGlyph } from "@/lib/alcove-glyphs"
 import { pageSize } from "@/lib/density"
 import { TOP_SLOTS, pruneFrecency, recordOpen, refreshSlots } from "@/lib/frecency"
-import { mergeHarvest, toDesktopIcon } from "@/lib/harvest-merge"
+import { mergeHarvest, mergeLiveFolder, toDesktopIcon } from "@/lib/harvest-merge"
 import type { HarvestedIcon } from "@/lib/harvest-merge"
 import {
   applySnapshot,
@@ -26,7 +26,9 @@ import type {
   Density,
   DesktopIcon,
   DesktopState,
+  FolderView,
   LayoutId,
+  StripEdge,
   SuggestedGroup,
 } from "@/types"
 
@@ -54,6 +56,7 @@ function onboardingState(): DesktopState {
     layoutId: "work",
     layoutSnapshots: snapshotsForAlcoves([buildInbox()]),
     focusMode: false,
+    stripEdge: "top" as const,
     focusedAlcoveId: INBOX_ID,
     highlightedIconId: null,
     ...topDefaults(),
@@ -71,6 +74,7 @@ function emptyDesktopState(): DesktopState {
     layoutId: "work",
     layoutSnapshots: snapshotsForAlcoves([inbox]),
     focusMode: false,
+    stripEdge: "top" as const,
     focusedAlcoveId: INBOX_ID,
     highlightedIconId: null,
     ...topDefaults(),
@@ -127,6 +131,44 @@ export function useAlcoveDesktop() {
       cancelled = true
     }
   }, [])
+
+  const liveKey = state.alcoves
+    .filter((alcove) => alcove.folderPath)
+    .map((alcove) => `${alcove.id}:${alcove.folderPath}`)
+    .sort()
+    .join("|")
+
+  useEffect(() => {
+    if (!isTauri() || !liveKey) return
+    let cancelled = false
+    const lives = state.alcoves.filter(
+      (alcove): alcove is Alcove & { folderPath: string } => Boolean(alcove.folderPath),
+    )
+    Promise.all(
+      lives.map((alcove) =>
+        invoke<HarvestedIcon[]>("list_folder_icons", { path: alcove.folderPath }).then(
+          (harvested) => ({ id: alcove.id, harvested }),
+        ),
+      ),
+    )
+      .then((results) => {
+        if (cancelled) return
+        setState((current) =>
+          results.reduce(
+            (next, item) => mergeLiveFolder(next, item.id, item.harvested),
+            current,
+          ),
+        )
+      })
+      .catch((error) => {
+        console.error("Could not read live folder", error)
+      })
+    return () => {
+      cancelled = true
+    }
+    // liveKey is the list of id:path pairs; alcoves is read only to fetch those paths.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveKey])
 
   const sortedAlcoves = useMemo(
     () => [...state.alcoves].sort((a, b) => a.order - b.order),
@@ -305,11 +347,13 @@ export function useAlcoveDesktop() {
       const target = current.alcoves.find((alcove) => alcove.id === alcoveId)
       if (!target || target.isInbox) return current
       const alcoves = current.alcoves.filter((alcove) => alcove.id !== alcoveId)
-      const icons = current.icons.map((icon) =>
-        icon.alcoveId === alcoveId
-          ? { ...icon, alcoveId: INBOX_ID, groupId: null }
-          : icon,
-      )
+      const icons = target.folderPath
+        ? current.icons.filter((icon) => icon.alcoveId !== alcoveId)
+        : current.icons.map((icon) =>
+            icon.alcoveId === alcoveId
+              ? { ...icon, alcoveId: INBOX_ID, groupId: null }
+              : icon,
+          )
       const strip = (snap: Record<string, boolean>) => {
         const next = { ...snap }
         delete next[alcoveId]
@@ -330,7 +374,7 @@ export function useAlcoveDesktop() {
   }, [])
 
   const createAlcove = useCallback(
-    (name: string, color: AlcoveColor, iconIds: string[] = [], glyph?: string) => {
+    (name: string, color: AlcoveColor, iconIds: string[] = [], glyph?: string, folderPath?: string | null) => {
       const id = crypto.randomUUID()
       const trimmed = name.trim() || "New Alcove"
       setState((current) => {
@@ -344,9 +388,10 @@ export function useAlcoveDesktop() {
           isInbox: false,
           order,
           page: 0,
+          folderPath: folderPath || null,
         }
         const alcoves = [...current.alcoves, alcove]
-        const iconSet = new Set(iconIds)
+        const iconSet = new Set(folderPath ? [] : iconIds)
         const icons = current.icons.map((icon) =>
           iconSet.has(icon.id) ? { ...icon, alcoveId: id } : icon,
         )
@@ -372,18 +417,54 @@ export function useAlcoveDesktop() {
     [],
   )
 
+  const setAlcoveFolder = useCallback((alcoveId: string, folderPath: string | null) => {
+    setState((current) => {
+      const target = current.alcoves.find((alcove) => alcove.id === alcoveId)
+      if (!target || target.isInbox) return current
+      const alcoves = current.alcoves.map((alcove) =>
+        alcove.id === alcoveId ? { ...alcove, folderPath } : alcove,
+      )
+      const icons = folderPath
+        ? current.icons.map((icon) =>
+            icon.alcoveId === alcoveId
+              ? { ...icon, alcoveId: INBOX_ID, groupId: null }
+              : icon,
+          )
+        : current.icons.filter((icon) => icon.alcoveId !== alcoveId)
+      return { ...current, alcoves, icons, focusedAlcoveId: alcoveId }
+    })
+  }, [])
+
+  const refreshLiveFolder = useCallback((alcoveId: string) => {
+    if (!isTauri()) return
+    const alcove = state.alcoves.find((item) => item.id === alcoveId)
+    if (!alcove?.folderPath) return
+    invoke<HarvestedIcon[]>("list_folder_icons", { path: alcove.folderPath })
+      .then((harvested) => {
+        setState((current) => mergeLiveFolder(current, alcoveId, harvested))
+      })
+      .catch((error) => {
+        console.error("Could not read live folder", error)
+      })
+  }, [state.alcoves])
+
   const moveIcon = useCallback((iconId: string, alcoveId: string) => {
-    setState((current) => ({
-      ...current,
-      icons: current.icons.map((icon) =>
-        // Groups belong to one Alcove, so leaving one drops the row.
-        icon.id === iconId ? { ...icon, alcoveId, groupId: null } : icon,
-      ),
-      focusedAlcoveId: alcoveId,
-      alcoves: current.alcoves.map((alcove) =>
-        alcove.id === alcoveId ? { ...alcove, collapsed: false } : alcove,
-      ),
-    }))
+    setState((current) => {
+      const target = current.alcoves.find((alcove) => alcove.id === alcoveId)
+      const icon = current.icons.find((item) => item.id === iconId)
+      const from = current.alcoves.find((alcove) => alcove.id === icon?.alcoveId)
+      if (target?.folderPath || from?.folderPath) return current
+      return {
+        ...current,
+        icons: current.icons.map((item) =>
+          item.id === iconId ? { ...item, alcoveId, groupId: null } : item,
+        ),
+        focusedAlcoveId: alcoveId,
+        alcoves: current.alcoves.map((alcove) =>
+          alcove.id === alcoveId ? { ...alcove, collapsed: false } : alcove,
+        ),
+      }
+    })
   }, [])
 
   const renameIcon = useCallback((iconId: string, name: string) => {
@@ -465,6 +546,15 @@ export function useAlcoveDesktop() {
       ...current,
       alcoves: current.alcoves.map((alcove) =>
         alcove.id === alcoveId ? { ...alcove, view } : alcove,
+      ),
+    }))
+  }, [])
+
+  const setFolderView = useCallback((alcoveId: string, folderView: FolderView) => {
+    setState((current) => ({
+      ...current,
+      alcoves: current.alcoves.map((alcove) =>
+        alcove.id === alcoveId ? { ...alcove, folderView } : alcove,
       ),
     }))
   }, [])
@@ -607,6 +697,10 @@ export function useAlcoveDesktop() {
     setState((current) => ({ ...current, focusMode }))
   }, [])
 
+  const setStripEdge = useCallback((stripEdge: StripEdge) => {
+    setState((current) => ({ ...current, stripEdge }))
+  }, [])
+
   const setFocusedAlcove = useCallback((alcoveId: string | null) => {
     setState((current) => ({ ...current, focusedAlcoveId: alcoveId }))
   }, [])
@@ -670,6 +764,8 @@ export function useAlcoveDesktop() {
     setAlcoveGlyph,
     deleteAlcove,
     createAlcove,
+    setAlcoveFolder,
+    refreshLiveFolder,
     moveIcon,
     renameIcon,
     togglePin,
@@ -678,6 +774,7 @@ export function useAlcoveDesktop() {
     hideFromTop,
     clearTopStrip,
     setAlcoveView,
+    setFolderView,
     createGroup,
     renameGroup,
     deleteGroup,
@@ -686,6 +783,7 @@ export function useAlcoveDesktop() {
     dropIncomingFile,
     revealIcon,
     setFocusMode,
+    setStripEdge,
     setFocusedAlcove,
     reorderAlcove,
   }
