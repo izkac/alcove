@@ -4,7 +4,8 @@
   "description": "enables the default permissions",
   "windows": [
     "main",
-    "bar"
+    "bar",
+    "search"
   ],
   "permissions": [
     "core:default",
@@ -25,6 +26,8 @@
     "allow-windows-taskbar-hidden",
     "allow-list-running-windows",
     "allow-activate-window",
-    "allow-focus-desktop"
+    "allow-focus-desktop",
+    "allow-show-search-window",
+    "allow-hide-search-window"
   ]
 }

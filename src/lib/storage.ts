@@ -1,4 +1,5 @@
 import { TOP_SLOTS } from "@/lib/frecency"
+import { migrateStripToolIds } from "@/lib/strip-tools"
 import { FOLDER_VIEWS, type DesktopState, type FolderView } from "@/types"
 
 const STORAGE_KEY = "alcove.desktop.v1"
@@ -24,6 +25,7 @@ function migrate(state: DesktopState): DesktopState {
     topKeep: state.topKeep ?? [],
     topHide: state.topHide ?? [],
     stripEdge: state.stripEdge === "bottom" ? "bottom" : "top",
+    stripToolIds: migrateStripToolIds(state.stripToolIds),
   }
 }
 

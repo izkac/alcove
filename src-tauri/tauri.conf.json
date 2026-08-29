@@ -38,6 +38,23 @@
         "skipTaskbar": true,
         "visible": false,
         "focus": false
+      },
+      {
+        "label": "search",
+        "url": "index.html?search=1",
+        "title": "Alcove Search",
+        "width": 544,
+        "height": 424,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "focus": false,
+        "center": true,
+        "backgroundColor": [0, 0, 0, 0]
       }
     ],
     "security": {

@@ -1,4 +1,5 @@
 import { IconGlyph } from "@/components/icon-glyph"
+import { StripToolGlyph } from "@/components/strip-tool-glyph"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -7,13 +8,16 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { cn } from "@/lib/utils"
+import type { StripTool } from "@/lib/strip-tools"
 import type { DesktopIcon, StripEdge } from "@/types"
 import { Pin } from "lucide-react"
 
 type FrequentStripProps = {
+  tools: StripTool[]
   icons: DesktopIcon[]
   keepIds: string[]
   edge?: StripEdge
+  onOpenTool: (tool: StripTool) => void
   onOpen: (icon: DesktopIcon) => void
   onToggleKeep: (iconId: string) => void
   onHide: (iconId: string) => void
@@ -22,19 +26,21 @@ type FrequentStripProps = {
 
 /**
  * The things you actually open, held at the top or bottom edge (Settings).
- * Slot order comes from the caller and deliberately does not re-sort by rank —
- * see lib/frecency.
+ * Pinned system tools sit on the left; slot order for apps comes from the
+ * caller and deliberately does not re-sort by rank — see lib/frecency.
  */
 export function FrequentStrip({
+  tools = [],
   icons,
   keepIds,
   edge = "top",
+  onOpenTool,
   onOpen,
   onToggleKeep,
   onHide,
   onReveal,
 }: FrequentStripProps) {
-  if (icons.length === 0) return null
+  if (tools.length === 0 && icons.length === 0) return null
 
   return (
     // In flow, so the desktop below it never has to know the strip's height.
@@ -44,7 +50,16 @@ export function FrequentStrip({
         edge === "bottom" ? "pt-1 pb-3" : "pt-3 pb-1",
       )}
     >
-      <div className="flex items-end gap-1 rounded-2xl border border-white/15 bg-black/40 px-2 py-1.5 shadow-2xl backdrop-blur-2xl">
+      <div className="flex max-w-full items-end gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-black/40 px-2 py-1.5 shadow-2xl backdrop-blur-2xl">
+        {tools.map((tool) => (
+          <ToolSlot key={tool.id} tool={tool} onOpen={onOpenTool} />
+        ))}
+        {tools.length > 0 && icons.length > 0 ? (
+          <div
+            aria-hidden
+            className="mx-1.5 mb-1 h-9 w-0.5 shrink-0 self-center rounded-full bg-white/50"
+          />
+        ) : null}
         {icons.map((icon) => {
           const kept = keepIds.includes(icon.id)
           return (
@@ -86,5 +101,37 @@ export function FrequentStrip({
         })}
       </div>
     </div>
+  )
+}
+
+function ToolSlot({
+  tool,
+  onOpen,
+}: {
+  tool: StripTool
+  onOpen: (tool: StripTool) => void
+}) {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <button
+          type="button"
+          title={tool.label}
+          onClick={() => onOpen(tool)}
+          className={cn(
+            "relative flex w-[64px] shrink-0 flex-col items-center gap-1 rounded-xl px-1 py-1.5 outline-none transition",
+            "hover:bg-white/12 focus-visible:ring-2 focus-visible:ring-white/50",
+          )}
+        >
+          <StripToolGlyph glyph={tool.glyph} size={34} />
+          <span className="w-full truncate text-center text-[10px] text-white/85">
+            {tool.label}
+          </span>
+        </button>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={() => onOpen(tool)}>Open</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }

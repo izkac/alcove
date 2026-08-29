@@ -24,6 +24,7 @@ import { INBOX_ID } from "@/data/sample"
 import type { AlcoveDesktopApi } from "@/hooks/use-alcove-desktop"
 import { useIconPointerDrag } from "@/hooks/use-icon-pointer-drag"
 import { viewFor } from "@/lib/alcove-view"
+import { DEFAULT_STRIP_TOOL_IDS, toolsForIds, type StripTool } from "@/lib/strip-tools"
 import { invoke, isTauri } from "@/lib/tauri"
 import type { AlcoveColor, DesktopIcon } from "@/types"
 
@@ -107,11 +108,13 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
         density={state.density}
         focusMode={state.focusMode}
         stripEdge={state.stripEdge}
+        stripToolIds={state.stripToolIds ?? DEFAULT_STRIP_TOOL_IDS}
         desktopAttached={desktopAttached}
         onLayout={desktop.setLayout}
         onDensity={desktop.setDensity}
         onFocusMode={desktop.setFocusMode}
         onStripEdge={desktop.setStripEdge}
+        onStripToolIds={desktop.setStripToolIds}
         onCollapseAll={() => {
           desktop.collapseAll()
           closeDrawerRef.current()
@@ -160,12 +163,20 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
   >(null)
   const [openAlcoveId, setOpenAlcoveId] = useState<string | null>(null)
 
+  const openSearch = useCallback(() => {
+    if (isTauri()) {
+      invoke("show_search_window").catch(() => setSearchOpen(true))
+      return
+    }
+    setSearchOpen(true)
+  }, [])
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       const meta = event.ctrlKey || event.metaKey
       if (meta && event.key.toLowerCase() === "f") {
         event.preventDefault()
-        setSearchOpen(true)
+        openSearch()
       }
       if (meta && event.shiftKey && event.key.toLowerCase() === "h") {
         event.preventDefault()
@@ -179,7 +190,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [desktop, onOpenCreate])
+  }, [desktop, onOpenCreate, openSearch])
 
   useEffect(() => {
     closeDrawerRef.current = () => setOpenAlcoveId(null)
@@ -203,6 +214,16 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
       return
     }
     toast(`Opened ${icon.name}`)
+  }
+
+  function openTool(tool: StripTool) {
+    if (isTauri()) {
+      invoke("open_desktop_item", { path: tool.launch, args: tool.args }).catch(() => {
+        toast(`Could not open ${tool.label}`)
+      })
+      return
+    }
+    toast(`Opened ${tool.label}`)
   }
 
   const { onPointerDown } = useIconPointerDrag((icon, target) => {
@@ -231,8 +252,10 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     state.phase === "ready" ? (
       <FrequentStrip
         edge={state.stripEdge}
+        tools={toolsForIds(state.stripToolIds)}
         icons={desktop.topIcons}
         keepIds={state.topKeep}
+        onOpenTool={openTool}
         onOpen={openIcon}
         onToggleKeep={desktop.toggleTopKeep}
         onHide={desktop.hideFromTop}
@@ -275,7 +298,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                       desktop.setFocusedAlcove(alcoveId)
                       desktop.refreshLiveFolder(alcoveId)
                     }}
-                    onSearch={() => setSearchOpen(true)}
+                    onSearch={openSearch}
                     onNewAlcove={() => onOpenCreate()}
                     onSettings={onOpenSettings}
                     onRename={(alcove) =>

@@ -162,7 +162,7 @@ export function ShelfRail({
       </button>
       <button
         type="button"
-        title="Search (Ctrl+F)"
+        title="Search (Ctrl+Space)"
         onClick={onSearch}
         className="flex size-11 items-center justify-center rounded-xl text-white/75 transition hover:bg-white/10"
       >

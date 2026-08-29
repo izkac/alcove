@@ -57,6 +57,7 @@ function state(icons: DesktopIcon[]): DesktopState {
     topSlots: [null, null, null, null, null],
     topKeep: [],
     topHide: [],
+    stripToolIds: [],
   }
 }
 
@@ -83,6 +84,20 @@ assert.equal(
 assert.equal(
   merged.icons.find((icon) => icon.path === chrome.path)?.groupId,
   "browsers",
+)
+
+const opera: DesktopIcon = {
+  ...chrome,
+  id: "C:\\Opera Browser.lnk",
+  name: "Opera Browser",
+  path: "C:\\Opera Browser.lnk",
+  groupId: "browsers",
+}
+const dropped = mergeHarvest(state([delphi, opera]), [harvested(delphi)], "inbox")
+assert.equal(
+  dropped.icons.some((icon) => icon.path === opera.path),
+  false,
+  "a Desktop shortcut that is no longer harvested is dropped",
 )
 
 const stale = mergeHarvest(

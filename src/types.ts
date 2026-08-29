@@ -115,4 +115,6 @@ export type DesktopState = {
   topKeep: string[]
   /** Icons banned from the strip. */
   topHide: string[]
+  /** System shortcuts pinned on the left of the frequent strip. */
+  stripToolIds: string[]
 }

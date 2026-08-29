@@ -18,6 +18,7 @@ import {
   suggestionsFromIcons,
 } from "@/lib/organize"
 import { loadDesktopState, saveDesktopState } from "@/lib/storage"
+import { DEFAULT_STRIP_TOOL_IDS, uniqueKnown } from "@/lib/strip-tools"
 import { invoke, isTauri } from "@/lib/tauri"
 import type {
   Alcove,
@@ -59,6 +60,7 @@ function onboardingState(): DesktopState {
     stripEdge: "top" as const,
     focusedAlcoveId: INBOX_ID,
     highlightedIconId: null,
+    stripToolIds: [...DEFAULT_STRIP_TOOL_IDS],
     ...topDefaults(),
   }
 }
@@ -77,6 +79,7 @@ function emptyDesktopState(): DesktopState {
     stripEdge: "top" as const,
     focusedAlcoveId: INBOX_ID,
     highlightedIconId: null,
+    stripToolIds: [...DEFAULT_STRIP_TOOL_IDS],
     ...topDefaults(),
   }
 }
@@ -88,6 +91,8 @@ function applyHarvest(current: DesktopState, harvested: HarvestedIcon[]): Deskto
       ...onboardingState(),
       icons: harvested.map((item) => toDesktopIcon(item, null)),
       pinIds: [],
+      stripEdge: current.stripEdge,
+      stripToolIds: current.stripToolIds,
     }
   }
   const merged = mergeHarvest(current, harvested, INBOX_ID)
@@ -701,6 +706,10 @@ export function useAlcoveDesktop() {
     setState((current) => ({ ...current, stripEdge }))
   }, [])
 
+  const setStripToolIds = useCallback((ids: string[]) => {
+    setState((current) => ({ ...current, stripToolIds: uniqueKnown(ids) }))
+  }, [])
+
   const setFocusedAlcove = useCallback((alcoveId: string | null) => {
     setState((current) => ({ ...current, focusedAlcoveId: alcoveId }))
   }, [])
@@ -784,6 +793,7 @@ export function useAlcoveDesktop() {
     revealIcon,
     setFocusMode,
     setStripEdge,
+    setStripToolIds,
     setFocusedAlcove,
     reorderAlcove,
   }

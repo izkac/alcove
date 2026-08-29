@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "check": "node src/lib/frecency.check.ts && node src/lib/harvest.check.ts && node src/lib/folder-view.check.ts",
+    "check": "node src/lib/frecency.check.ts && node src/lib/harvest.check.ts && node src/lib/folder-view.check.ts && node src/lib/strip-tools.check.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "desktop": "tauri dev"

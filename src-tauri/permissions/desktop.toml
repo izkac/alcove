@@ -87,3 +87,13 @@ commands.allow = ["activate_window"]
 identifier = "allow-focus-desktop"
 description = "Bring the Alcove desktop window to the front"
 commands.allow = ["focus_desktop"]
+
+[[permission]]
+identifier = "allow-show-search-window"
+description = "Show the always-on-top icon search overlay"
+commands.allow = ["show_search_window"]
+
+[[permission]]
+identifier = "allow-hide-search-window"
+description = "Hide the icon search overlay"
+commands.allow = ["hide_search_window"]

@@ -1,5 +1,6 @@
 mod desktop;
 mod harvest;
+mod search;
 mod taskbar;
 
 use desktop::DesktopState;
@@ -59,8 +60,8 @@ fn pick_folder(window: WebviewWindow) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-fn open_desktop_item(path: String) -> Result<(), String> {
-    harvest::open_item(&path)
+fn open_desktop_item(path: String, args: Option<String>) -> Result<(), String> {
+    harvest::open_item_with(&path, args.as_deref())
 }
 
 #[tauri::command]
@@ -136,6 +137,16 @@ fn focus_desktop(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn show_search_window(app: tauri::AppHandle) -> Result<(), String> {
+    search::show(&app)
+}
+
+#[tauri::command]
+fn hide_search_window(app: tauri::AppHandle) -> Result<(), String> {
+    search::hide(&app)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -159,6 +170,8 @@ pub fn run() {
             list_running_windows,
             activate_window,
             focus_desktop,
+            show_search_window,
+            hide_search_window,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -171,15 +184,26 @@ pub fn run() {
 
             desktop::spawn_emergency_hotkey(app.handle().clone());
             taskbar::spawn_bar_peek(app.handle().clone());
+            search::spawn_hotkey(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label() == "search" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                return;
+            }
+            if window.label() != "main" {
+                return;
+            }
             if matches!(
                 event,
                 tauri::WindowEvent::Destroyed | tauri::WindowEvent::CloseRequested { .. }
             ) {
                 let handle = window.app_handle();
-                if let Some(webview) = handle.get_webview_window(window.label()) {
+                if let Some(webview) = handle.get_webview_window("main") {
                     let state = handle.state::<DesktopState>();
                     let _ = desktop::detach(&webview, &state);
                 }

@@ -136,6 +136,12 @@
     margin: 0;
     }
 
+  html.search-window,
+  html.search-window body,
+  html.search-window #root {
+    background: transparent !important;
+    }
+
   [data-drag-source] {
     opacity: 0.4;
     }

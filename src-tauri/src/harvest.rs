@@ -45,7 +45,7 @@ mod win {
 
     use base64::Engine;
     use windows::core::{HSTRING, PCWSTR, PWSTR};
-    use windows::Win32::Foundation::SIZE;
+    use windows::Win32::Foundation::{HINSTANCE, SIZE};
     use windows::Win32::Graphics::Gdi::{
         CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, GetDIBits,
         GetObjectW, ReleaseDC, SelectObject, BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB,
@@ -59,9 +59,9 @@ mod win {
         SHCreateItemFromParsingName, SHGetFileInfoW, SHGetKnownFolderPath, SHGetStockIconInfo,
         ExtractIconExW, SHDefExtractIconW, ShellExecuteW, FOLDERID_Desktop, FOLDERID_Documents,
         FOLDERID_Downloads, FOLDERID_Pictures, FOLDERID_PublicDesktop, FOLDERID_Screenshots,
-        IShellItemImageFactory, KF_FLAG_DEFAULT, SHFILEINFOW, SHGFI_DISPLAYNAME, SHGFI_SYSICONINDEX,
-        SHGSI_SYSICONINDEX, SHSTOCKICONINFO, SIID_RECYCLER, SIID_RECYCLERFULL, SIIGBF_BIGGERSIZEOK,
-        SIIGBF_ICONONLY, SHIL_EXTRALARGE, SHIL_JUMBO,
+        IShellItem2, IShellItemImageFactory, KF_FLAG_DEFAULT, SHFILEINFOW, SHGFI_DISPLAYNAME,
+        SHGFI_SYSICONINDEX, SHGSI_SYSICONINDEX, SHSTOCKICONINFO, SIID_RECYCLER, SIID_RECYCLERFULL,
+        SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY, SHIL_EXTRALARGE, SHIL_JUMBO,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         CreatePopupMenu, DestroyIcon, DestroyMenu, DrawIconEx, GetIconInfo, TrackPopupMenu,
@@ -106,6 +106,9 @@ mod win {
         let jumbo = jumbo_list().ok();
         let mut icons = Vec::new();
         for path in paths {
+            if skip_dead_shortcut(&path) {
+                continue;
+            }
             match harvest_one(&path, jumbo.as_ref(), true) {
                 Ok(icon) => icons.push(icon),
                 Err(err) => log::warn!("skip {}: {err}", path.display()),
@@ -253,7 +256,12 @@ mod win {
     const ICON_PX: i32 = 128;
     const EXTRACT_PX: i32 = 256;
     const MIN_ICON_EDGE: u32 = 40;
-    const CACHE_TAG: &str = "q3";
+    const CACHE_TAG: &str = "q6";
+    const PKEY_APPUSERMODEL_ID: windows::Win32::Foundation::PROPERTYKEY =
+        windows::Win32::Foundation::PROPERTYKEY {
+            fmtid: windows::core::GUID::from_u128(0x9f4c2855_9f79_4b39_a8d0_e1d42de1d5f3),
+            pid: 5,
+        };
 
     fn harvest_memo() -> &'static std::sync::Mutex<Option<Vec<HarvestedIcon>>> {
         static CACHE: std::sync::OnceLock<std::sync::Mutex<Option<Vec<HarvestedIcon>>>> =
@@ -289,14 +297,27 @@ mod win {
                 return Ok(png);
             }
         }
+        if let Some(aumid) = app_user_model_id(path) {
+            if let Some(exe) = packaged_app_exe(&aumid) {
+                if let Ok(png) = private_extract_png(&exe, 0, EXTRACT_PX, MIN_ICON_EDGE) {
+                    return Ok(png);
+                }
+            }
+        }
         if let Ok(png) = imagelist_png(path, jumbo, SHIL_JUMBO as i32, MIN_ICON_EDGE) {
             return Ok(png);
         }
-        if let Ok(png) = imagelist_png(path, None, SHIL_EXTRALARGE as i32, 32) {
+        if let Ok(png) = imagelist_png(path, None, SHIL_EXTRALARGE as i32, MIN_ICON_EDGE) {
             return Ok(png);
         }
         if let Ok(png) = shell_item_png(&path.to_string_lossy(), EXTRACT_PX, MIN_ICON_EDGE) {
             return Ok(png);
+        }
+        if let Some(aumid) = app_user_model_id(path) {
+            let parsing = format!("shell:AppsFolder\\{aumid}");
+            if let Ok(png) = shell_item_png(&parsing, EXTRACT_PX, MIN_ICON_EDGE) {
+                return Ok(png);
+            }
         }
         for (file, index) in extract_targets(path) {
             if let Ok(png) = private_extract_png(&file, index, EXTRACT_PX, 0) {
@@ -358,8 +379,21 @@ mod win {
         if is_lnk {
             out.extend(shortcut_icon_files(path));
         }
-        out.push((path.to_path_buf(), 0));
+        push_extract_target(&mut out, path.to_path_buf(), 0);
         out
+    }
+
+    fn push_extract_target(out: &mut Vec<(PathBuf, i32)>, file: PathBuf, index: i32) {
+        if file.as_os_str().is_empty() {
+            return;
+        }
+        if !file.exists() {
+            return;
+        }
+        if out.iter().any(|(existing, i)| existing == &file && *i == index) {
+            return;
+        }
+        out.push((file, index));
     }
 
     fn shortcut_icon_files(path: &Path) -> Vec<(PathBuf, i32)> {
@@ -387,21 +421,182 @@ mod win {
         let mut icon_path = [0u16; 260];
         let mut icon_index = 0i32;
         if unsafe { link.GetIconLocation(&mut icon_path, &mut icon_index) }.is_ok() {
-            let file = expand_env_path(&utf16_z(&icon_path));
-            if !file.as_os_str().is_empty() {
-                out.push((file, icon_index));
-            }
+            push_extract_target(&mut out, expand_env_path(&utf16_z(&icon_path)), icon_index);
         }
         let mut target = [0u16; 260];
         if unsafe { link.GetPath(&mut target, std::ptr::null_mut(), 0) }.is_ok() {
-            let file = expand_env_path(&utf16_z(&target));
-            if !file.as_os_str().is_empty()
-                && !out.iter().any(|(existing, _)| existing == &file)
-            {
-                out.push((file, 0));
-            }
+            push_extract_target(&mut out, expand_env_path(&utf16_z(&target)), 0);
         }
         out
+    }
+
+    fn app_user_model_id(path: &Path) -> Option<String> {
+        let hstring = HSTRING::from(path.to_string_lossy().as_ref());
+        let item: IShellItem2 = unsafe { SHCreateItemFromParsingName(&hstring, None) }.ok()?;
+        let pwstr = unsafe { item.GetString(&PKEY_APPUSERMODEL_ID) }.ok()?;
+        let name = unsafe { pwstr.to_string() }.ok();
+        unsafe {
+            CoTaskMemFree(Some(pwstr.0 as *const _ as *const std::ffi::c_void));
+        }
+        name.filter(|s| !s.is_empty())
+            .or_else(|| aumid_from_lnk_file(path))
+    }
+
+    fn aumid_from_lnk_file(path: &Path) -> Option<String> {
+        let bytes = std::fs::read(path).ok()?;
+        find_aumid_utf16(&bytes).or_else(|| find_aumid_utf16(bytes.get(1..)?))
+    }
+
+    fn find_aumid_utf16(bytes: &[u8]) -> Option<String> {
+        let units: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect();
+        for (i, &unit) in units.iter().enumerate() {
+            if unit != b'!' as u16 {
+                continue;
+            }
+            let start = units[..i]
+                .iter()
+                .rposition(|&c| !(32..=126).contains(&c))
+                .map(|p| p + 1)
+                .unwrap_or(0);
+            let end = units[i + 1..]
+                .iter()
+                .position(|&c| !(32..=126).contains(&c))
+                .map(|p| i + 1 + p)
+                .unwrap_or(units.len());
+            let text = String::from_utf16_lossy(&units[start..end]);
+            if text.contains('_') && text.len() > 10 && text.len() < 256 {
+                return Some(text);
+            }
+        }
+        None
+    }
+
+    fn skip_dead_shortcut(path: &Path) -> bool {
+        path.extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("lnk"))
+            && shortcut_target_is_missing(path)
+    }
+
+    fn shortcut_target_is_missing(path: &Path) -> bool {
+        let Some(target) = shortcut_target_file(path) else {
+            return false;
+        };
+        let text = target.to_string_lossy();
+        if text.starts_with("\\\\") {
+            return false;
+        }
+        !target.exists()
+    }
+
+    fn shortcut_target_file(path: &Path) -> Option<PathBuf> {
+        let link = load_shell_link(path)?;
+        let mut target = [0u16; 260];
+        unsafe { link.GetPath(&mut target, std::ptr::null_mut(), 0) }.ok()?;
+        let file = expand_env_path(&utf16_z(&target));
+        (!file.as_os_str().is_empty()).then_some(file)
+    }
+
+    fn load_shell_link(path: &Path) -> Option<windows::Win32::UI::Shell::IShellLinkW> {
+        use windows::core::Interface;
+        use windows::Win32::System::Com::{
+            CoCreateInstance, IPersistFile, CLSCTX_INPROC_SERVER, STGM_READ,
+        };
+        use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+        let link: IShellLinkW =
+            unsafe { CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER) }.ok()?;
+        let persist: IPersistFile = link.cast().ok()?;
+        unsafe { persist.Load(&HSTRING::from(path.to_string_lossy().as_ref()), STGM_READ) }
+            .ok()?;
+        Some(link)
+    }
+
+    fn packaged_app_exe(aumid: &str) -> Option<PathBuf> {
+        if let Some(path) = apps_folder_filesystem(aumid) {
+            if path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
+            {
+                return Some(path);
+            }
+        }
+        let app_id = aumid.split('!').nth(1).unwrap_or("");
+        let dir = package_install_dir(aumid)?;
+        if app_id.is_empty() {
+            return None;
+        }
+        Some(dir.join("app").join(format!("{app_id}.exe")))
+    }
+
+    fn apps_folder_filesystem(aumid: &str) -> Option<PathBuf> {
+        use windows::Win32::UI::Shell::{IShellItem, SIGDN_FILESYSPATH};
+        let parsing = format!("shell:AppsFolder\\{aumid}");
+        let item: IShellItem =
+            unsafe { SHCreateItemFromParsingName(&HSTRING::from(parsing.as_str()), None) }.ok()?;
+        let pwstr = unsafe { item.GetDisplayName(SIGDN_FILESYSPATH) }.ok()?;
+        let text = unsafe { pwstr.to_string() }.ok();
+        unsafe {
+            CoTaskMemFree(Some(pwstr.0 as *const _ as *const std::ffi::c_void));
+        }
+        text.filter(|s| !s.is_empty()).map(PathBuf::from)
+    }
+
+    fn package_install_dir(aumid: &str) -> Option<PathBuf> {
+        use windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS};
+        use windows::Win32::Storage::Packaging::Appx::{
+            GetPackagePathByFullName, GetPackagesByPackageFamily,
+        };
+        let family = aumid.split('!').next()?.trim();
+        if family.is_empty() {
+            return None;
+        }
+        let family_h = HSTRING::from(family);
+        let mut count = 0u32;
+        let mut buffer_length = 0u32;
+        let first = unsafe {
+            GetPackagesByPackageFamily(&family_h, &mut count, None, &mut buffer_length, None)
+        };
+        if first != ERROR_INSUFFICIENT_BUFFER && first != ERROR_SUCCESS {
+            return None;
+        }
+        if count == 0 || buffer_length == 0 {
+            return None;
+        }
+        let mut names = vec![PWSTR::null(); count as usize];
+        let mut buffer = vec![0u16; buffer_length as usize];
+        let status = unsafe {
+            GetPackagesByPackageFamily(
+                &family_h,
+                &mut count,
+                Some(names.as_mut_ptr()),
+                &mut buffer_length,
+                Some(PWSTR(buffer.as_mut_ptr())),
+            )
+        };
+        if status != ERROR_SUCCESS || names.is_empty() || names[0].is_null() {
+            return None;
+        }
+        let full_name = unsafe { names[0].to_string() }.ok()?;
+        let full_h = HSTRING::from(full_name.as_str());
+        let mut path_len = 0u32;
+        let _ = unsafe { GetPackagePathByFullName(&full_h, &mut path_len, None) };
+        if path_len == 0 {
+            return None;
+        }
+        let mut path_buf = vec![0u16; path_len as usize];
+        let status = unsafe {
+            GetPackagePathByFullName(&full_h, &mut path_len, Some(PWSTR(path_buf.as_mut_ptr())))
+        };
+        if status != ERROR_SUCCESS {
+            return None;
+        }
+        let end = path_buf
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(path_buf.len());
+        Some(PathBuf::from(String::from_utf16_lossy(&path_buf[..end])))
     }
 
     fn expand_env_path(raw: &str) -> PathBuf {
@@ -915,29 +1110,146 @@ mod win {
         min_edge: u32,
     ) -> Result<Vec<u8>, String> {
         repair_alpha(&mut rgba);
+        let orig_w = width;
+        let orig_h = height;
         let (width, height, rgba) = crop_to_opaque(&rgba, width, height);
         let ink = rgba.chunks_exact(4).filter(|p| p[3] > 40).count();
         if ink < 16 {
             return Err("blank icon".into());
         }
-        if min_edge > 0 && width.min(height) < min_edge {
+        if is_washed_out(&rgba) {
+            return Err("washed-out icon".into());
+        }
+        let cropped_in = width * 2 < orig_w || height * 2 < orig_h;
+        if min_edge > 0 && width.min(height) < min_edge && !cropped_in {
             return Err(format!("icon too small ({width}x{height})"));
         }
         encode_png(width, height, &rgba)
+    }
+
+    fn pixel_at(rgba: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
+        let i = ((y * width + x) * 4) as usize;
+        [rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]]
+    }
+
+    fn color_dist(a: [u8; 4], b: [u8; 4]) -> u32 {
+        let dr = a[0] as i32 - b[0] as i32;
+        let dg = a[1] as i32 - b[1] as i32;
+        let db = a[2] as i32 - b[2] as i32;
+        let da = a[3] as i32 - b[3] as i32;
+        (dr * dr + dg * dg + db * db + da * da / 2) as u32
+    }
+
+    fn dominant_plate(rgba: &[u8], width: u32, height: u32) -> Option<[u8; 4]> {
+        if width < 8 || height < 8 {
+            return None;
+        }
+        let mut buckets: std::collections::HashMap<u16, (u32, [u32; 4])> =
+            std::collections::HashMap::new();
+        let mut opaque = 0u32;
+        for pixel in rgba.chunks_exact(4) {
+            if pixel[3] < 40 {
+                continue;
+            }
+            opaque += 1;
+            let key = (u16::from(pixel[0] >> 4) << 8)
+                | (u16::from(pixel[1] >> 4) << 4)
+                | u16::from(pixel[2] >> 4);
+            let entry = buckets.entry(key).or_insert((0, [0; 4]));
+            entry.0 += 1;
+            entry.1[0] += u32::from(pixel[0]);
+            entry.1[1] += u32::from(pixel[1]);
+            entry.1[2] += u32::from(pixel[2]);
+            entry.1[3] += u32::from(pixel[3]);
+        }
+        if opaque < 32 {
+            return None;
+        }
+        let (count, sums) = buckets.into_values().max_by_key(|(count, _)| *count)?;
+        if count * 100 / opaque < 40 {
+            return None;
+        }
+        Some([
+            (sums[0] / count) as u8,
+            (sums[1] / count) as u8,
+            (sums[2] / count) as u8,
+            (sums[3] / count) as u8,
+        ])
+    }
+
+    fn padding_swatch(rgba: &[u8], width: u32, height: u32) -> Option<[u8; 4]> {
+        if width < 8 || height < 8 {
+            return None;
+        }
+        let similar = |samples: [[u8; 4]; 4]| {
+            let first = samples[0];
+            let n = samples
+                .iter()
+                .filter(|sample| color_dist(**sample, first) < 400)
+                .count();
+            (n >= 3).then_some(first)
+        };
+        let outer = [
+            pixel_at(rgba, width, 0, 0),
+            pixel_at(rgba, width, width - 1, 0),
+            pixel_at(rgba, width, 0, height - 1),
+            pixel_at(rgba, width, width - 1, height - 1),
+        ];
+        if let Some(pad) = similar(outer) {
+            if pad[3] >= 40 {
+                return Some(pad);
+            }
+        }
+        let inset = (width.min(height) / 8).max(3);
+        let inner = [
+            pixel_at(rgba, width, inset, inset),
+            pixel_at(rgba, width, width - 1 - inset, inset),
+            pixel_at(rgba, width, inset, height - 1 - inset),
+            pixel_at(rgba, width, width - 1 - inset, height - 1 - inset),
+        ];
+        similar(inner).filter(|pad| pad[3] >= 40)
+    }
+
+    fn is_content_pixel(pixel: [u8; 4], pad: Option<[u8; 4]>) -> bool {
+        if pixel[3] < 40 {
+            return false;
+        }
+        match pad {
+            Some(pad) if pad[3] >= 40 => color_dist(pixel, pad) > 900,
+            _ => pixel[3] > 48,
+        }
+    }
+
+    fn is_washed_out(rgba: &[u8]) -> bool {
+        let mut n = 0u32;
+        let mut luma = 0u64;
+        let mut chroma = 0u64;
+        for pixel in rgba.chunks_exact(4) {
+            if pixel[3] < 40 {
+                continue;
+            }
+            n += 1;
+            let max = pixel[0].max(pixel[1]).max(pixel[2]) as u64;
+            let min = pixel[0].min(pixel[1]).min(pixel[2]) as u64;
+            luma += (pixel[0] as u64 + pixel[1] as u64 + pixel[2] as u64) / 3;
+            chroma += max - min;
+        }
+        n >= 16 && luma / u64::from(n) > 210 && chroma / u64::from(n) < 18
     }
 
     fn crop_to_opaque(rgba: &[u8], width: u32, height: u32) -> (u32, u32, Vec<u8>) {
         if width == 0 || height == 0 || rgba.len() < 4 {
             return (width, height, rgba.to_vec());
         }
-        let alpha = |x: u32, y: u32| rgba[((y * width + x) * 4 + 3) as usize];
+        let pad = dominant_plate(rgba, width, height)
+            .or_else(|| padding_swatch(rgba, width, height));
         let mut min_x = width;
         let mut min_y = height;
         let mut max_x = 0u32;
         let mut max_y = 0u32;
         for y in 0..height {
             for x in 0..width {
-                if alpha(x, y) > 48 {
+                if is_content_pixel(pixel_at(rgba, width, x, y), pad) {
                     min_x = min_x.min(x);
                     min_y = min_y.min(y);
                     max_x = max_x.max(x);
@@ -948,11 +1260,15 @@ mod win {
         if min_x > max_x {
             return (width, height, rgba.to_vec());
         }
-        let pad = ((max_x - min_x + 1).max(max_y - min_y + 1) / 16).max(2);
-        min_x = min_x.saturating_sub(pad);
-        min_y = min_y.saturating_sub(pad);
-        max_x = (max_x + pad).min(width - 1);
-        max_y = (max_y + pad).min(height - 1);
+        let margin = if pad.is_some() {
+            1
+        } else {
+            ((max_x - min_x + 1).max(max_y - min_y + 1) / 16).max(2)
+        };
+        min_x = min_x.saturating_sub(margin);
+        min_y = min_y.saturating_sub(margin);
+        max_x = (max_x + margin).min(width - 1);
+        max_y = (max_y + margin).min(height - 1);
         let crop_w = max_x - min_x + 1;
         let crop_h = max_y - min_y + 1;
         if crop_w * 8 > width * 7 && crop_h * 8 > height * 7 {
@@ -1034,6 +1350,9 @@ mod win {
                     ext.as_deref(),
                     Some("lnk") | Some("url") | Some("exe") | Some("msc") | Some("ico")
                 );
+            if skip_dead_shortcut(&path) {
+                continue;
+            }
             match harvest_one(&path, jumbo.as_ref(), extract) {
                 Ok(icon) => icons.push(icon),
                 Err(err) => log::warn!("skip {}: {err}", path.display()),
@@ -1138,22 +1457,161 @@ mod win {
         result
     }
 
-    pub fn open_item(path: &str) -> Result<(), String> {
-        let hstring = HSTRING::from(path);
-        let result = unsafe {
-            ShellExecuteW(
-                None,
-                PCWSTR::null(),
-                &hstring,
-                PCWSTR::null(),
-                PCWSTR::null(),
-                SW_SHOWNORMAL,
-            )
-        };
+    pub fn open_item_with(path: &str, args: Option<&str>) -> Result<(), String> {
+        let file = expand_env_path(path);
+        let file_text = file.to_string_lossy();
+        if file_text.is_empty() {
+            return Err("empty path".into());
+        }
+        let file_h = HSTRING::from(file_text.as_ref());
+        let args_text = args
+            .filter(|value| !value.is_empty())
+            .map(|value| expand_env_path(value).to_string_lossy().into_owned());
+        let args_h = args_text.as_ref().map(|value| HSTRING::from(value.as_str()));
+        let result = unsafe { shell_open(&file_h, args_h.as_ref()) };
         if result.0 as isize <= 32 {
             return Err(format!("could not open {path}"));
         }
         Ok(())
+    }
+
+    unsafe fn shell_open(file: &HSTRING, params: Option<&HSTRING>) -> HINSTANCE {
+        match params {
+            Some(args) => ShellExecuteW(
+                None,
+                PCWSTR::null(),
+                file,
+                args,
+                PCWSTR::null(),
+                SW_SHOWNORMAL,
+            ),
+            None => ShellExecuteW(
+                None,
+                PCWSTR::null(),
+                file,
+                PCWSTR::null(),
+                PCWSTR::null(),
+                SW_SHOWNORMAL,
+            ),
+        }
+    }
+
+    #[cfg(test)]
+    mod icon_crop_tests {
+        use super::{crop_to_opaque, is_washed_out};
+
+        fn fill(width: u32, height: u32, pixel: [u8; 4]) -> Vec<u8> {
+            pixel
+                .into_iter()
+                .cycle()
+                .take((width * height * 4) as usize)
+                .collect()
+        }
+
+        fn put(buf: &mut [u8], width: u32, x: u32, y: u32, pixel: [u8; 4]) {
+            let i = ((y * width + x) * 4) as usize;
+            buf[i..i + 4].copy_from_slice(&pixel);
+        }
+
+        #[test]
+        fn crop_strips_colored_start_tile() {
+            let width = 32;
+            let height = 32;
+            let mut rgba = fill(width, height, [0, 0, 0, 0]);
+            for y in 2..30 {
+                for x in 2..30 {
+                    put(&mut rgba, width, x, y, [0, 120, 215, 255]);
+                }
+            }
+            for y in 12..20 {
+                for x in 12..20 {
+                    put(&mut rgba, width, x, y, [255, 255, 255, 255]);
+                }
+            }
+            let (crop_w, crop_h, _) = crop_to_opaque(&rgba, width, height);
+            assert!(crop_w < 16, "cropped width {crop_w}");
+            assert!(crop_h < 16, "cropped height {crop_h}");
+        }
+
+        #[test]
+        fn crop_strips_opaque_black_jumbo_padding() {
+            let width = 32;
+            let height = 32;
+            let mut rgba = fill(width, height, [0, 0, 0, 255]);
+            for y in 10..22 {
+                for x in 10..22 {
+                    put(&mut rgba, width, x, y, [48, 48, 52, 255]);
+                }
+            }
+            let (crop_w, crop_h, _) = crop_to_opaque(&rgba, width, height);
+            assert!(crop_w < 20, "cropped width {crop_w}");
+            assert!(crop_h < 20, "cropped height {crop_h}");
+        }
+
+        #[test]
+        fn white_document_is_washed_out() {
+            let rgba = fill(16, 16, [245, 245, 245, 255]);
+            assert!(is_washed_out(&rgba));
+        }
+
+        #[test]
+        fn red_logo_is_not_washed_out() {
+            let mut rgba = fill(16, 16, [0, 0, 0, 0]);
+            for y in 4..12 {
+                for x in 4..12 {
+                    put(&mut rgba, 16, x, y, [226, 45, 64, 255]);
+                }
+            }
+            assert!(!is_washed_out(&rgba));
+        }
+
+        #[test]
+        fn problem_desktop_shortcuts_have_real_icons() {
+            use super::{
+                is_washed_out, known_folder, shortcut_target_is_missing, CoInitializeEx,
+                CoUninitialize, FOLDERID_Desktop, COINIT_APARTMENTTHREADED,
+            };
+            unsafe {
+                let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            }
+            let Ok(desktop) = known_folder(&FOLDERID_Desktop) else {
+                return;
+            };
+            let opera = desktop.join("Opera Browser.lnk");
+            if opera.exists() {
+                assert!(
+                    shortcut_target_is_missing(&opera),
+                    "Opera Browser.lnk should be treated as a dead shortcut"
+                );
+            }
+            let claude = desktop.join("Claude.lnk");
+            if claude.exists() {
+                let aumid = super::app_user_model_id(&claude);
+                let exe = aumid.as_ref().and_then(|id| super::packaged_app_exe(id));
+                let png = super::extract_fresh(&claude, None).unwrap_or_else(|err| {
+                    panic!("Claude icon (aumid={aumid:?} exe={exe:?}): {err}")
+                });
+                let decoder = png::Decoder::new(std::io::Cursor::new(&png));
+                let mut reader = decoder.read_info().expect("Claude png");
+                let mut buf = vec![0; reader.output_buffer_size()];
+                let frame = reader.next_frame(&mut buf).expect("Claude frame");
+                assert!(
+                    frame.width.min(frame.height) >= 32,
+                    "Claude is {}x{}",
+                    frame.width,
+                    frame.height
+                );
+                let rgba = &buf[..frame.buffer_size()];
+                assert!(!is_washed_out(rgba), "Claude decoded to a washed-out bitmap");
+                let whites = rgba.chunks_exact(4).filter(|pixel| {
+                    pixel[3] > 40 && pixel[0] > 200 && pixel[1] > 200 && pixel[2] > 200
+                }).count();
+                assert!(whites > 50, "Claude glyph has no light pixels ({whites})");
+            }
+            unsafe {
+                CoUninitialize();
+            }
+        }
     }
 }
 
@@ -1177,7 +1635,7 @@ mod win {
         Err("folder picker is Windows-only".into())
     }
 
-    pub fn open_item(_path: &str) -> Result<(), String> {
+    pub fn open_item_with(_path: &str, _args: Option<&str>) -> Result<(), String> {
         Err("open is Windows-only".into())
     }
 
@@ -1225,8 +1683,8 @@ pub fn pick_folder(hwnd: isize) -> Result<Option<String>, String> {
     win::pick_folder(hwnd)
 }
 
-pub fn open_item(path: &str) -> Result<(), String> {
-    win::open_item(path)
+pub fn open_item_with(path: &str, args: Option<&str>) -> Result<(), String> {
+    win::open_item_with(path, args)
 }
 
 pub fn icon_data_url(path: &std::path::Path) -> Result<String, String> {
