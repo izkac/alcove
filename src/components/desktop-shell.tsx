@@ -1,8 +1,11 @@
-import { useEffect, useState } from "react"
+import { memo, useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { AlcoveCanvas } from "@/components/alcove-canvas"
 import { AlcovePanel } from "@/components/alcove-panel"
-import { CreateAlcoveDialog } from "@/components/create-alcove-dialog"
+import {
+  CreateAlcoveDialog,
+  prefetchKnownFolders,
+} from "@/components/create-alcove-dialog"
 import { DesktopCorner } from "@/components/desktop-corner"
 import { FrequentStrip } from "@/components/frequent-strip"
 import { OnboardingDialog } from "@/components/onboarding-dialog"
@@ -29,39 +32,22 @@ type DesktopShellProps = {
 }
 
 export function DesktopShell({ desktop }: DesktopShellProps) {
-  const { state, sortedAlcoves, iconsIn } = desktop
-  const [searchOpen, setSearchOpen] = useState(false)
+  const { state } = desktop
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [createWithIcon, setCreateWithIcon] = useState<DesktopIcon | null>(null)
-  const [rename, setRename] = useState<
-    | { kind: "alcove" | "icon"; id: string; value: string }
-    | { kind: "group"; id: string; alcoveId: string; value: string }
-    | null
-  >(null)
   const [desktopAttached, setDesktopAttached] = useState<boolean | null>(null)
-  const [openAlcoveId, setOpenAlcoveId] = useState<string | null>(null)
+  const closeDrawerRef = useRef<() => void>(() => undefined)
+
+  const onOpenSettings = useCallback(() => setSettingsOpen(true), [])
+  const onOpenCreate = useCallback((icon?: DesktopIcon | null) => {
+    setCreateWithIcon(icon ?? null)
+    setCreateOpen(true)
+  }, [])
 
   useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      const meta = event.ctrlKey || event.metaKey
-      if (meta && event.key.toLowerCase() === "f") {
-        event.preventDefault()
-        setSearchOpen(true)
-      }
-      if (meta && event.shiftKey && event.key.toLowerCase() === "h") {
-        event.preventDefault()
-        desktop.collapseAll()
-        setOpenAlcoveId(null)
-      }
-      if (meta && event.key.toLowerCase() === "n") {
-        event.preventDefault()
-        setCreateOpen(true)
-      }
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [desktop])
+    prefetchKnownFolders()
+  }, [])
 
   useEffect(() => {
     if (!isTauri()) return
@@ -88,6 +74,116 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
       cancelled = true
     }
   }, [])
+
+  return (
+    <div className="relative flex h-svh min-h-0 flex-col overflow-hidden text-white">
+      <DesktopWorkspace
+        desktop={desktop}
+        closeDrawerRef={closeDrawerRef}
+        onOpenSettings={onOpenSettings}
+        onOpenCreate={onOpenCreate}
+      />
+      <CreateAlcoveDialog
+        open={createOpen}
+        seedName={createWithIcon ? createWithIcon.name.replace(/\.[^.]+$/, "") : ""}
+        onOpenChange={(open) => {
+          setCreateOpen(open)
+          if (!open) setCreateWithIcon(null)
+        }}
+        onCreate={(name, color: AlcoveColor, glyph, folderPath) => {
+          desktop.createAlcove(
+            name,
+            color,
+            folderPath ? [] : createWithIcon ? [createWithIcon.id] : [],
+            glyph,
+            folderPath,
+          )
+        }}
+      />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        layoutId={state.layoutId}
+        density={state.density}
+        focusMode={state.focusMode}
+        stripEdge={state.stripEdge}
+        desktopAttached={desktopAttached}
+        onLayout={desktop.setLayout}
+        onDensity={desktop.setDensity}
+        onFocusMode={desktop.setFocusMode}
+        onStripEdge={desktop.setStripEdge}
+        onCollapseAll={() => {
+          desktop.collapseAll()
+          closeDrawerRef.current()
+        }}
+        onDropIncoming={desktop.dropIncomingFile}
+        onLoadSample={desktop.loadSample}
+        onStartEmpty={desktop.startEmpty}
+        onToggleDesktopLayer={
+          isTauri()
+            ? async () => {
+                try {
+                  const next = desktopAttached
+                    ? await invoke<boolean>("detach_from_desktop")
+                    : await invoke<boolean>("attach_to_desktop")
+                  setDesktopAttached(next)
+                } catch (err) {
+                  toast(err instanceof Error ? err.message : String(err))
+                }
+              }
+            : undefined
+        }
+      />
+    </div>
+  )
+}
+
+type DesktopWorkspaceProps = {
+  desktop: AlcoveDesktopApi
+  closeDrawerRef: { current: () => void }
+  onOpenSettings: () => void
+  onOpenCreate: (icon?: DesktopIcon | null) => void
+}
+
+const DesktopWorkspace = memo(function DesktopWorkspace({
+  desktop,
+  closeDrawerRef,
+  onOpenSettings,
+  onOpenCreate,
+}: DesktopWorkspaceProps) {
+  const { state, sortedAlcoves, iconsIn } = desktop
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [rename, setRename] = useState<
+    | { kind: "alcove" | "icon"; id: string; value: string }
+    | { kind: "group"; id: string; alcoveId: string; value: string }
+    | null
+  >(null)
+  const [openAlcoveId, setOpenAlcoveId] = useState<string | null>(null)
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const meta = event.ctrlKey || event.metaKey
+      if (meta && event.key.toLowerCase() === "f") {
+        event.preventDefault()
+        setSearchOpen(true)
+      }
+      if (meta && event.shiftKey && event.key.toLowerCase() === "h") {
+        event.preventDefault()
+        desktop.collapseAll()
+        setOpenAlcoveId(null)
+      }
+      if (meta && event.key.toLowerCase() === "n") {
+        event.preventDefault()
+        onOpenCreate()
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [desktop, onOpenCreate])
+
+  useEffect(() => {
+    closeDrawerRef.current = () => setOpenAlcoveId(null)
+  })
 
   const onlyInbox = sortedAlcoves.length === 1 && sortedAlcoves[0]?.isInbox
   const noIcons = state.icons.length === 0
@@ -149,18 +245,18 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
     ) : null
 
   return (
-    <div className="relative flex h-svh min-h-0 flex-col overflow-hidden text-white">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       <Wallpaper />
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <main
             className="relative flex h-full min-h-0 flex-1"
             onDoubleClick={(event) => {
-              if (event.target === event.currentTarget) setCreateOpen(true)
+              if (event.target === event.currentTarget) onOpenCreate()
             }}
           >
             {emptyDesktop ? (
-              <EmptyDesktopHint onCreate={() => setCreateOpen(true)} />
+              <EmptyDesktopHint onCreate={() => onOpenCreate()} />
             ) : null}
             {state.phase === "onboarding" ? (
               <div className="relative z-10 flex min-h-0 flex-1 p-4 md:p-6">
@@ -180,8 +276,8 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
                       desktop.refreshLiveFolder(alcoveId)
                     }}
                     onSearch={() => setSearchOpen(true)}
-                    onNewAlcove={() => setCreateOpen(true)}
-                    onSettings={() => setSettingsOpen(true)}
+                    onNewAlcove={() => onOpenCreate()}
+                    onSettings={onOpenSettings}
                     onRename={(alcove) =>
                       setRename({
                         kind: "alcove",
@@ -219,7 +315,7 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
                       if (event.target === event.currentTarget) setOpenAlcoveId(null)
                     }}
                     onDoubleClick={(event) => {
-                      if (event.target === event.currentTarget) setCreateOpen(true)
+                      if (event.target === event.currentTarget) onOpenCreate()
                     }}
                   >
                     {openAlcove && openView === "canvas" ? (
@@ -248,10 +344,7 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
                         }
                         onTogglePin={desktop.togglePin}
                         onMoveIcon={desktop.moveIcon}
-                        onNewAlcoveWith={(icon) => {
-                          setCreateWithIcon(icon)
-                          setCreateOpen(true)
-                        }}
+                        onNewAlcoveWith={(icon) => onOpenCreate(icon)}
                         onIconPointerDown={onPointerDown}
                         onNewGroup={newGroup}
                         onRenameGroup={(group) =>
@@ -309,10 +402,7 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
                         }
                         onTogglePin={desktop.togglePin}
                         onMoveIcon={desktop.moveIcon}
-                        onNewAlcoveWith={(icon) => {
-                          setCreateWithIcon(icon)
-                          setCreateOpen(true)
-                        }}
+                        onNewAlcoveWith={(icon) => onOpenCreate(icon)}
                         onFocus={() => desktop.setFocusedAlcove(openAlcove.id)}
                         onDropIncoming={
                           openAlcove.isInbox ? desktop.dropIncomingFile : undefined
@@ -331,7 +421,7 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
           </main>
         </ContextMenuTrigger>
         <ContextMenuContent>
-          <ContextMenuItem onSelect={() => setCreateOpen(true)}>
+          <ContextMenuItem onSelect={() => onOpenCreate()}>
             New Alcove
           </ContextMenuItem>
           <ContextMenuItem onSelect={desktop.collapseAll}>Collapse all</ContextMenuItem>
@@ -351,23 +441,6 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
         clutterCount={state.icons.length}
         onOrganize={desktop.organize}
         onStartEmpty={desktop.startEmpty}
-      />
-      <CreateAlcoveDialog
-        open={createOpen}
-        seedName={createWithIcon ? createWithIcon.name.replace(/\.[^.]+$/, "") : ""}
-        onOpenChange={(open) => {
-          setCreateOpen(open)
-          if (!open) setCreateWithIcon(null)
-        }}
-        onCreate={(name, color: AlcoveColor, glyph, folderPath) => {
-          desktop.createAlcove(
-            name,
-            color,
-            folderPath ? [] : createWithIcon ? [createWithIcon.id] : [],
-            glyph,
-            folderPath,
-          )
-        }}
       />
       <RenameDialog
         open={rename !== null}
@@ -400,43 +473,9 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
           if (icon.alcoveId) setOpenAlcoveId(icon.alcoveId)
         }}
       />
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        layoutId={state.layoutId}
-        density={state.density}
-        focusMode={state.focusMode}
-        stripEdge={state.stripEdge}
-        desktopAttached={desktopAttached}
-        onLayout={desktop.setLayout}
-        onDensity={desktop.setDensity}
-        onFocusMode={desktop.setFocusMode}
-        onStripEdge={desktop.setStripEdge}
-        onCollapseAll={() => {
-          desktop.collapseAll()
-          setOpenAlcoveId(null)
-        }}
-        onDropIncoming={desktop.dropIncomingFile}
-        onLoadSample={desktop.loadSample}
-        onStartEmpty={desktop.startEmpty}
-        onToggleDesktopLayer={
-          isTauri()
-            ? async () => {
-                try {
-                  const next = desktopAttached
-                    ? await invoke<boolean>("detach_from_desktop")
-                    : await invoke<boolean>("attach_to_desktop")
-                  setDesktopAttached(next)
-                } catch (err) {
-                  toast(err instanceof Error ? err.message : String(err))
-                }
-              }
-            : undefined
-        }
-      />
     </div>
   )
-}
+})
 
 function Wallpaper() {
   const [background, setBackground] = useState<{

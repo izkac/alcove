@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -23,6 +23,23 @@ import type { AlcoveColor } from "@/types"
 
 type KnownFolder = { id: string; name: string; path: string }
 
+let knownFoldersCache: KnownFolder[] | null = null
+let knownFoldersLoad: Promise<KnownFolder[]> | null = null
+
+export function prefetchKnownFolders() {
+  if (!isTauri()) return
+  if (knownFoldersLoad) return
+  knownFoldersLoad = invoke<KnownFolder[]>("list_known_folders")
+    .then((folders) => {
+      knownFoldersCache = folders
+      return folders
+    })
+    .catch(() => {
+      knownFoldersCache = []
+      return [] as KnownFolder[]
+    })
+}
+
 type CreateAlcoveDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -43,31 +60,58 @@ export function CreateAlcoveDialog({
   )
   const [glyphTouched, setGlyphTouched] = useState(false)
   const [folderPath, setFolderPath] = useState<string | null>(null)
-  const [known, setKnown] = useState<KnownFolder[]>([])
+  const [known, setKnown] = useState<KnownFolder[]>(() => knownFoldersCache ?? [])
+  const glyphDelay = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (open) {
-      setName(seedName)
-      setColor("violet")
-      setGlyph(defaultAlcoveGlyph("new", seedName))
-      setGlyphTouched(false)
-      setFolderPath(null)
+    if (!isTauri()) return
+    prefetchKnownFolders()
+    if (knownFoldersCache) {
+      setKnown(knownFoldersCache)
+      return
+    }
+    void knownFoldersLoad?.then(setKnown)
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    setName(seedName)
+    setColor("violet")
+    setGlyph(defaultAlcoveGlyph("new", seedName))
+    setGlyphTouched(false)
+    setFolderPath(null)
+    if (glyphDelay.current) {
+      clearTimeout(glyphDelay.current)
+      glyphDelay.current = null
     }
   }, [open, seedName])
 
-  useEffect(() => {
-    if (!open || !isTauri()) return
-    invoke<KnownFolder[]>("list_known_folders")
-      .then(setKnown)
-      .catch(() => setKnown([]))
-  }, [open])
+  useEffect(
+    () => () => {
+      if (glyphDelay.current) clearTimeout(glyphDelay.current)
+    },
+    [],
+  )
 
-  function chooseFolder(path: string, folderName: string) {
-    setFolderPath(path)
-    if (!name.trim() || !glyphTouched) {
-      setName(folderName)
+  const chooseFolder = useCallback(
+    (path: string, folderName: string) => {
+      setFolderPath(path)
+      setName((current) => {
+        if (current.trim() && glyphTouched) return current
+        return folderName
+      })
       if (!glyphTouched) setGlyph(defaultAlcoveGlyph("new", folderName))
-    }
+    },
+    [glyphTouched],
+  )
+
+  function queueGlyphFromName(next: string) {
+    if (glyphTouched) return
+    if (glyphDelay.current) clearTimeout(glyphDelay.current)
+    glyphDelay.current = setTimeout(() => {
+      setGlyph(defaultAlcoveGlyph("new", next))
+      glyphDelay.current = null
+    }, 250)
   }
 
   async function browse() {
@@ -84,20 +128,17 @@ export function CreateAlcoveDialog({
     onOpenChange(false)
   }
 
+  const pickGlyph = useCallback((next: AlcoveGlyphId) => {
+    if (glyphDelay.current) {
+      clearTimeout(glyphDelay.current)
+      glyphDelay.current = null
+    }
+    setGlyphTouched(true)
+    setGlyph(next)
+  }, [])
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (next) {
-          setName(seedName)
-          setColor("violet")
-          setGlyph(defaultAlcoveGlyph("new", seedName))
-          setGlyphTouched(false)
-          setFolderPath(null)
-        }
-        onOpenChange(next)
-      }}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>New Alcove</DialogTitle>
@@ -116,7 +157,7 @@ export function CreateAlcoveDialog({
               onChange={(event) => {
                 const next = event.target.value
                 setName(next)
-                if (!glyphTouched) setGlyph(defaultAlcoveGlyph("new", next))
+                queueGlyphFromName(next)
               }}
               onKeyDown={(event) => {
                 if (event.key === "Enter") submit()
@@ -159,13 +200,7 @@ export function CreateAlcoveDialog({
           ) : null}
           <div className="flex flex-col gap-1.5">
             <Label>Icon</Label>
-            <AlcoveGlyphGrid
-              value={glyph}
-              onChange={(next) => {
-                setGlyphTouched(true)
-                setGlyph(next)
-              }}
-            />
+            <AlcoveGlyphGrid value={glyph} onChange={pickGlyph} />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Color</Label>

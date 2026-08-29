@@ -1,3 +1,4 @@
+import { memo } from "react"
 import type { Alcove } from "@/types"
 import { cn } from "@/lib/utils"
 import type { LucideIcon } from "lucide-react"
@@ -120,7 +121,7 @@ export function AlcoveGlyphMark({
   return <Icon className={cn("size-6", className)} strokeWidth={1.75} />
 }
 
-export function AlcoveGlyphGrid({
+export const AlcoveGlyphGrid = memo(function AlcoveGlyphGrid({
   value,
   onChange,
 }: {
@@ -153,4 +154,4 @@ export function AlcoveGlyphGrid({
       })}
     </div>
   )
-}
+})
