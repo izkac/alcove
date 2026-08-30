@@ -68,6 +68,28 @@ mod win {
         DI_NORMAL, ICONINFO, SW_SHOWNORMAL, TPM_LEFTALIGN, TPM_RETURNCMD, TPM_RIGHTBUTTON,
     };
 
+    /// Only CoUninitialize if this thread's CoInitializeEx succeeded (S_OK / S_FALSE).
+    /// RPC_E_CHANGED_MODE means someone else already owns COM here — tearing it down AVs.
+    struct ComGuard {
+        active: bool,
+    }
+
+    impl ComGuard {
+        fn new() -> Self {
+            Self {
+                active: unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.is_ok(),
+            }
+        }
+    }
+
+    impl Drop for ComGuard {
+        fn drop(&mut self) {
+            if self.active {
+                unsafe { CoUninitialize() };
+            }
+        }
+    }
+
     pub fn list_icons() -> Result<Vec<HarvestedIcon>, String> {
         let mut cache = harvest_memo()
             .lock()
@@ -75,14 +97,9 @@ mod win {
         if let Some(icons) = cache.as_ref() {
             return Ok(icons.clone());
         }
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        }
+        let _com = ComGuard::new();
         let started = std::time::Instant::now();
         let result = list_icons_inner();
-        unsafe {
-            CoUninitialize();
-        }
         if let Ok(icons) = &result {
             log::info!(
                 "harvested {} desktop icons in {}ms",
@@ -277,14 +294,8 @@ mod win {
     /// Real Windows icon for a launcher target: an `exe`/`dll`/`cpl` path with
     /// an optional `,index`, a folder, or a `shell:` namespace name.
     pub fn shell_icon(target: &str) -> Result<String, String> {
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        }
-        let result = shell_icon_inner(target);
-        unsafe {
-            CoUninitialize();
-        }
-        result
+        let _com = ComGuard::new();
+        shell_icon_inner(target)
     }
 
     fn shell_icon_inner(target: &str) -> Result<String, String> {
@@ -793,14 +804,8 @@ mod win {
     }
 
     pub fn recycle_bin() -> Result<super::RecycleBin, String> {
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        }
-        let result = recycle_bin_inner();
-        unsafe {
-            CoUninitialize();
-        }
-        result
+        let _com = ComGuard::new();
+        recycle_bin_inner()
     }
 
     fn recycle_bin_inner() -> Result<super::RecycleBin, String> {
@@ -931,9 +936,7 @@ mod win {
         use windows::Win32::UI::Shell::{
             IContextMenu, IShellItem, BHID_SFUIObject, CMF_NORMAL, CMINVOKECOMMANDINFO,
         };
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        }
+        let _com = ComGuard::new();
         let result = (|| {
             let item: IShellItem = unsafe {
                 SHCreateItemFromParsingName(&HSTRING::from("shell:RecycleBinFolder"), None)
@@ -973,9 +976,6 @@ mod win {
             }
             Ok(())
         })();
-        unsafe {
-            CoUninitialize();
-        }
         result
     }
 
@@ -1033,9 +1033,7 @@ mod win {
         if !dest_path.is_dir() {
             return Err(format!("not a folder: {}", dest_path.display()));
         }
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        }
+        let _com = ComGuard::new();
         let result = (|| -> Result<(), String> {
             let op: IFileOperation = file_op()?;
             let flags = FILEOPERATION_FLAGS(
@@ -1061,9 +1059,6 @@ mod win {
             }
             Ok(())
         })();
-        unsafe {
-            CoUninitialize();
-        }
         invalidate_icon_cache();
         result
     }
@@ -1446,14 +1441,9 @@ mod win {
         if !root.is_dir() {
             return Err(format!("not a folder: {path}"));
         }
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        }
+        let _com = ComGuard::new();
         let started = std::time::Instant::now();
         let result = list_folder_inner(&root);
-        unsafe {
-            CoUninitialize();
-        }
         if let Ok(icons) = &result {
             log::info!(
                 "listed {} items in {} ({}ms)",
@@ -1506,9 +1496,7 @@ mod win {
     }
 
     pub fn known_folders() -> Vec<super::KnownFolder> {
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        }
+        let _com = ComGuard::new();
         let mut out = Vec::new();
         push_known(&mut out, "downloads", "Downloads", &FOLDERID_Downloads);
         if let Some(path) = screenshot_folder() {
@@ -1521,9 +1509,6 @@ mod win {
         push_known(&mut out, "documents", "Documents", &FOLDERID_Documents);
         push_known(&mut out, "pictures", "Pictures", &FOLDERID_Pictures);
         push_known(&mut out, "desktop", "Desktop", &FOLDERID_Desktop);
-        unsafe {
-            CoUninitialize();
-        }
         out
     }
 
@@ -1557,19 +1542,31 @@ mod win {
             .then(|| fallback.to_string_lossy().into_owned())
     }
 
-    pub fn pick_folder(hwnd: isize) -> Result<Option<String>, String> {
+    pub fn pick_folder(_hwnd: isize) -> Result<Option<String>, String> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = std::thread::Builder::new()
+            .name("alcove-folder-picker".into())
+            .spawn(move || {
+                let _ = tx.send(pick_folder_sta());
+            })
+            .map_err(|err| err.to_string())?;
+        let picked = rx.recv().map_err(|err| err.to_string())?;
+        let _ = worker.join();
+        picked
+    }
+
+    fn pick_folder_sta() -> Result<Option<String>, String> {
         use windows::core::Interface;
-        use windows::Win32::Foundation::HWND;
-        use windows::Win32::System::Com::{
-            CoCreateInstance, CLSCTX_INPROC_SERVER,
-        };
+        use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+        use windows::Win32::System::Ole::{OleInitialize, OleUninitialize};
         use windows::Win32::UI::Shell::{
             FileOpenDialog, IFileDialog, IFileOpenDialog, IModalWindow, IShellItem,
             FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS, SIGDN_FILESYSPATH,
         };
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        }
+        // Fresh STA thread: do not parent the dialog to the WorkerW-hosted
+        // Alcove hwnd — that AVs when the shell disables the owner.
+        let ole_ok = unsafe { OleInitialize(None) }.is_ok();
+        log::info!("folder picker open");
         let result = (|| -> Result<Option<String>, String> {
             unsafe {
                 let dialog: IFileOpenDialog =
@@ -1581,9 +1578,8 @@ mod win {
                 file_dialog
                     .SetOptions(options)
                     .map_err(|err| err.to_string())?;
-                let owner = HWND(hwnd as *mut core::ffi::c_void);
                 let modal: IModalWindow = dialog.cast().map_err(|err| err.to_string())?;
-                if modal.Show(Some(owner)).is_err() {
+                if modal.Show(None).is_err() {
                     return Ok(None);
                 }
                 let item: IShellItem = file_dialog.GetResult().map_err(|err| err.to_string())?;
@@ -1595,9 +1591,17 @@ mod win {
                 Ok(Some(path))
             }
         })();
-        unsafe {
-            CoUninitialize();
+        if ole_ok {
+            unsafe { OleUninitialize() };
         }
+        log::info!(
+            "folder picker closed: {}",
+            match &result {
+                Ok(Some(path)) => path.as_str(),
+                Ok(None) => "cancelled",
+                Err(_) => "error",
+            }
+        );
         result
     }
 

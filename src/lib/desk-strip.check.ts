@@ -2,7 +2,13 @@
  * Which drawers appear on which monitor rail. Run: npm run check
  */
 import assert from "node:assert/strict"
-import { alcovesOnDesk, homeDeskId, type DeskInfo } from "./desk-strip.ts"
+import {
+  alcovesOnDesk,
+  ghostStaysHere,
+  homeDeskId,
+  type DeskHit,
+  type DeskInfo,
+} from "./desk-strip.ts"
 import type { Alcove } from "../types.ts"
 
 const left: DeskInfo = { id: "DISPLAY1", name: "Display 1", primary: true }
@@ -51,5 +57,11 @@ assert.deepEqual(
   ["inbox", "apps", "docs", "old", "new"],
   "a lone remaining monitor shows every non-inbox drawer",
 )
+
+const here: DeskHit = { id: "DISPLAY1", x: 10, y: 20 }
+const away: DeskHit = { id: "DISPLAY2", x: 40, y: 50 }
+assert.equal(ghostStaysHere(here, "DISPLAY1"), true)
+assert.equal(ghostStaysHere(away, "DISPLAY1"), false)
+assert.equal(ghostStaysHere(null, "DISPLAY1"), true)
 
 console.log("desk-strip.check ok")

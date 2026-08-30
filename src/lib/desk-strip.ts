@@ -39,7 +39,40 @@ export type DeskHoverMessage = {
   deskId: string | null
 }
 
-export type DeskChannelMessage = DeskDropMessage | DeskHoverMessage
+export type DeskDragBeginMessage = {
+  type: "icon-drag-begin"
+  iconId: string
+  name: string
+  imageUrl?: string
+}
+
+export type DeskGhostMessage = {
+  type: "icon-ghost"
+  deskId: string
+  x: number
+  y: number
+}
+
+export type DeskDragHandoffMessage = {
+  type: "icon-drag-handoff"
+}
+
+export type DeskGhostEndMessage = {
+  type: "icon-ghost-end"
+}
+
+export type DeskChannelMessage =
+  | DeskDropMessage
+  | DeskHoverMessage
+  | DeskDragBeginMessage
+  | DeskGhostMessage
+  | DeskDragHandoffMessage
+  | DeskGhostEndMessage
+
+/** The ghost lives in one webview. Paint it here only while the cursor is on this desk. */
+export function ghostStaysHere(hit: DeskHit | null, currentDeskId: string) {
+  return !hit || hit.id === currentDeskId
+}
 
 /** Unassigned or unplugged drawers sit on the primary desk until their screen returns. */
 export function homeDeskId(

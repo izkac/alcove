@@ -2,74 +2,104 @@
 
 Give every icon a home.
 
-Alcove is a Windows desktop organizer: named groups (Alcoves) that collapse to chips, page when they get full, and switch between Work / Home / Clean layouts. In the browser it is a clickable mock. As a desktop app it can pin that UI onto the real desktop, in place of Explorer’s icons.
+Alcove is a Windows desktop organizer. It replaces the loose grid of icons on your
+desktop with named groups — **Alcoves** — that open one at a time, spread across the
+desktop when they get big, and keep their own arrangement per monitor. It reads the
+real files on your Windows Desktop and opens them with the real Windows shell;
+nothing is copied or moved unless you move it.
 
-## Local home
+As a desktop app it draws itself onto the desktop in place of Explorer's icons. In a
+browser it runs as a clickable mock with sample data, which is how you develop it.
 
-On your machine this project lives at:
+## Install
 
-```text
-S:\Projects\alcove
-```
+Download `Alcove_0.1.0_x64-setup.exe` and run it. It installs for the current user,
+adds Alcove to the Start menu, and registers it to start at sign-in. You can turn
+sign-in start off in Settings; uninstalling removes it.
 
-This cloud workspace is the git repo. After you create the GitHub repository, clone it straight there (no nested extra folder):
+To build the installer yourself, see [Building](#building) below.
 
-```bat
-git clone <repo-url> S:\Projects\alcove
-cd S:\Projects\alcove
-```
+## What it does
 
-`S:\Projects\alcove\package.json` is the app.
+- **Organizes your Desktop into drawers.** On first run Alcove sorts what is already
+  on your Desktop into Apps, Documents, Photos, Folders and Installers — or you can
+  start with an empty Inbox and file things yourself.
+- **Opens one drawer at a time.** Click a drawer's tile in the rail to open it, click
+  again to close. The wallpaper stays clear the rest of the time.
+- **Grows into a canvas, not across the wallpaper.** Small drawers open as a compact
+  panel. Past twelve items a drawer opens spread across the desktop instead, where
+  you can make named rows and drag icons between them.
+- **Mirrors real folders.** Point a drawer at a folder on disk and it shows that
+  folder's live contents, with icon, list and details views and sortable columns.
+- **Learns what you open.** The frequent strip along the top or bottom edge fills
+  itself with what you actually use. Slots hold their position as ranks shift, so
+  nothing moves under your cursor mid-click.
+- **Gives each monitor its own desk.** Drawers belong to a screen, and you can move
+  them between screens. The layout is saved per desk.
+- **Keeps Windows working.** Running apps stay on the Windows taskbar, files open
+  with their real shell associations, and the Recycle Bin behaves like the Recycle
+  Bin. Alcove organizes the desktop; it does not replace Explorer.
 
-## Run
+Full instructions are in the [User Guide](docs/user-guide.md).
 
-Browser:
+## Running from source
+
+Requires Node.js. The desktop app additionally needs
+[Rust](https://www.rust-lang.org/tools/install) and the MSVC Build Tools.
+
+Browser mock — sample data, no Windows integration:
 
 ```bat
 npm install
 npm run dev
 ```
 
-The dev server binds to [http://127.0.0.1:43147](http://127.0.0.1:43147).
+Vite serves it at http://127.0.0.1:43147.
 
-Desktop window (Tauri — needs [Rust](https://www.rust-lang.org/tools/install) and the MSVC Build Tools on Windows):
+Desktop app — the real thing, against your real Desktop:
 
 ```bat
 npm run desktop
 ```
 
-That starts Vite and covers the real desktop with the Alcove UI (Explorer icons are hidden; the Windows taskbar stays). Do not run `npm run dev` at the same time — they share port 43147.
+This covers the desktop with the Alcove UI and hides Explorer's icons. The Windows
+taskbar stays. Do not run `npm run dev` at the same time; they share port 43147.
 
-Alcove menu: **Show as a window** pops it back out. **Use as the desktop** pins it again. If icons vanish and the app is stuck, press **Ctrl+Shift+F12**, or restart Explorer.
+If icons vanish and the app is stuck, press **Ctrl+Shift+F12** to release the
+desktop, or restart Explorer.
 
-This uses the files on your Windows Desktop, with the same icons Explorer shows.
-
-To ship an installer:
+## Building
 
 ```bat
 npm run installer
 ```
 
-That builds a current-user NSIS setup at `src-tauri\target\release\bundle\nsis\`. The installer puts Alcove in the Start menu and registers it to start when this user signs in. The window stays hidden until it already covers the desktop, so it does not pop in small and then stretch. Settings can turn sign-in start off; uninstall removes it.
+Produces a current-user NSIS installer at
+`src-tauri\target\release\bundle\nsis\`. The window stays hidden until it already
+covers the desktop, so it does not appear small and then stretch.
 
-## What you can do
+## Where your settings live
 
-- **Organize** Desktop files into Apps, Documents, Photos, Folders, Installers, and Shortcuts — or start with an empty Inbox
-- **Drag** icons between Alcoves (drop on the wallpaper to send them to Inbox)
-- **Collapse** an Alcove to a chip; hover to peek; click to expand. Neighbors reflow
-- **Page** through overflow instead of growing across the wallpaper
-- **Frequent strip** at the top edge fills itself with what you actually open. Slots hold their position as ranks shift, so nothing moves under your cursor; right-click one to keep it in place or ban it
-- **Spread a drawer across the desktop** — drawers over 12 items open as a full canvas, where you can make named groups that render as rows. Drag icons between rows; anything uncurated stays in "Everything else"
-- Switch **Work / Home / Clean** layouts, density, and focus mode
-- **Search** with Ctrl+F (or Cmd+F)
-- **Pin rail** for a few icons that never collapse
-- **Collapse all** with Ctrl+Shift+H; **New Alcove** with Ctrl+N
+Layout, drawers, pins and preferences are written to
+`%APPDATA%\com.alcove.desktop\desktop.json`. Deleting that file resets Alcove to a
+fresh desktop; it never touches your files.
 
-The Alcove menu on the taskbar can drop a new file, reload the sample desktop, or reset to an empty Inbox.
+## Development
+
+```bat
+npm run check    # assert-based checks for the pure logic modules
+npm run lint     # oxlint
+npm run build    # tsc -b && vite build
+```
+
+`npm run check` runs the `*.check.ts` files next to the modules they cover. Logic
+with a branch or a rule in it is expected to leave one of these behind.
 
 ## Stack
 
-Vite, React, TypeScript, Tailwind CSS, shadcn/ui, and Tauri. On Windows the app hides Explorer’s icon list and covers the work area with the same UI you see in the browser.
+Vite, React, TypeScript, Tailwind CSS, shadcn/ui, and Tauri 2. The Windows
+integration — harvesting Desktop icons, extracting shell icons, the Recycle Bin,
+the taskbar, desktop attachment — is Rust in `src-tauri/`.
 
 ## Not in this slice
 

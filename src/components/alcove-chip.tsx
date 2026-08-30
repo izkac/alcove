@@ -7,6 +7,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
+import { formatByteSize } from "@/lib/folder-view"
+import { largestIcon, totalByteSize } from "@/lib/weight"
 import { cn } from "@/lib/utils"
 import type { Alcove, DesktopIcon } from "@/types"
 
@@ -28,6 +30,8 @@ export function AlcoveChip({
   const [open, setOpen] = useState(false)
   const styles = ALCOVE_COLOR_STYLES[alcove.color]
   const preview = icons.slice(0, 8)
+  const bytes = totalByteSize(icons)
+  const largest = largestIcon(icons)
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -89,6 +93,23 @@ export function AlcoveChip({
           <p className="mt-2 text-xs text-white/50">
             +{icons.length - preview.length} more
           </p>
+        ) : null}
+        {bytes > 0 ? (
+          <div className="mt-2.5 flex flex-col gap-0.5 border-t border-white/12 pt-2.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[11px] text-white/55">
+                {icons.length} {icons.length === 1 ? "item" : "items"}
+              </span>
+              <span className="text-xs font-medium text-amber-200/85">
+                {formatByteSize(bytes)}
+              </span>
+            </div>
+            {largest ? (
+              <p className="truncate text-[11px] text-white/45">
+                Largest · {largest.name} · {formatByteSize(largest.byteSize)}
+              </p>
+            ) : null}
+          </div>
         ) : null}
       </PopoverContent>
     </Popover>

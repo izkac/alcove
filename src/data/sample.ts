@@ -4,7 +4,7 @@ type SampleIcon = Omit<DesktopIcon, "alcoveId">
 
 export const INBOX_ID = "inbox"
 
-export const SAMPLE_ICONS: SampleIcon[] = [
+const SAMPLE_FILES: SampleIcon[] = [
   { id: "chrome", name: "Google Chrome", kind: "app", groupHint: "apps" },
   { id: "vscode", name: "Visual Studio Code", kind: "app", groupHint: "apps" },
   { id: "slack", name: "Slack", kind: "app", groupHint: "apps" },
@@ -169,6 +169,37 @@ export const SAMPLE_ICONS: SampleIcon[] = [
     groupHint: "shortcuts",
   },
 ]
+
+/**
+ * Weights for the mock. On Windows these come from the file on disk; apps,
+ * shortcuts and folders stay unsized there too, so they stay unsized here.
+ */
+const MOCK_BYTE_SIZES: Record<string, number> = {
+  proposal: 2_400_000,
+  contract: 84_000,
+  timeline: 320_000,
+  budget: 512_000,
+  notes: 46_000,
+  readme: 2_100,
+  invoice: 240_000,
+  spec: 18_000,
+  roadmap: 6_800_000,
+  tax: 1_200_000,
+  vacation: 4_600_000,
+  dsc: 8_900_000,
+  family: 2_300_000,
+  sunset: 1_400_000,
+  "chrome-setup": 96_000_000,
+  "node-msi": 78_000_000,
+  "alcove-zip": 12_000_000,
+  "steam-setup": 2_800_000,
+  "git-setup": 68_000_000,
+}
+
+export const SAMPLE_ICONS: SampleIcon[] = SAMPLE_FILES.map((icon) => {
+  const byteSize = MOCK_BYTE_SIZES[icon.id]
+  return byteSize ? { ...icon, byteSize } : icon
+})
 
 export const SUGGESTED_GROUP_META: {
   id: string

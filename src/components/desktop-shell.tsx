@@ -27,11 +27,13 @@ import {
   resolveTarget,
   useAlcoveStripDrag,
   useIconPointerDrag,
+  type IconDropTarget,
 } from "@/hooks/use-icon-pointer-drag"
 import { viewFor } from "@/lib/alcove-view"
 import { alcovesOnDesk, deskChannel, type DeskChannelMessage } from "@/lib/desk-strip"
 import { DEFAULT_STRIP_TOOL_IDS, toolsForIds, type StripTool } from "@/lib/strip-tools"
 import { invoke, isTauri } from "@/lib/tauri"
+import { disproportionateId, totalByteSize } from "@/lib/weight"
 import type { Alcove, AlcoveColor, DesktopIcon } from "@/types"
 
 type DesktopShellProps = {
@@ -251,6 +253,12 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     : null
   const openIcons = openAlcove ? iconsIn(openAlcove.id) : []
   const openView = openAlcove ? viewFor(openAlcove, openIcons.length) : "panel"
+  const heavyAlcoveId = disproportionateId(
+    deskAlcoves.map((alcove) => ({
+      id: alcove.id,
+      bytes: totalByteSize(iconsIn(alcove.id)),
+    })),
+  )
 
   function openIcon(icon: DesktopIcon) {
     desktop.noteOpen(icon.id)
@@ -321,8 +329,8 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     return () => window.removeEventListener("keydown", onKey)
   }, [desktop, openAlcove, state.icons])
 
-  const { onPointerDown } = useIconPointerDrag(
-    (icon, target) => {
+  const applyDrop = useCallback(
+    (icon: DesktopIcon, target: IconDropTarget) => {
       if (target.kind === "group") {
         desktop.moveIconToGroup(icon.id, target.alcoveId, target.groupId)
         return
@@ -337,6 +345,19 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
       }
       desktop.moveIcon(icon.id, INBOX_ID)
     },
+    [desktop, state.pinIds],
+  )
+
+  const dropIconAt = useCallback(
+    (icon: DesktopIcon, x: number, y: number) => {
+      applyDrop(icon, resolveTarget(x, y).target)
+    },
+    [applyDrop],
+  )
+
+  const { onPointerDown } = useIconPointerDrag(
+    desk.id,
+    applyDrop,
     (icon, hit) => {
       if (hit.id === desk.id) return false
       const channel = deskChannel()
@@ -349,6 +370,10 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
       } satisfies DeskChannelMessage)
       channel?.close()
       return true
+    },
+    (iconId, x, y) => {
+      const icon = state.icons.find((item) => item.id === iconId)
+      if (icon) dropIconAt(icon, x, y)
     },
   )
 
@@ -366,27 +391,14 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
       if (data.type !== "icon-drop" || data.deskId !== desk.id) return
       const icon = state.icons.find((item) => item.id === data.iconId)
       if (!icon) return
-      const target = resolveTarget(data.x, data.y).target
-      if (target.kind === "group") {
-        desktop.moveIconToGroup(icon.id, target.alcoveId, target.groupId)
-        return
-      }
-      if (target.kind === "alcove") {
-        desktop.moveIcon(icon.id, target.id)
-        return
-      }
-      if (target.kind === "pin") {
-        if (!state.pinIds.includes(icon.id)) desktop.togglePin(icon.id)
-        return
-      }
-      desktop.moveIcon(icon.id, INBOX_ID)
+      dropIconAt(icon, data.x, data.y)
     }
     channel.addEventListener("message", onMessage)
     return () => {
       channel.removeEventListener("message", onMessage)
       channel.close()
     }
-  }, [desk.id, desktop, state.icons, state.pinIds])
+  }, [desk.id, dropIconAt, state.icons])
 
   function newGroup() {
     if (!openAlcove) return
@@ -436,6 +448,8 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                 <ShelfRail
                     alcoves={deskAlcoves}
                     countFor={(alcoveId) => iconsIn(alcoveId).length}
+                    sizeFor={(alcoveId) => totalByteSize(iconsIn(alcoveId))}
+                    heavyAlcoveId={heavyAlcoveId}
                     openAlcoveId={openAlcoveId}
                     desks={desks}
                     deskId={desk.id}

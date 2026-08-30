@@ -13,6 +13,7 @@ import { AlcoveGlyphGrid, AlcoveGlyphMark, resolveAlcoveGlyph } from "@/lib/alco
 import { ALCOVE_COLOR_IDS } from "@/types"
 import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
 import { INBOX_ID } from "@/data/sample"
+import { formatByteSize } from "@/lib/folder-view"
 import { cn } from "@/lib/utils"
 import type { Alcove, AlcoveColor } from "@/types"
 import type { DeskInfo } from "@/lib/desk-strip"
@@ -22,6 +23,10 @@ import type { PointerEvent as ReactPointerEvent } from "react"
 type ShelfRailProps = {
   alcoves: Alcove[]
   countFor: (alcoveId: string) => number
+  /** Bytes held by an Alcove. Shown under the name; 0 hides the line. */
+  sizeFor: (alcoveId: string) => number
+  /** The one Alcove that outweighs the rest — its size is tinted. */
+  heavyAlcoveId?: string | null
   openAlcoveId: string | null
   onSelect: (alcoveId: string) => void
   onSearch: () => void
@@ -44,6 +49,8 @@ type ShelfRailProps = {
 export function ShelfRail({
   alcoves,
   countFor,
+  sizeFor,
+  heavyAlcoveId,
   openAlcoveId,
   onSelect,
   onSearch,
@@ -108,6 +115,7 @@ export function ShelfRail({
         const styles = ALCOVE_COLOR_STYLES[alcove.color]
         const active = openAlcoveId === alcove.id
         const glyph = resolveAlcoveGlyph(alcove)
+        const bytes = sizeFor(alcove.id)
         return (
           <ContextMenu key={alcove.id}>
             <ContextMenuTrigger asChild>
@@ -134,6 +142,18 @@ export function ShelfRail({
                 <span className="max-w-[68px] truncate text-[9px] text-white/60">
                   {alcove.name} · {countFor(alcove.id)}
                 </span>
+                {bytes > 0 ? (
+                  <span
+                    className={cn(
+                      "max-w-[68px] truncate text-[9px]",
+                      heavyAlcoveId === alcove.id
+                        ? "text-amber-200/85"
+                        : "text-white/40",
+                    )}
+                  >
+                    {formatByteSize(bytes)}
+                  </span>
+                ) : null}
               </button>
             </ContextMenuTrigger>
             <ContextMenuContent className="w-56">

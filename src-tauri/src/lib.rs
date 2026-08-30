@@ -52,18 +52,8 @@ fn list_known_folders() -> Vec<harvest::KnownFolder> {
 }
 
 #[tauri::command]
-fn pick_folder(window: WebviewWindow) -> Result<Option<String>, String> {
-    let hwnd = window
-        .hwnd()
-        .map(|handle| handle.0 as isize)
-        .map_err(|err| err.to_string())?;
-    let (tx, rx) = std::sync::mpsc::channel();
-    window
-        .run_on_main_thread(move || {
-            let _ = tx.send(harvest::pick_folder(hwnd));
-        })
-        .map_err(|err| err.to_string())?;
-    rx.recv().map_err(|err| err.to_string())?
+fn pick_folder(_window: WebviewWindow) -> Result<Option<String>, String> {
+    harvest::pick_folder(0)
 }
 
 #[tauri::command]
