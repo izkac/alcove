@@ -10,7 +10,8 @@
     "check": "node src/lib/frecency.check.ts && node src/lib/harvest.check.ts && node src/lib/folder-view.check.ts && node src/lib/strip-tools.check.ts",
     "preview": "vite preview",
     "tauri": "tauri",
-    "desktop": "tauri dev"
+    "desktop": "tauri dev",
+    "installer": "tauri build --bundles nsis"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

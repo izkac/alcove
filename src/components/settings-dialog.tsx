@@ -47,11 +47,15 @@ const LAYOUTS: { id: LayoutId; label: string }[] = [
 
 export function SettingsDialog(props: SettingsDialogProps) {
   const [winTaskbarHidden, setWinTaskbarHidden] = useState(false)
+  const [autostartOn, setAutostartOn] = useState(false)
 
   useEffect(() => {
     if (!props.open || !isTauri()) return
     invoke<boolean>("windows_taskbar_hidden")
       .then(setWinTaskbarHidden)
+      .catch(() => undefined)
+    invoke<boolean>("autostart_enabled")
+      .then(setAutostartOn)
       .catch(() => undefined)
   }, [props.open])
 
@@ -183,6 +187,33 @@ export function SettingsDialog(props: SettingsDialogProps) {
                   {props.desktopAttached
                     ? "Show as a window"
                     : "Use as the desktop"}
+                </Button>
+              ) : null}
+              {isTauri() ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="justify-start"
+                  onClick={() => {
+                    invoke<boolean>("set_autostart", {
+                      enabled: !autostartOn,
+                    })
+                      .then((on) => {
+                        setAutostartOn(on)
+                        toast(
+                          on
+                            ? "Alcove will start when you sign in"
+                            : "Alcove will not start at sign-in",
+                        )
+                      })
+                      .catch((err) => {
+                        toast(err instanceof Error ? err.message : String(err))
+                      })
+                  }}
+                >
+                  {autostartOn
+                    ? "Stop starting when I sign in"
+                    : "Start when I sign in to Windows"}
                 </Button>
               ) : null}
               {isTauri() ? (

@@ -23,7 +23,7 @@ import { folderIconSize, folderViewFor } from "@/lib/folder-view"
 import { folderLeaf } from "@/lib/harvest-merge"
 import { cn } from "@/lib/utils"
 import type { Alcove, AlcoveColor, Density, DesktopIcon, FolderView } from "@/types"
-import { Inbox, Maximize2, Search } from "lucide-react"
+import { Inbox, Maximize2, Pencil, Search, Trash2 } from "lucide-react"
 import type { PointerEvent } from "react"
 
 type AlcovePanelProps = {
@@ -35,7 +35,7 @@ type AlcovePanelProps = {
   highlightedIconId: string | null
   dimmed?: boolean
   onToggle: () => void
-  onRename: () => void
+  onEdit: () => void
   onRecolor: (color: AlcoveColor) => void
   onSetGlyph: (glyph: string) => void
   onDelete: () => void
@@ -84,7 +84,7 @@ function ExpandedAlcove({
   highlightedIconId,
   dimmed,
   onToggle,
-  onRename,
+  onEdit,
   onRecolor,
   onSetGlyph,
   onDelete,
@@ -191,6 +191,24 @@ function ExpandedAlcove({
                   : icons.length}
               </span>
             </button>
+            <button
+              type="button"
+              title="Edit Alcove"
+              onClick={onEdit}
+              className="flex size-7 items-center justify-center rounded-lg text-white/55 transition hover:bg-white/10 hover:text-white"
+            >
+              <Pencil className="size-3.5" />
+            </button>
+            {!alcove.isInbox ? (
+              <button
+                type="button"
+                title="Delete Alcove"
+                onClick={onDelete}
+                className="flex size-7 items-center justify-center rounded-lg text-white/55 transition hover:bg-white/10 hover:text-red-300"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            ) : null}
             {alcove.folderPath && onFolderView ? (
               <FolderViewSwitch value={itemView} onChange={onFolderView} />
             ) : null}
@@ -299,7 +317,7 @@ function ExpandedAlcove({
         ) : (
           <>
             <ContextMenuItem onSelect={onToggle}>Collapse to chip</ContextMenuItem>
-            <ContextMenuItem onSelect={onRename}>Rename</ContextMenuItem>
+            <ContextMenuItem onSelect={onEdit}>Edit…</ContextMenuItem>
             {!alcove.isInbox ? (
               <ContextMenuSub>
                 <ContextMenuSubTrigger>Icon</ContextMenuSubTrigger>

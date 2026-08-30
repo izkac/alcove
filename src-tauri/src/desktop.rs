@@ -126,7 +126,7 @@ mod win {
         Ok(info.rcWork)
     }
 
-    fn cover_work_area(window: &WebviewWindow, hwnd: HWND) -> Result<(), String> {
+    fn cover_work_area(window: &WebviewWindow, hwnd: HWND, show: bool) -> Result<(), String> {
         let area = unsafe { work_area_for(hwnd)? };
         let width = (area.right - area.left).max(800) as u32;
         let height = (area.bottom - area.top).max(500) as u32;
@@ -136,6 +136,10 @@ mod win {
         window
             .set_size(tauri::PhysicalSize::new(width, height))
             .map_err(|err| err.to_string())?;
+        let mut flags = SWP_NOACTIVATE;
+        if show {
+            flags |= SWP_SHOWWINDOW;
+        }
         unsafe {
             let _ = SetWindowPos(
                 hwnd,
@@ -144,7 +148,7 @@ mod win {
                 area.top,
                 area.right - area.left,
                 area.bottom - area.top,
-                SWP_SHOWWINDOW | SWP_NOACTIVATE,
+                flags,
             );
         }
         Ok(())
@@ -257,35 +261,60 @@ mod win {
         raise_over_wallpaper(hwnd);
     }
 
-    pub fn attach(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
-        let mut inner = state.inner.lock().map_err(|err| err.to_string())?;
-        if inner.attached {
-            return Ok(());
-        }
-
-        let hwnd = window_hwnd(window)?;
-        let shell = unsafe { find_shell()? };
-
+    fn apply_desktop_chrome(window: &WebviewWindow) -> Result<(), String> {
         window.set_decorations(false).map_err(|err| err.to_string())?;
         window.set_skip_taskbar(true).map_err(|err| err.to_string())?;
         let _ = window.set_shadow(false);
         let _ = window.set_resizable(false);
+        Ok(())
+    }
 
-        // Stay a normal top-level window so WebView2 can paint. Cover the
-        // work area (screen minus the taskbar) and hide Explorer's icons.
-        // Size through Tauri so the webview controller tracks the HWND.
-        // Do not parent into WorkerW — that sits behind the wallpaper.
-        cover_work_area(window, hwnd)?;
-        unsafe {
-            let _ = ShowWindow(shell.def_view, SW_HIDE);
+    /// Size the (still hidden) window to the work area. Explorer icons stay
+    /// until `reveal` so the user never sees a blank wallpaper gap.
+    pub fn prepare(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
+        let mut inner = state.inner.lock().map_err(|err| err.to_string())?;
+        if inner.attached {
+            return Ok(());
         }
-        let _ = window.show();
-
+        let hwnd = window_hwnd(window)?;
+        let shell = unsafe { find_shell()? };
+        apply_desktop_chrome(window)?;
+        cover_work_area(window, hwnd, false)?;
         inner.attached = true;
         inner.def_view = Some(hwnd_ptr(shell.def_view));
         inner.hwnd = Some(hwnd_ptr(hwnd));
-        log::info!("Alcove covering the desktop work area");
+        log::info!("Alcove sized to the work area (still hidden)");
         Ok(())
+    }
+
+    fn reveal(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
+        let def_view = state.inner.lock().map_err(|err| err.to_string())?.def_view;
+        hide_def_view(def_view);
+        let hwnd = window_hwnd(window)?;
+        cover_work_area(window, hwnd, true)?;
+        window.show().map_err(|err| err.to_string())?;
+        Ok(())
+    }
+
+    pub fn attach(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
+        let mut last = "could not find the desktop icon list".to_string();
+        for attempt in 0..25 {
+            match prepare(window, state) {
+                Ok(()) => {
+                    reveal(window, state)?;
+                    log::info!("Alcove covering the desktop work area");
+                    return Ok(());
+                }
+                Err(err) => {
+                    last = err;
+                    if attempt == 24 {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
+        }
+        Err(last)
     }
 
     pub fn recover(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
@@ -294,7 +323,7 @@ mod win {
             return Ok(());
         }
         let hwnd = window_hwnd(window)?;
-        cover_work_area(window, hwnd)
+        cover_work_area(window, hwnd, true)
     }
 
     pub fn detach(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
@@ -386,6 +415,10 @@ mod win {
         Err("desktop attach is Windows-only".into())
     }
 
+    pub fn prepare(_window: &WebviewWindow, _state: &super::DesktopState) -> Result<(), String> {
+        Ok(())
+    }
+
     pub fn detach(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
         let mut inner = state.inner.lock().map_err(|err| err.to_string())?;
         inner.attached = false;
@@ -419,7 +452,13 @@ impl DesktopState {
 }
 
 pub fn attach(window: &WebviewWindow, state: &DesktopState) -> Result<(), String> {
-    win::attach(window, state)
+    win::attach(window, state)?;
+    crate::autostart::enable_unless_opted_out();
+    Ok(())
+}
+
+pub fn prepare(window: &WebviewWindow, state: &DesktopState) -> Result<(), String> {
+    win::prepare(window, state)
 }
 
 pub fn detach(window: &WebviewWindow, state: &DesktopState) -> Result<(), String> {

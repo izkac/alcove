@@ -25,7 +25,7 @@ type ShelfRailProps = {
   onSearch: () => void
   onNewAlcove: () => void
   onSettings: () => void
-  onRename: (alcove: Alcove) => void
+  onEdit: (alcove: Alcove) => void
   onRecolor: (alcoveId: string, color: AlcoveColor) => void
   onSetGlyph: (alcoveId: string, glyph: string) => void
   onLinkFolder: (alcove: Alcove) => void
@@ -41,7 +41,7 @@ export function ShelfRail({
   onSearch,
   onNewAlcove,
   onSettings,
-  onRename,
+  onEdit,
   onRecolor,
   onSetGlyph,
   onLinkFolder,
@@ -55,23 +55,30 @@ export function ShelfRail({
   return (
     <div className="flex h-full w-[76px] shrink-0 flex-col items-center gap-2.5 overflow-y-auto border-r border-white/15 bg-black/55 py-3 shadow-2xl backdrop-blur-2xl">
       {inbox ? (
-        <button
-          type="button"
-          data-alcove-id={inbox.id}
-          title={`Inbox · ${inboxCount}`}
-          onClick={() => onSelect(inbox.id)}
-          className={cn(
-            "relative flex size-[52px] items-center justify-center rounded-[14px] border-[1.5px] border-dashed border-amber-300/60 bg-amber-400/10 text-amber-200 transition hover:bg-amber-400/20",
-            openAlcoveId === inbox.id && "border-solid bg-amber-400/25",
-          )}
-        >
-          <Inbox className="size-6" strokeWidth={1.75} />
-          {inboxCount > 0 ? (
-            <Badge className="absolute -top-1.5 -right-1.5 h-[18px] min-w-[18px] px-1 bg-amber-400 text-[10px] font-bold text-amber-950">
-              {inboxCount}
-            </Badge>
-          ) : null}
-        </button>
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <button
+              type="button"
+              data-alcove-id={inbox.id}
+              title={`Inbox · ${inboxCount}`}
+              onClick={() => onSelect(inbox.id)}
+              className={cn(
+                "relative flex size-[52px] items-center justify-center rounded-[14px] border-[1.5px] border-dashed border-amber-300/60 bg-amber-400/10 text-amber-200 transition hover:bg-amber-400/20",
+                openAlcoveId === inbox.id && "border-solid bg-amber-400/25",
+              )}
+            >
+              <Inbox className="size-6" strokeWidth={1.75} />
+              {inboxCount > 0 ? (
+                <Badge className="absolute -top-1.5 -right-1.5 h-[18px] min-w-[18px] px-1 bg-amber-400 text-[10px] font-bold text-amber-950">
+                  {inboxCount}
+                </Badge>
+              ) : null}
+            </button>
+          </ContextMenuTrigger>
+          <ContextMenuContent className="w-56">
+            <ContextMenuItem onSelect={() => onEdit(inbox)}>Edit…</ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
       ) : null}
 
       <span className="h-px w-11 bg-white/15" />
@@ -105,7 +112,7 @@ export function ShelfRail({
               </button>
             </ContextMenuTrigger>
             <ContextMenuContent className="w-56">
-              <ContextMenuItem onSelect={() => onRename(alcove)}>Rename</ContextMenuItem>
+              <ContextMenuItem onSelect={() => onEdit(alcove)}>Edit…</ContextMenuItem>
               <ContextMenuSub>
                 <ContextMenuSubTrigger>Icon</ContextMenuSubTrigger>
                 <ContextMenuSubContent className="w-[232px] p-2">

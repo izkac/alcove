@@ -50,14 +50,14 @@ export function FrequentStrip({
         edge === "bottom" ? "pt-1 pb-3" : "pt-3 pb-1",
       )}
     >
-      <div className="flex max-w-full items-end gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-black/40 px-2 py-1.5 shadow-2xl backdrop-blur-2xl">
+      <div className="flex max-w-full items-start gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-black/40 px-2 py-1.5 shadow-2xl backdrop-blur-2xl">
         {tools.map((tool) => (
           <ToolSlot key={tool.id} tool={tool} onOpen={onOpenTool} />
         ))}
         {tools.length > 0 && icons.length > 0 ? (
           <div
             aria-hidden
-            className="mx-1.5 mb-1 h-9 w-0.5 shrink-0 self-center rounded-full bg-white/50"
+            className="mx-1.5 mt-1.5 h-9 w-0.5 shrink-0 self-start rounded-full bg-white/50"
           />
         ) : null}
         {icons.map((icon) => {
@@ -70,14 +70,12 @@ export function FrequentStrip({
                   title={icon.name}
                   onClick={() => onOpen(icon)}
                   className={cn(
-                    "relative flex w-[64px] flex-col items-center gap-1 rounded-xl px-1 py-1.5 outline-none transition",
+                    "relative flex w-[64px] shrink-0 flex-col items-center gap-1 rounded-xl px-1 py-1.5 outline-none transition",
                     "hover:bg-white/12 focus-visible:ring-2 focus-visible:ring-white/50",
                   )}
                 >
                   <IconGlyph icon={icon} size={34} />
-                  <span className="w-full truncate text-center text-[10px] text-white/85">
-                    {icon.name.replace(/\.[^.]+$/, "")}
-                  </span>
+                  <SlotLabel>{icon.name.replace(/\.[^.]+$/, "")}</SlotLabel>
                   {kept ? (
                     <Pin className="absolute top-0.5 right-1 size-2.5 fill-sky-300 text-sky-300" />
                   ) : null}
@@ -124,14 +122,20 @@ function ToolSlot({
           )}
         >
           <StripToolGlyph glyph={tool.glyph} size={34} />
-          <span className="w-full truncate text-center text-[10px] text-white/85">
-            {tool.label}
-          </span>
+          <SlotLabel>{tool.label}</SlotLabel>
         </button>
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onSelect={() => onOpen(tool)}>Open</ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
+  )
+}
+
+function SlotLabel({ children }: { children: string }) {
+  return (
+    <span className="line-clamp-2 w-full text-center text-[10px] leading-tight break-words text-white/85">
+      {children}
+    </span>
   )
 }

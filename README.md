@@ -44,7 +44,13 @@ Alcove menu: **Show as a window** pops it back out. **Use as the desktop** pins 
 
 This uses the files on your Windows Desktop, with the same icons Explorer shows.
 
-To ship an installer later: `npm run tauri build`.
+To ship an installer:
+
+```bat
+npm run installer
+```
+
+That builds a current-user NSIS setup at `src-tauri\target\release\bundle\nsis\`. The installer puts Alcove in the Start menu and registers it to start when this user signs in. The window stays hidden until it already covers the desktop, so it does not pop in small and then stretch. Settings can turn sign-in start off; uninstall removes it.
 
 ## What you can do
 

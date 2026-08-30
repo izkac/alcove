@@ -26,7 +26,7 @@ import { useIconPointerDrag } from "@/hooks/use-icon-pointer-drag"
 import { viewFor } from "@/lib/alcove-view"
 import { DEFAULT_STRIP_TOOL_IDS, toolsForIds, type StripTool } from "@/lib/strip-tools"
 import { invoke, isTauri } from "@/lib/tauri"
-import type { AlcoveColor, DesktopIcon } from "@/types"
+import type { Alcove, AlcoveColor, DesktopIcon } from "@/types"
 
 type DesktopShellProps = {
   desktop: AlcoveDesktopApi
@@ -35,15 +35,22 @@ type DesktopShellProps = {
 export function DesktopShell({ desktop }: DesktopShellProps) {
   const { state } = desktop
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [createOpen, setCreateOpen] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
   const [createWithIcon, setCreateWithIcon] = useState<DesktopIcon | null>(null)
+  const [editAlcove, setEditAlcove] = useState<Alcove | null>(null)
   const [desktopAttached, setDesktopAttached] = useState<boolean | null>(null)
   const closeDrawerRef = useRef<() => void>(() => undefined)
 
   const onOpenSettings = useCallback(() => setSettingsOpen(true), [])
   const onOpenCreate = useCallback((icon?: DesktopIcon | null) => {
+    setEditAlcove(null)
     setCreateWithIcon(icon ?? null)
-    setCreateOpen(true)
+    setDialogOpen(true)
+  }, [])
+  const onOpenEdit = useCallback((alcove: Alcove) => {
+    setCreateWithIcon(null)
+    setEditAlcove(alcove)
+    setDialogOpen(true)
   }, [])
 
   useEffect(() => {
@@ -83,12 +90,14 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
         closeDrawerRef={closeDrawerRef}
         onOpenSettings={onOpenSettings}
         onOpenCreate={onOpenCreate}
+        onOpenEdit={onOpenEdit}
       />
       <CreateAlcoveDialog
-        open={createOpen}
+        open={dialogOpen}
+        alcove={editAlcove}
         seedName={createWithIcon ? createWithIcon.name.replace(/\.[^.]+$/, "") : ""}
         onOpenChange={(open) => {
-          setCreateOpen(open)
+          setDialogOpen(open)
           if (!open) setCreateWithIcon(null)
         }}
         onCreate={(name, color: AlcoveColor, glyph, folderPath) => {
@@ -100,6 +109,25 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
             folderPath,
           )
         }}
+        onSave={(name, color, glyph, folderPath) => {
+          if (!editAlcove) return
+          desktop.renameAlcove(editAlcove.id, name)
+          desktop.recolorAlcove(editAlcove.id, color)
+          if (!editAlcove.isInbox) {
+            desktop.setAlcoveGlyph(editAlcove.id, glyph)
+            const current = editAlcove.folderPath ?? null
+            const next = folderPath ?? null
+            if (current !== next) desktop.setAlcoveFolder(editAlcove.id, next)
+          }
+        }}
+        onDelete={
+          editAlcove && !editAlcove.isInbox
+            ? () => {
+                desktop.deleteAlcove(editAlcove.id)
+                closeDrawerRef.current()
+              }
+            : undefined
+        }
       />
       <SettingsDialog
         open={settingsOpen}
@@ -146,6 +174,7 @@ type DesktopWorkspaceProps = {
   closeDrawerRef: { current: () => void }
   onOpenSettings: () => void
   onOpenCreate: (icon?: DesktopIcon | null) => void
+  onOpenEdit: (alcove: Alcove) => void
 }
 
 const DesktopWorkspace = memo(function DesktopWorkspace({
@@ -153,11 +182,12 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
   closeDrawerRef,
   onOpenSettings,
   onOpenCreate,
+  onOpenEdit,
 }: DesktopWorkspaceProps) {
   const { state, sortedAlcoves, iconsIn } = desktop
   const [searchOpen, setSearchOpen] = useState(false)
   const [rename, setRename] = useState<
-    | { kind: "alcove" | "icon"; id: string; value: string }
+    | { kind: "icon"; id: string; value: string }
     | { kind: "group"; id: string; alcoveId: string; value: string }
     | null
   >(null)
@@ -301,13 +331,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                     onSearch={openSearch}
                     onNewAlcove={() => onOpenCreate()}
                     onSettings={onOpenSettings}
-                    onRename={(alcove) =>
-                      setRename({
-                        kind: "alcove",
-                        id: alcove.id,
-                        value: alcove.name,
-                      })
-                    }
+                    onEdit={onOpenEdit}
                     onRecolor={desktop.recolorAlcove}
                     onSetGlyph={desktop.setAlcoveGlyph}
                     onLinkFolder={(alcove) => {
@@ -352,12 +376,14 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                         highlightedIconId={state.highlightedIconId}
                         onClose={() => setOpenAlcoveId(null)}
                         onCompact={() => desktop.setAlcoveView(openAlcove.id, "panel")}
-                        onRename={() =>
-                          setRename({
-                            kind: "alcove",
-                            id: openAlcove.id,
-                            value: openAlcove.name,
-                          })
+                        onEdit={() => onOpenEdit(openAlcove)}
+                        onDelete={
+                          openAlcove.isInbox
+                            ? undefined
+                            : () => {
+                                desktop.deleteAlcove(openAlcove.id)
+                                setOpenAlcoveId(null)
+                              }
                         }
                         onRecolor={(color) => desktop.recolorAlcove(openAlcove.id, color)}
                         onSetGlyph={(glyph) => desktop.setAlcoveGlyph(openAlcove.id, glyph)}
@@ -402,13 +428,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                         density={state.density}
                         highlightedIconId={state.highlightedIconId}
                         onToggle={() => setOpenAlcoveId(null)}
-                        onRename={() =>
-                          setRename({
-                            kind: "alcove",
-                            id: openAlcove.id,
-                            value: openAlcove.name,
-                          })
-                        }
+                        onEdit={() => onOpenEdit(openAlcove)}
                         onRecolor={(color) =>
                           desktop.recolorAlcove(openAlcove.id, color)
                         }
@@ -470,9 +490,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         title={
           rename?.kind === "icon"
             ? "Rename icon"
-            : rename?.kind === "group"
-              ? "Name this group"
-              : "Rename Alcove"
+            : "Name this group"
         }
         value={rename?.value ?? ""}
         onOpenChange={(open) => {
@@ -480,8 +498,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         }}
         onSave={(value) => {
           if (!rename) return
-          if (rename.kind === "alcove") desktop.renameAlcove(rename.id, value)
-          else if (rename.kind === "group")
+          if (rename.kind === "group")
             desktop.renameGroup(rename.alcoveId, rename.id, value)
           else desktop.renameIcon(rename.id, value)
         }}

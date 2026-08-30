@@ -15,11 +15,12 @@ import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
 import {
   AlcoveGlyphGrid,
   defaultAlcoveGlyph,
+  resolveAlcoveGlyph,
   type AlcoveGlyphId,
 } from "@/lib/alcove-glyphs"
 import { invoke, isTauri } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
-import type { AlcoveColor } from "@/types"
+import type { Alcove, AlcoveColor } from "@/types"
 
 type KnownFolder = { id: string; name: string; path: string }
 
@@ -44,15 +45,22 @@ type CreateAlcoveDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreate: (name: string, color: AlcoveColor, glyph: string, folderPath?: string | null) => void
+  onSave?: (name: string, color: AlcoveColor, glyph: string, folderPath?: string | null) => void
+  onDelete?: () => void
   seedName?: string
+  alcove?: Alcove | null
 }
 
 export function CreateAlcoveDialog({
   open,
   onOpenChange,
   onCreate,
+  onSave,
+  onDelete,
   seedName = "",
+  alcove = null,
 }: CreateAlcoveDialogProps) {
+  const editing = Boolean(alcove)
   const [name, setName] = useState(seedName)
   const [color, setColor] = useState<AlcoveColor>("violet")
   const [glyph, setGlyph] = useState<AlcoveGlyphId>(() =>
@@ -75,16 +83,24 @@ export function CreateAlcoveDialog({
 
   useEffect(() => {
     if (!open) return
-    setName(seedName)
-    setColor("violet")
-    setGlyph(defaultAlcoveGlyph("new", seedName))
-    setGlyphTouched(false)
-    setFolderPath(null)
+    if (alcove) {
+      setName(alcove.name)
+      setColor(alcove.color)
+      setGlyph(resolveAlcoveGlyph(alcove))
+      setGlyphTouched(true)
+      setFolderPath(alcove.folderPath ?? null)
+    } else {
+      setName(seedName)
+      setColor("violet")
+      setGlyph(defaultAlcoveGlyph("new", seedName))
+      setGlyphTouched(false)
+      setFolderPath(null)
+    }
     if (glyphDelay.current) {
       clearTimeout(glyphDelay.current)
       glyphDelay.current = null
     }
-  }, [open, seedName])
+  }, [open, seedName, alcove])
 
   useEffect(
     () => () => {
@@ -124,7 +140,13 @@ export function CreateAlcoveDialog({
 
   function submit() {
     if (!name.trim()) return
-    onCreate(name, color, glyph, folderPath)
+    if (alcove) onSave?.(name, color, glyph, folderPath)
+    else onCreate(name, color, glyph, folderPath)
+    onOpenChange(false)
+  }
+
+  function remove() {
+    onDelete?.()
     onOpenChange(false)
   }
 
@@ -141,9 +163,13 @@ export function CreateAlcoveDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New Alcove</DialogTitle>
+          <DialogTitle>{editing ? "Edit Alcove" : "New Alcove"}</DialogTitle>
           <DialogDescription>
-            A named space on the desktop — or a live view of any folder.
+            {editing
+              ? alcove?.isInbox
+                ? "Inbox is the catch-all. You can rename it, but it cannot be deleted."
+                : "Change the name, icon, color, or the folder this drawer mirrors."
+              : "A named space on the desktop — or a live view of any folder."}
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
@@ -164,7 +190,7 @@ export function CreateAlcoveDialog({
               }}
             />
           </div>
-          {isTauri() ? (
+          {isTauri() && !alcove?.isInbox ? (
             <div className="flex flex-col gap-1.5">
               <Label>Mirror a folder</Label>
               <div className="flex flex-wrap gap-1.5">
@@ -198,10 +224,12 @@ export function CreateAlcoveDialog({
               )}
             </div>
           ) : null}
-          <div className="flex flex-col gap-1.5">
-            <Label>Icon</Label>
-            <AlcoveGlyphGrid value={glyph} onChange={pickGlyph} />
-          </div>
+          {alcove?.isInbox ? null : (
+            <div className="flex flex-col gap-1.5">
+              <Label>Icon</Label>
+              <AlcoveGlyphGrid value={glyph} onChange={pickGlyph} />
+            </div>
+          )}
           <div className="flex flex-col gap-1.5">
             <Label>Color</Label>
             <div className="flex flex-wrap gap-2">
@@ -221,13 +249,20 @@ export function CreateAlcoveDialog({
             </div>
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button disabled={!name.trim()} onClick={submit}>
-            Create
-          </Button>
+        <DialogFooter className={onDelete ? "sm:justify-between" : undefined}>
+          {onDelete ? (
+            <Button variant="destructive" onClick={remove}>
+              Delete
+            </Button>
+          ) : null}
+          <div className="flex flex-col-reverse gap-2 sm:ml-auto sm:flex-row">
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button disabled={!name.trim()} onClick={submit}>
+              {editing ? "Save" : "Create"}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

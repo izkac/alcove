@@ -1,3 +1,4 @@
+mod autostart;
 mod desktop;
 mod harvest;
 mod search;
@@ -147,8 +148,28 @@ fn hide_search_window(app: tauri::AppHandle) -> Result<(), String> {
     search::hide(&app)
 }
 
+#[tauri::command]
+fn autostart_enabled() -> bool {
+    autostart::is_enabled()
+}
+
+#[tauri::command]
+fn set_autostart(enabled: bool) -> Result<bool, String> {
+    if enabled {
+        autostart::enable()?;
+    } else {
+        autostart::disable()?;
+    }
+    Ok(autostart::is_enabled())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(all(windows, not(debug_assertions)))]
+    if !autostart::claim_singleton() {
+        return;
+    }
+
     tauri::Builder::default()
         .manage(DesktopState::default())
         .invoke_handler(tauri::generate_handler![
@@ -172,6 +193,8 @@ pub fn run() {
             focus_desktop,
             show_search_window,
             hide_search_window,
+            autostart_enabled,
+            set_autostart,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -180,6 +203,12 @@ pub fn run() {
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
+            }
+
+            if let Some(main) = app.get_webview_window("main") {
+                let _ = main.hide();
+                let state = app.state::<DesktopState>();
+                let _ = desktop::prepare(&main, &state);
             }
 
             desktop::spawn_emergency_hotkey(app.handle().clone());

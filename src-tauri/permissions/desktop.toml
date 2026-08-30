@@ -97,3 +97,14 @@ commands.allow = ["show_search_window"]
 identifier = "allow-hide-search-window"
 description = "Hide the icon search overlay"
 commands.allow = ["hide_search_window"]
+
+[[permission]]
+identifier = "allow-autostart-enabled"
+description = "Read whether Alcove starts when this user signs in"
+commands.allow = ["autostart_enabled"]
+
+[[permission]]
+identifier = "allow-set-autostart"
+description = "Turn sign-in startup on or off"
+commands.allow = ["set_autostart"]
+

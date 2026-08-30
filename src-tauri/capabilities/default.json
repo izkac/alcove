@@ -28,6 +28,8 @@
     "allow-activate-window",
     "allow-focus-desktop",
     "allow-show-search-window",
-    "allow-hide-search-window"
+    "allow-hide-search-window",
+    "allow-autostart-enabled",
+    "allow-set-autostart"
   ]
 }

@@ -23,7 +23,7 @@ import { folderLeaf } from "@/lib/harvest-merge"
 import { ALCOVE_COLOR_IDS } from "@/types"
 import { cn } from "@/lib/utils"
 import type { Alcove, AlcoveColor, Density, DesktopIcon, FolderView, IconGroup } from "@/types"
-import { ChevronDown, ChevronUp, FolderPlus, Minimize2, Search, X } from "lucide-react"
+import { ChevronDown, ChevronUp, FolderPlus, Minimize2, Pencil, Search, Trash2, X } from "lucide-react"
 
 type AlcoveCanvasProps = {
   alcove: Alcove
@@ -34,7 +34,8 @@ type AlcoveCanvasProps = {
   highlightedIconId: string | null
   onClose: () => void
   onCompact: () => void
-  onRename: () => void
+  onEdit: () => void
+  onDelete?: () => void
   onRecolor: (color: AlcoveColor) => void
   onSetGlyph: (glyph: string) => void
   onOpenIcon: (icon: DesktopIcon) => void
@@ -70,7 +71,8 @@ export function AlcoveCanvas({
   highlightedIconId,
   onClose,
   onCompact,
-  onRename,
+  onEdit,
+  onDelete,
   onRecolor,
   onSetGlyph,
   onOpenIcon,
@@ -174,7 +176,7 @@ export function AlcoveCanvas({
         </span>
         <ContextMenu>
           <ContextMenuTrigger asChild>
-            <button type="button" onDoubleClick={onRename} className="text-left">
+            <button type="button" onDoubleClick={onEdit} className="text-left">
               <span className="text-base font-medium text-white">{alcove.name}</span>
               <span className="ml-2 text-xs text-white/55">
                 {query.trim() ? `${filtered.length}/${icons.length}` : icons.length}
@@ -190,13 +192,15 @@ export function AlcoveCanvas({
             </button>
           </ContextMenuTrigger>
           <ContextMenuContent>
-            <ContextMenuItem onSelect={onRename}>Rename</ContextMenuItem>
-            <ContextMenuSub>
-              <ContextMenuSubTrigger>Icon</ContextMenuSubTrigger>
-              <ContextMenuSubContent className="w-[232px] p-2">
-                <AlcoveGlyphGrid value={resolveAlcoveGlyph(alcove)} onChange={onSetGlyph} />
-              </ContextMenuSubContent>
-            </ContextMenuSub>
+            <ContextMenuItem onSelect={onEdit}>Edit…</ContextMenuItem>
+            {!alcove.isInbox ? (
+              <ContextMenuSub>
+                <ContextMenuSubTrigger>Icon</ContextMenuSubTrigger>
+                <ContextMenuSubContent className="w-[232px] p-2">
+                  <AlcoveGlyphGrid value={resolveAlcoveGlyph(alcove)} onChange={onSetGlyph} />
+                </ContextMenuSubContent>
+              </ContextMenuSub>
+            ) : null}
             <ContextMenuSub>
               <ContextMenuSubTrigger>Color</ContextMenuSubTrigger>
               <ContextMenuSubContent>
@@ -207,8 +211,34 @@ export function AlcoveCanvas({
                 ))}
               </ContextMenuSubContent>
             </ContextMenuSub>
+            {onDelete ? (
+              <>
+                <ContextMenuSeparator />
+                <ContextMenuItem variant="destructive" onSelect={onDelete}>
+                  Delete Alcove
+                </ContextMenuItem>
+              </>
+            ) : null}
           </ContextMenuContent>
         </ContextMenu>
+        <button
+          type="button"
+          title="Edit Alcove"
+          onClick={onEdit}
+          className="flex size-7 items-center justify-center rounded-lg text-white/55 transition hover:bg-white/10 hover:text-white"
+        >
+          <Pencil className="size-3.5" />
+        </button>
+        {onDelete ? (
+          <button
+            type="button"
+            title="Delete Alcove"
+            onClick={onDelete}
+            className="flex size-7 items-center justify-center rounded-lg text-white/55 transition hover:bg-white/10 hover:text-red-300"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        ) : null}
 
         <div className="relative ml-auto w-56">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-white/45" />
@@ -284,36 +314,58 @@ export function AlcoveCanvas({
           >
             <ContextMenu>
               <ContextMenuTrigger asChild>
-                <button
-                  type="button"
-                  onDoubleClick={() => onRenameGroup(group)}
-                  className="mb-1.5 flex w-full items-center gap-2 text-left"
-                >
+                <div className="mb-1.5 flex w-full items-center gap-2">
                   <span className={cn("h-3.5 w-1 rounded-full", styles.bar)} />
-                  <span className="text-xs font-medium tracking-wide text-white/90 uppercase">
-                    {group.name}
-                  </span>
-                  <span className="text-[11px] text-white/45">
-                    {rows.byGroup.get(group.id)?.length ?? 0}
-                  </span>
+                  <button
+                    type="button"
+                    onDoubleClick={() => onRenameGroup(group)}
+                    className="text-left"
+                  >
+                    <span className="text-xs font-medium tracking-wide text-white/90 uppercase">
+                      {group.name}
+                    </span>
+                    <span className="ml-2 text-[11px] text-white/45">
+                      {rows.byGroup.get(group.id)?.length ?? 0}
+                    </span>
+                  </button>
                   <span className="ml-2 h-px flex-1 bg-white/10" />
                   <span className="flex items-center gap-0.5 text-white/40">
-                    <ChevronUp
-                      className={cn("size-3.5", index === 0 && "opacity-25")}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onMoveGroup(group.id, -1)
-                      }}
-                    />
-                    <ChevronDown
-                      className={cn("size-3.5", index === groups.length - 1 && "opacity-25")}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onMoveGroup(group.id, 1)
-                      }}
-                    />
+                    <button
+                      type="button"
+                      title="Move up"
+                      disabled={index === 0}
+                      onClick={() => onMoveGroup(group.id, -1)}
+                      className="flex size-6 items-center justify-center rounded-md hover:bg-white/10 hover:text-white disabled:opacity-25"
+                    >
+                      <ChevronUp className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Move down"
+                      disabled={index === groups.length - 1}
+                      onClick={() => onMoveGroup(group.id, 1)}
+                      className="flex size-6 items-center justify-center rounded-md hover:bg-white/10 hover:text-white disabled:opacity-25"
+                    >
+                      <ChevronDown className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Rename group"
+                      onClick={() => onRenameGroup(group)}
+                      className="flex size-6 items-center justify-center rounded-md hover:bg-white/10 hover:text-white"
+                    >
+                      <Pencil className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Delete group"
+                      onClick={() => onDeleteGroup(group.id)}
+                      className="flex size-6 items-center justify-center rounded-md hover:bg-white/10 hover:text-red-300"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
                   </span>
-                </button>
+                </div>
               </ContextMenuTrigger>
               <ContextMenuContent>
                 <ContextMenuItem onSelect={() => onRenameGroup(group)}>Rename group</ContextMenuItem>
