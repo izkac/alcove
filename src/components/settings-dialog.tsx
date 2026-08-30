@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { StripToolGlyph } from "@/components/strip-tool-glyph"
 import { Separator } from "@/components/ui/separator"
+import { Switch } from "@/components/ui/switch"
+import { StripToolGlyph } from "@/components/strip-tool-glyph"
+import { cn } from "@/lib/utils"
 import { DENSITY_CONFIG } from "@/lib/density"
 import {
   STRIP_TOOL_CATEGORIES,
@@ -46,209 +48,288 @@ const LAYOUTS: { id: LayoutId; label: string }[] = [
   { id: "clean", label: "Clean" },
 ]
 
+type SettingsTab = "general" | "strip" | "system"
+
+const TABS: { id: SettingsTab; label: string }[] = [
+  { id: "general", label: "General" },
+  { id: "strip", label: "Frequent strip" },
+  { id: "system", label: "System" },
+]
+
 export function SettingsDialog(props: SettingsDialogProps) {
+  const [tab, setTab] = useState<SettingsTab>("general")
+
+  return (
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogContent className="max-h-[min(40rem,85vh)] gap-0 overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Settings</DialogTitle>
+        </DialogHeader>
+
+        <div className="-mx-4 mt-3 flex gap-1 border-b border-border px-4 pb-3">
+          {TABS.map((t) => (
+            <Button
+              key={t.id}
+              size="sm"
+              variant={tab === t.id ? "secondary" : "ghost"}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </Button>
+          ))}
+        </div>
+
+        <div className="flex h-[440px] flex-col gap-5 pt-4">
+          {tab === "general" && <GeneralTab {...props} />}
+          {tab === "strip" && <StripTab {...props} />}
+          {tab === "system" && <SystemTab {...props} />}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function GeneralTab(props: SettingsDialogProps) {
+  return (
+    <>
+      <section className="flex flex-col gap-2">
+        <p className="text-xs font-medium text-muted-foreground">Layout</p>
+        <Segmented
+          value={props.layoutId}
+          options={LAYOUTS.map((l) => ({ value: l.id, label: l.label }))}
+          onChange={props.onLayout}
+        />
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <p className="text-xs font-medium text-muted-foreground">Icon size</p>
+        <Segmented
+          value={props.density}
+          options={(Object.keys(DENSITY_CONFIG) as Density[]).map((d) => ({
+            value: d,
+            label: DENSITY_CONFIG[d].label,
+          }))}
+          onChange={props.onDensity}
+        />
+      </section>
+
+      <Separator />
+
+      <SettingRow
+        label="Focus one Alcove"
+        description="Expanding an Alcove collapses the others"
+      >
+        <Switch checked={props.focusMode} onCheckedChange={props.onFocusMode} />
+      </SettingRow>
+
+      <SettingRow
+        label="Collapse everything"
+        description="Fold every open Alcove down to its chip"
+      >
+        <Button size="sm" variant="outline" onClick={props.onCollapseAll}>
+          Collapse all
+        </Button>
+      </SettingRow>
+    </>
+  )
+}
+
+function StripTab(props: SettingsDialogProps) {
+  return (
+    <>
+      <section className="flex flex-col gap-2">
+        <p className="text-xs font-medium text-muted-foreground">
+          Position on screen
+        </p>
+        <Segmented
+          value={props.stripEdge}
+          options={[
+            { value: "top", label: "Top" },
+            { value: "bottom", label: "Bottom" },
+          ]}
+          onChange={props.onStripEdge}
+        />
+      </section>
+
+      <section className="flex min-h-0 flex-1 flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-medium text-muted-foreground">Shortcuts</p>
+          <Badge variant="outline">{props.stripToolIds.length} selected</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Shown on the left of the strip, before your pinned apps.
+        </p>
+        <StripToolPicker
+          selected={props.stripToolIds}
+          onChange={props.onStripToolIds}
+        />
+      </section>
+    </>
+  )
+}
+
+function SystemTab(props: SettingsDialogProps) {
   const [winTaskbarHidden, setWinTaskbarHidden] = useState(false)
   const [autostartOn, setAutostartOn] = useState(false)
-
   useEffect(() => {
-    if (!props.open || !isTauri()) return
+    if (!isTauri()) return
     invoke<boolean>("windows_taskbar_hidden")
       .then(setWinTaskbarHidden)
       .catch(() => undefined)
     invoke<boolean>("autostart_enabled")
       .then(setAutostartOn)
       .catch(() => undefined)
-  }, [props.open])
+  }, [])
+
+  const showDesktop = Boolean(props.onToggleDesktopLayer) || isTauri()
 
   return (
-    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className="max-h-[min(40rem,85vh)] overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>
-            Layout and desktop options. Running apps stay on the Windows
-            taskbar.
-          </DialogDescription>
-        </DialogHeader>
-
-        <section className="flex flex-col gap-2">
-          <p className="text-xs font-medium text-muted-foreground">Layout</p>
-          <div className="flex flex-wrap gap-1.5">
-            {LAYOUTS.map((layout) => (
-              <Button
-                key={layout.id}
-                size="sm"
-                variant={props.layoutId === layout.id ? "secondary" : "outline"}
-                onClick={() => props.onLayout(layout.id)}
+    <>
+      {showDesktop ? (
+        <>
+          <section className="flex flex-col gap-3">
+            <p className="text-xs font-medium text-muted-foreground">Desktop</p>
+            {props.onToggleDesktopLayer ? (
+              <SettingRow
+                label="Use as the desktop"
+                description="Alcove covers the Windows desktop instead of floating as a window"
               >
-                {layout.label}
-              </Button>
-            ))}
-          </div>
-        </section>
-
-        <section className="flex flex-col gap-2">
-          <p className="text-xs font-medium text-muted-foreground">Icon size</p>
-          <div className="flex flex-wrap gap-1.5">
-            {(Object.keys(DENSITY_CONFIG) as Density[]).map((density) => (
-              <Button
-                key={density}
-                size="sm"
-                variant={props.density === density ? "secondary" : "outline"}
-                onClick={() => props.onDensity(density)}
+                <Switch
+                  checked={Boolean(props.desktopAttached)}
+                  onCheckedChange={props.onToggleDesktopLayer}
+                />
+              </SettingRow>
+            ) : null}
+            {isTauri() ? (
+              <SettingRow
+                label="Hide the Windows taskbar"
+                description="Running apps stay on the taskbar — mouse to the screen edge to peek"
               >
-                {DENSITY_CONFIG[density].label}
-              </Button>
-            ))}
-          </div>
-        </section>
-
-        <section className="flex flex-col gap-2">
-          <p className="text-xs font-medium text-muted-foreground">
-            Frequent items
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            <Button
-              size="sm"
-              variant={props.stripEdge === "top" ? "secondary" : "outline"}
-              onClick={() => props.onStripEdge("top")}
-            >
-              Top
-            </Button>
-            <Button
-              size="sm"
-              variant={props.stripEdge === "bottom" ? "secondary" : "outline"}
-              onClick={() => props.onStripEdge("bottom")}
-            >
-              Bottom
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Shortcuts stay on the left of the strip. Pick which ones to show.
-          </p>
-          <StripToolPicker
-            selected={props.stripToolIds}
-            onChange={props.onStripToolIds}
-          />
-        </section>
-
-        <section className="flex flex-wrap gap-1.5">
-          <Button
-            size="sm"
-            variant={props.focusMode ? "secondary" : "outline"}
-            onClick={() => props.onFocusMode(!props.focusMode)}
-          >
-            Focus one Alcove
-          </Button>
-          <Button size="sm" variant="outline" onClick={props.onCollapseAll}>
-            Collapse all
-          </Button>
-        </section>
-
-        <Separator />
-
-        <section className="flex flex-col gap-1.5">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="justify-start"
-            onClick={props.onDropIncoming}
-          >
-            Drop a new file onto the desktop
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="justify-start"
-            onClick={props.onLoadSample}
-          >
-            {isTauri() ? "Reload desktop icons" : "Load sample desktop"}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="justify-start"
-            onClick={props.onStartEmpty}
-          >
-            Start with an empty Inbox
-          </Button>
-        </section>
-
-        {props.onToggleDesktopLayer || isTauri() ? (
-          <>
-            <Separator />
-            <section className="flex flex-col gap-1.5">
-              {props.onToggleDesktopLayer ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="justify-start"
-                  onClick={props.onToggleDesktopLayer}
-                >
-                  {props.desktopAttached
-                    ? "Show as a window"
-                    : "Use as the desktop"}
-                </Button>
-              ) : null}
-              {isTauri() ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="justify-start"
-                  onClick={() => {
-                    invoke<boolean>("set_autostart", {
-                      enabled: !autostartOn,
-                    })
-                      .then((on) => {
-                        setAutostartOn(on)
-                        toast(
-                          on
-                            ? "Alcove will start when you sign in"
-                            : "Alcove will not start at sign-in",
-                        )
-                      })
+                <Switch
+                  checked={winTaskbarHidden}
+                  onCheckedChange={(hidden) => {
+                    invoke<boolean>("set_windows_taskbar_hidden", { hidden })
+                      .then(setWinTaskbarHidden)
                       .catch((err) => {
                         toast(err instanceof Error ? err.message : String(err))
                       })
                   }}
-                >
-                  {autostartOn
-                    ? "Stop starting when I sign in"
-                    : "Start when I sign in to Windows"}
-                </Button>
-              ) : null}
-              {isTauri() ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="justify-start"
-                  onClick={() => {
-                    invoke<boolean>("set_windows_taskbar_hidden", {
-                      hidden: !winTaskbarHidden,
+                />
+              </SettingRow>
+            ) : null}
+          </section>
+          <Separator />
+        </>
+      ) : null}
+
+      {isTauri() ? (
+        <>
+          <section className="flex flex-col gap-3">
+            <p className="text-xs font-medium text-muted-foreground">Startup</p>
+            <SettingRow
+              label="Start when I sign in"
+              description="Launch Alcove automatically at Windows sign-in"
+            >
+              <Switch
+                checked={autostartOn}
+                onCheckedChange={(enabled) => {
+                  invoke<boolean>("set_autostart", { enabled })
+                    .then(setAutostartOn)
+                    .catch((err) => {
+                      toast(err instanceof Error ? err.message : String(err))
                     })
-                      .then((hidden) => {
-                        setWinTaskbarHidden(hidden)
-                        toast(
-                          hidden
-                            ? "Windows taskbar hidden — mouse to the screen edge to peek"
-                            : "Windows taskbar restored",
-                        )
-                      })
-                      .catch((err) => {
-                        toast(err instanceof Error ? err.message : String(err))
-                      })
-                  }}
-                >
-                  {winTaskbarHidden
-                    ? "Show the Windows taskbar"
-                    : "Hide the Windows taskbar"}
-                </Button>
-              ) : null}
-            </section>
-          </>
+                }}
+              />
+            </SettingRow>
+          </section>
+          <Separator />
+        </>
+      ) : null}
+
+      <section className="flex flex-col gap-3">
+        <p className="text-xs font-medium text-muted-foreground">Maintenance</p>
+        <SettingRow
+          label={isTauri() ? "Desktop icons" : "Sample desktop"}
+          description={
+            isTauri()
+              ? "Re-read the icons from your Windows desktop"
+              : "Load the sample desktop"
+          }
+        >
+          <Button size="sm" variant="outline" onClick={props.onLoadSample}>
+            {isTauri() ? "Reload" : "Load"}
+          </Button>
+        </SettingRow>
+        <SettingRow
+          label="Inbox"
+          description="Clear everything and start with an empty Inbox"
+        >
+          <Button size="sm" variant="outline" onClick={props.onStartEmpty}>
+            Start empty
+          </Button>
+        </SettingRow>
+        <SettingRow
+          label="Test drop"
+          description="Drop a sample file onto the desktop"
+        >
+          <Button size="sm" variant="outline" onClick={props.onDropIncoming}>
+            Drop a file
+          </Button>
+        </SettingRow>
+      </section>
+    </>
+  )
+}
+
+function SettingRow({
+  label,
+  description,
+  children,
+}: {
+  label: string
+  description?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-0.5">
+        <p className="text-sm">{label}</p>
+        {description ? (
+          <p className="text-xs text-muted-foreground">{description}</p>
         ) : null}
-      </DialogContent>
-    </Dialog>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T
+  options: { value: T; label: string }[]
+  onChange: (value: T) => void
+}) {
+  return (
+    <div className="inline-flex w-fit gap-0.5 rounded-[10px] bg-foreground/5 p-[3px]">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={cn(
+            "h-[26px] rounded-lg px-3.5 text-[0.8rem] font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+            option.value === value
+              ? "bg-foreground/15 text-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -260,7 +341,7 @@ function StripToolPicker({
   onChange: (ids: string[]) => void
 }) {
   return (
-    <div className="max-h-52 overflow-y-auto rounded-lg border border-border p-2">
+    <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border p-2">
       {STRIP_TOOL_CATEGORIES.map((category) => (
         <div key={category.id} className="mb-2 last:mb-0">
           <p className="px-1 pb-1 text-[11px] font-medium text-muted-foreground">
@@ -289,4 +370,3 @@ function StripToolPicker({
     </div>
   )
 }
-
