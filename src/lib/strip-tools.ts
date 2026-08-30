@@ -15,6 +15,9 @@ export type StripTool = {
   /** ShellExecute target. `%VAR%` is expanded on open. */
   launch: string
   args?: string
+  /** Icon source when `launch` has none of its own: `file` or `file,index`. */
+  icon?: string
+  /** Drawn only when the icon source yields nothing (non-Windows, missing file). */
   glyph: string
 }
 
@@ -34,6 +37,7 @@ export const STRIP_TOOLS: StripTool[] = [
     label: "Windows Settings",
     category: "system",
     launch: "ms-settings:",
+    icon: "%SystemRoot%\\ImmersiveControlPanel\\SystemSettings.exe",
     glyph: "settings",
   },
   {
@@ -41,6 +45,7 @@ export const STRIP_TOOLS: StripTool[] = [
     label: "Services",
     category: "system",
     launch: "%SystemRoot%\\System32\\services.msc",
+    icon: "%SystemRoot%\\System32\\filemgmt.dll",
     glyph: "cog",
   },
   {
@@ -55,6 +60,7 @@ export const STRIP_TOOLS: StripTool[] = [
     label: "Device Manager",
     category: "system",
     launch: "%SystemRoot%\\System32\\devmgmt.msc",
+    icon: "%SystemRoot%\\System32\\devmgr.dll,5",
     glyph: "cpu",
   },
   {
@@ -62,6 +68,7 @@ export const STRIP_TOOLS: StripTool[] = [
     label: "Event Viewer",
     category: "system",
     launch: "%SystemRoot%\\System32\\eventvwr.msc",
+    icon: "%SystemRoot%\\System32\\eventvwr.exe",
     glyph: "scroll",
   },
   {
@@ -83,6 +90,7 @@ export const STRIP_TOOLS: StripTool[] = [
     label: "Disk Management",
     category: "system",
     launch: "%SystemRoot%\\System32\\diskmgmt.msc",
+    icon: "%SystemRoot%\\System32\\dmdskres.dll",
     glyph: "hard-drive",
   },
   {
@@ -90,6 +98,7 @@ export const STRIP_TOOLS: StripTool[] = [
     label: "Computer Management",
     category: "system",
     launch: "%SystemRoot%\\System32\\compmgmt.msc",
+    icon: "%SystemRoot%\\System32\\mycomput.dll,2",
     glyph: "monitor",
   },
   {
@@ -97,6 +106,7 @@ export const STRIP_TOOLS: StripTool[] = [
     label: "Task Scheduler",
     category: "system",
     launch: "%SystemRoot%\\System32\\taskschd.msc",
+    icon: "%SystemRoot%\\System32\\miguiresource.dll,1",
     glyph: "calendar",
   },
   {
@@ -188,6 +198,7 @@ export const STRIP_TOOLS: StripTool[] = [
     label: "Windows Firewall",
     category: "network",
     launch: "%SystemRoot%\\System32\\wf.msc",
+    icon: "%SystemRoot%\\System32\\FirewallControlPanel.dll",
     glyph: "shield",
   },
   {
@@ -196,6 +207,7 @@ export const STRIP_TOOLS: StripTool[] = [
     category: "developer",
     launch: "%SystemRoot%\\System32\\rundll32.exe",
     args: "sysdm.cpl,EditEnvironmentVariables",
+    icon: "%SystemRoot%\\System32\\sysdm.cpl",
     glyph: "braces",
   },
   {
@@ -210,13 +222,14 @@ export const STRIP_TOOLS: StripTool[] = [
     label: "Developer settings",
     category: "developer",
     launch: "ms-settings:developers",
+    icon: "%SystemRoot%\\ImmersiveControlPanel\\SystemSettings.exe",
     glyph: "code",
   },
   {
     id: "regedit",
     label: "Registry Editor",
     category: "developer",
-    launch: "%SystemRoot%\\System32\\regedit.exe",
+    launch: "%SystemRoot%\\regedit.exe",
     glyph: "database",
   },
   {

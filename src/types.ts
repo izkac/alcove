@@ -74,6 +74,8 @@ export type Alcove = {
   folderPath?: string | null
   /** Layout for a live-folder drawer. Ignored when folderPath is empty. */
   folderView?: FolderView
+  /** Monitor this drawer lives on. Null = primary. Inbox ignores this. */
+  stripId?: string | null
 }
 
 /** One open, decayed to `at`. Score is meaningless without its timestamp. */

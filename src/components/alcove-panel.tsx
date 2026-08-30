@@ -46,6 +46,8 @@ type AlcovePanelProps = {
   onNewAlcoveWith: (icon: DesktopIcon) => void
   onFocus: () => void
   onDropIncoming?: () => void
+  onPaste?: () => void
+  onDeleteIcon?: (icon: DesktopIcon) => void
   onIconPointerDown?: (icon: DesktopIcon, event: PointerEvent) => void
   onExpandCanvas?: () => void
   onFolderView?: (view: FolderView) => void
@@ -95,6 +97,8 @@ function ExpandedAlcove({
   onNewAlcoveWith,
   onFocus,
   onDropIncoming,
+  onPaste,
+  onDeleteIcon,
   onIconPointerDown,
   onExpandCanvas,
   onFolderView,
@@ -313,10 +317,14 @@ function ExpandedAlcove({
             onTogglePin={onTogglePin}
             onMove={onMoveIcon}
             onNewAlcove={onNewAlcoveWith}
+            onDelete={onDeleteIcon}
           />
         ) : (
           <>
             <ContextMenuItem onSelect={onToggle}>Collapse to chip</ContextMenuItem>
+            {onPaste ? (
+              <ContextMenuItem onSelect={onPaste}>Paste</ContextMenuItem>
+            ) : null}
             <ContextMenuItem onSelect={onEdit}>Edit…</ContextMenuItem>
             {!alcove.isInbox ? (
               <ContextMenuSub>

@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { StripToolGlyph } from "@/components/strip-tool-glyph"
 import { Separator } from "@/components/ui/separator"
 import { DENSITY_CONFIG } from "@/lib/density"
 import {
@@ -278,6 +279,7 @@ function StripToolPicker({
                   checked={on}
                   onChange={() => onChange(toggleStripToolId(selected, tool.id))}
                 />
+                <StripToolGlyph tool={tool} size={18} />
                 {tool.label}
               </label>
             )

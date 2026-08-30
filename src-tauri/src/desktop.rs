@@ -1,7 +1,61 @@
 use std::sync::Mutex;
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, Manager, Monitor, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeskInfo {
+    pub id: String,
+    pub name: String,
+    pub primary: bool,
+}
+
+#[derive(Clone, serde::Serialize)]
+pub struct DeskHit {
+    pub id: String,
+    pub x: f64,
+    pub y: f64,
+}
+
+fn desk_id(monitor: &Monitor) -> String {
+    monitor
+        .name()
+        .cloned()
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| {
+            let pos = monitor.position();
+            format!("x{}y{}", pos.x, pos.y)
+        })
+}
+
+fn desk_name(monitor: &Monitor) -> String {
+    let id = desk_id(monitor);
+    id.strip_prefix(r"\\.\")
+        .map(|rest| rest.replace("DISPLAY", "Display "))
+        .unwrap_or(id)
+}
+
+fn desk_label(id: &str) -> String {
+    let mut label = String::from("desk-");
+    for ch in id.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            label.push(ch);
+        }
+    }
+    if label.len() == 5 {
+        label.push('x');
+    }
+    label
+}
+
+fn is_desk_label(label: &str) -> bool {
+    label == "main" || label.starts_with("desk-")
+}
+
+fn same_monitor(a: &Monitor, b: &Monitor) -> bool {
+    a.position() == b.position() && a.size() == b.size()
+}
 
 #[cfg(windows)]
 mod win {
@@ -9,17 +63,17 @@ mod win {
     use windows::core::{w, BOOL, PCWSTR};
     use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
     use windows::Win32::Graphics::Gdi::{
-        GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+        GetMonitorInfoW, MonitorFromWindow, ScreenToClient, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, VK_CONTROL, VK_F12, VK_LWIN, VK_RWIN, VK_SHIFT,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, FindWindowExW, FindWindowW, GetAncestor, GetClassNameW, GetForegroundWindow,
-        GetParent, GetWindowRect, IsIconic, IsWindowVisible, SetWindowPos, ShowWindow, WindowFromPoint,
-        GA_ROOT, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-        SWP_SHOWWINDOW, SW_HIDE, SW_RESTORE, SW_SHOW,
+        EnumWindows, FindWindowExW, FindWindowW, GetAncestor, GetClassNameW, GetCursorPos,
+        GetForegroundWindow, GetParent, GetWindowRect, IsIconic, IsWindowVisible, SetWindowPos,
+        ShowWindow, WindowFromPoint, GA_ROOT, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, SWP_NOACTIVATE,
+        SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_RESTORE, SW_SHOW,
     };
 
     struct ShellWindows {
@@ -269,20 +323,137 @@ mod win {
         Ok(())
     }
 
+    fn remember_desk(state: &super::DesktopState, label: &str, hwnd: HWND) {
+        let Ok(mut inner) = state.inner.lock() else {
+            return;
+        };
+        inner.desks.retain(|(name, _)| name != label);
+        inner.desks.push((label.to_string(), hwnd_ptr(hwnd)));
+    }
+
+    fn place_on_monitor(window: &WebviewWindow, monitor: &Monitor) -> Result<(), String> {
+        let pos = *monitor.position();
+        window
+            .set_position(tauri::PhysicalPosition::new(pos.x, pos.y))
+            .map_err(|err| err.to_string())?;
+        let hwnd = window_hwnd(window)?;
+        cover_work_area(window, hwnd, true)
+    }
+
+    fn close_extra_desks(app: &AppHandle) {
+        let labels: Vec<String> = app
+            .webview_windows()
+            .into_iter()
+            .map(|(label, _)| label)
+            .filter(|label| label.starts_with("desk-"))
+            .collect();
+        for label in labels {
+            if let Some(window) = app.get_webview_window(&label) {
+                let _ = window.close();
+            }
+        }
+    }
+
+    fn decorate_as_window(window: &WebviewWindow) {
+        let _ = window.set_skip_taskbar(false);
+        let _ = window.set_decorations(true);
+        let _ = window.set_resizable(true);
+        let _ = window.set_shadow(true);
+        let _ = window.unmaximize();
+        let _ = window.set_size(tauri::LogicalSize::new(1440.0, 900.0));
+        let _ = window.center();
+        let _ = window.show();
+    }
+
+    pub fn sync_desks(app: &AppHandle, state: &super::DesktopState) -> Result<(), String> {
+        if !state.attached() {
+            return Ok(());
+        }
+        let monitors = app.available_monitors().map_err(|err| err.to_string())?;
+        let primary = app.primary_monitor().ok().flatten();
+        let mut wanted: Vec<String> = Vec::new();
+
+        if let Some(main) = app.get_webview_window("main") {
+            if let Ok(hwnd) = window_hwnd(&main) {
+                remember_desk(state, "main", hwnd);
+            }
+        }
+
+        for monitor in &monitors {
+            if let Some(primary) = &primary {
+                if same_monitor(primary, monitor) {
+                    continue;
+                }
+            }
+            let id = desk_id(monitor);
+            let label = desk_label(&id);
+            wanted.push(label.clone());
+            if let Some(existing) = app.get_webview_window(&label) {
+                if let Ok(hwnd) = window_hwnd(&existing) {
+                    remember_desk(state, &label, hwnd);
+                }
+                continue;
+            }
+            // WebView2 deadlocks if we build a window inside a sync command.
+            let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
+                .title("Alcove")
+                .decorations(false)
+                .shadow(false)
+                .resizable(false)
+                .skip_taskbar(true)
+                .visible(false)
+                .focused(false)
+                .background_color(tauri::window::Color(25, 25, 25, 255))
+                .initialization_script(format!(
+                    "window.__ALCOVE_DESK_ID__='{}';",
+                    id.replace('\\', "\\\\").replace('\'', "\\'")
+                ))
+                .build()
+                .map_err(|err| err.to_string())?;
+            apply_desktop_chrome(&built)?;
+            place_on_monitor(&built, monitor)?;
+            let _ = built.show();
+            if let Ok(hwnd) = window_hwnd(&built) {
+                remember_desk(state, &label, hwnd);
+            }
+            log::info!("desk window {label} covering {id}");
+        }
+
+        let stale: Vec<String> = app
+            .webview_windows()
+            .into_iter()
+            .map(|(label, _)| label)
+            .filter(|label| label.starts_with("desk-") && !wanted.iter().any(|want| want == label))
+            .collect();
+        for label in stale {
+            if let Some(window) = app.get_webview_window(&label) {
+                let _ = window.close();
+            }
+        }
+        Ok(())
+    }
+
     /// Size the (still hidden) window to the work area. Explorer icons stay
     /// until `reveal` so the user never sees a blank wallpaper gap.
     pub fn prepare(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
-        let mut inner = state.inner.lock().map_err(|err| err.to_string())?;
+        let inner = state.inner.lock().map_err(|err| err.to_string())?;
         if inner.attached {
             return Ok(());
         }
+        drop(inner);
         let hwnd = window_hwnd(window)?;
         let shell = unsafe { find_shell()? };
         apply_desktop_chrome(window)?;
+        if let Ok(Some(primary)) = window.primary_monitor() {
+            let pos = *primary.position();
+            let _ = window.set_position(tauri::PhysicalPosition::new(pos.x, pos.y));
+        }
         cover_work_area(window, hwnd, false)?;
+        let mut inner = state.inner.lock().map_err(|err| err.to_string())?;
         inner.attached = true;
         inner.def_view = Some(hwnd_ptr(shell.def_view));
-        inner.hwnd = Some(hwnd_ptr(hwnd));
+        inner.desks.clear();
+        inner.desks.push((window.label().to_string(), hwnd_ptr(hwnd)));
         log::info!("Alcove sized to the work area (still hidden)");
         Ok(())
     }
@@ -303,6 +474,14 @@ mod win {
                 Ok(()) => {
                     reveal(window, state)?;
                     log::info!("Alcove covering the desktop work area");
+                    let app = window.app_handle().clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_millis(80));
+                        let state = app.state::<super::DesktopState>();
+                        if let Err(err) = sync_desks(&app, &state) {
+                            log::warn!("desk sync: {err}");
+                        }
+                    });
                     return Ok(());
                 }
                 Err(err) => {
@@ -317,7 +496,7 @@ mod win {
         Err(last)
     }
 
-    pub fn recover(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
+    fn recover_one(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
         let attached = state.inner.lock().map_err(|err| err.to_string())?.attached;
         if !attached {
             return Ok(());
@@ -326,27 +505,91 @@ mod win {
         cover_work_area(window, hwnd, true)
     }
 
+    #[allow(dead_code)]
+    pub fn recover(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
+        recover_one(window, state)
+    }
+
+    pub fn recover_all(app: &AppHandle, state: &super::DesktopState) -> Result<(), String> {
+        if !state.attached() {
+            return Ok(());
+        }
+        for (label, window) in app.webview_windows() {
+            if is_desk_label(&label) {
+                let _ = recover_one(&window, state);
+            }
+        }
+        let app = app.clone();
+        std::thread::spawn(move || {
+            let state = app.state::<super::DesktopState>();
+            if let Err(err) = sync_desks(&app, &state) {
+                log::warn!("desk sync: {err}");
+            }
+        });
+        Ok(())
+    }
+
     pub fn detach(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
+        let app = window.app_handle().clone();
+        close_extra_desks(&app);
         let mut inner = state.inner.lock().map_err(|err| err.to_string())?;
         if let Some(def_view) = inner.def_view.take() {
             unsafe {
                 let _ = ShowWindow(hwnd_from(def_view), SW_SHOW);
             }
         }
-        inner.hwnd = None;
-        if inner.attached {
-            let _ = window.set_skip_taskbar(false);
-            let _ = window.set_decorations(true);
-            let _ = window.set_resizable(true);
-            let _ = window.set_shadow(true);
-            let _ = window.unmaximize();
-            let _ = window.set_size(tauri::LogicalSize::new(1440.0, 900.0));
-            let _ = window.center();
-            let _ = window.show();
-        }
+        inner.desks.clear();
+        let was_attached = inner.attached;
         inner.attached = false;
+        drop(inner);
+        if was_attached {
+            let main = app.get_webview_window("main").unwrap_or_else(|| window.clone());
+            decorate_as_window(&main);
+        }
         log::info!("Alcove detached from the desktop");
         Ok(())
+    }
+
+    pub fn desk_hit(app: &AppHandle) -> Option<super::DeskHit> {
+        let mut point = POINT::default();
+        unsafe {
+            GetCursorPos(&mut point).ok()?;
+        }
+        for (label, window) in app.webview_windows() {
+            if !is_desk_label(&label) {
+                continue;
+            }
+            let Ok(hwnd) = window_hwnd(&window) else {
+                continue;
+            };
+            let mut rect = RECT::default();
+            unsafe {
+                let _ = GetWindowRect(hwnd, &mut rect);
+            }
+            if point.x < rect.left
+                || point.x >= rect.right
+                || point.y < rect.top
+                || point.y >= rect.bottom
+            {
+                continue;
+            }
+            let mut client = point;
+            unsafe {
+                let _ = ScreenToClient(hwnd, &mut client);
+            }
+            let scale = window.scale_factor().unwrap_or(1.0);
+            let id = window
+                .current_monitor()
+                .ok()
+                .flatten()
+                .map(|monitor| desk_id(&monitor))?;
+            return Some(super::DeskHit {
+                id,
+                x: client.x as f64 / scale,
+                y: client.y as f64 / scale,
+            });
+        }
+        None
     }
 
     pub fn spawn_desktop_threads(app: AppHandle) {
@@ -355,24 +598,34 @@ mod win {
             move || {
                 let mut win_d_was_down = false;
                 let mut burst_left = 0u8;
+                let mut ticks = 0u32;
                 loop {
                     std::thread::sleep(Duration::from_millis(30));
-                    let (attached, def_view) = match app.state::<super::DesktopState>().inner.lock()
-                    {
-                        Ok(inner) => (inner.attached, inner.def_view),
-                        _ => continue,
-                    };
+                    ticks = ticks.saturating_add(1);
+                    let (attached, def_view, labels) =
+                        match app.state::<super::DesktopState>().inner.lock() {
+                            Ok(inner) => (
+                                inner.attached,
+                                inner.def_view,
+                                inner
+                                    .desks
+                                    .iter()
+                                    .map(|(label, _)| label.clone())
+                                    .collect::<Vec<_>>(),
+                            ),
+                            _ => continue,
+                        };
                     if !attached {
                         win_d_was_down = false;
                         burst_left = 0;
                         continue;
                     }
-                    let Some(window) = app.get_webview_window("main") else {
-                        continue;
-                    };
-                    let Ok(hwnd) = window_hwnd(&window) else {
-                        continue;
-                    };
+                    if ticks % 67 == 0 {
+                        let state = app.state::<super::DesktopState>();
+                        if let Err(err) = sync_desks(&app, &state) {
+                            log::warn!("desk sync: {err}");
+                        }
+                    }
                     let win_d = win_d_pressed();
                     let just_pressed = win_d && !win_d_was_down;
                     win_d_was_down = win_d;
@@ -380,10 +633,23 @@ mod win {
                         // Explorer finishes Show Desktop a beat after the key.
                         burst_left = 12;
                     }
-                    if burst_left > 0 || needs_restore(hwnd) {
-                        restore_to_desktop(hwnd, def_view);
-                        burst_left = burst_left.saturating_sub(1);
+                    let labels = if labels.is_empty() {
+                        vec!["main".to_string()]
+                    } else {
+                        labels
+                    };
+                    for label in labels {
+                        let Some(window) = app.get_webview_window(&label) else {
+                            continue;
+                        };
+                        let Ok(hwnd) = window_hwnd(&window) else {
+                            continue;
+                        };
+                        if burst_left > 0 || needs_restore(hwnd) {
+                            restore_to_desktop(hwnd, def_view);
+                        }
                     }
+                    burst_left = burst_left.saturating_sub(1);
                 }
             }
         });
@@ -430,6 +696,18 @@ mod win {
         Ok(())
     }
 
+    pub fn recover_all(_app: &AppHandle, _state: &super::DesktopState) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub fn sync_desks(_app: &AppHandle, _state: &super::DesktopState) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub fn desk_hit(_app: &AppHandle) -> Option<super::DeskHit> {
+        None
+    }
+
     pub fn spawn_desktop_threads(_app: AppHandle) {}
 }
 
@@ -442,7 +720,7 @@ pub struct DesktopState {
 struct Inner {
     attached: bool,
     def_view: Option<isize>,
-    hwnd: Option<isize>,
+    desks: Vec<(String, isize)>,
 }
 
 impl DesktopState {
@@ -465,8 +743,49 @@ pub fn detach(window: &WebviewWindow, state: &DesktopState) -> Result<(), String
     win::detach(window, state)
 }
 
+#[allow(dead_code)]
 pub fn recover(window: &WebviewWindow, state: &DesktopState) -> Result<(), String> {
     win::recover(window, state)
+}
+
+pub fn recover_all(app: &AppHandle, state: &DesktopState) -> Result<(), String> {
+    win::recover_all(app, state)
+}
+
+pub fn list_desks(app: &AppHandle) -> Result<Vec<DeskInfo>, String> {
+    let monitors = app.available_monitors().map_err(|err| err.to_string())?;
+    let primary = app.primary_monitor().ok().flatten();
+    Ok(monitors
+        .iter()
+        .map(|monitor| DeskInfo {
+            id: desk_id(monitor),
+            name: desk_name(monitor),
+            primary: primary
+                .as_ref()
+                .map(|item| same_monitor(item, monitor))
+                .unwrap_or(false),
+        })
+        .collect())
+}
+
+pub fn this_desk(window: &WebviewWindow) -> Result<DeskInfo, String> {
+    let monitor = window
+        .current_monitor()
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "no monitor".to_string())?;
+    let primary = window.primary_monitor().ok().flatten();
+    Ok(DeskInfo {
+        id: desk_id(&monitor),
+        name: desk_name(&monitor),
+        primary: primary
+            .as_ref()
+            .map(|item| same_monitor(item, &monitor))
+            .unwrap_or(false),
+    })
+}
+
+pub fn desk_hit(app: &AppHandle) -> Option<DeskHit> {
+    win::desk_hit(app)
 }
 
 pub fn spawn_emergency_hotkey(app: AppHandle) {

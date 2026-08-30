@@ -274,6 +274,46 @@ mod win {
         unsafe { SHGetImageList(SHIL_JUMBO as i32) }.map_err(|err| err.to_string())
     }
 
+    /// Real Windows icon for a launcher target: an `exe`/`dll`/`cpl` path with
+    /// an optional `,index`, a folder, or a `shell:` namespace name.
+    pub fn shell_icon(target: &str) -> Result<String, String> {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        }
+        let result = shell_icon_inner(target);
+        unsafe {
+            CoUninitialize();
+        }
+        result
+    }
+
+    fn shell_icon_inner(target: &str) -> Result<String, String> {
+        let (raw, index) = split_icon_index(target);
+        let path = expand_env_path(raw);
+        let png = if !path.exists() {
+            shell_item_png(raw, EXTRACT_PX, MIN_ICON_EDGE)?
+        } else if index > 0 {
+            // Cache is keyed by path alone, so non-zero indices skip it.
+            private_extract_png(&path, index, EXTRACT_PX, MIN_ICON_EDGE)?
+        } else {
+            icon_png(&path, None)?
+        };
+        Ok(format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(png)
+        ))
+    }
+
+    fn split_icon_index(target: &str) -> (&str, i32) {
+        match target.rsplit_once(',') {
+            Some((file, index)) => match index.trim().parse() {
+                Ok(index) => (file, index),
+                Err(_) => (target, 0),
+            },
+            None => (target, 0),
+        }
+    }
+
     pub fn icon_data_url(path: &Path) -> Result<String, String> {
         let png = icon_png(path, None)?;
         Ok(format!(
@@ -963,6 +1003,110 @@ mod win {
         Ok(())
     }
 
+    fn invalidate_icon_cache() {
+        if let Ok(mut cache) = harvest_memo().lock() {
+            *cache = None;
+        }
+    }
+
+    fn owner_hwnd(raw: isize) -> windows::Win32::Foundation::HWND {
+        windows::Win32::Foundation::HWND(raw as *mut core::ffi::c_void)
+    }
+
+    fn file_op() -> Result<windows::Win32::UI::Shell::IFileOperation, String> {
+        use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+        use windows::Win32::UI::Shell::FileOperation;
+        unsafe { CoCreateInstance(&FileOperation, None, CLSCTX_INPROC_SERVER) }
+            .map_err(|err| err.to_string())
+    }
+
+    pub fn paste_into(hwnd: isize, dest: Option<&str>) -> Result<(), String> {
+        use windows::Win32::System::Ole::OleGetClipboard;
+        use windows::Win32::UI::Shell::{
+            FILEOPERATION_FLAGS, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOCONFIRMMKDIR,
+            FOF_RENAMEONCOLLISION, IFileOperation, IShellItem,
+        };
+        let dest_path = match dest {
+            Some(path) if !path.trim().is_empty() => PathBuf::from(path.trim()),
+            _ => known_folder(&FOLDERID_Desktop)?,
+        };
+        if !dest_path.is_dir() {
+            return Err(format!("not a folder: {}", dest_path.display()));
+        }
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        }
+        let result = (|| -> Result<(), String> {
+            let op: IFileOperation = file_op()?;
+            let flags = FILEOPERATION_FLAGS(
+                FOF_ALLOWUNDO.0
+                    | FOF_NOCONFIRMATION.0
+                    | FOF_NOCONFIRMMKDIR.0
+                    | FOF_RENAMEONCOLLISION.0,
+            );
+            unsafe {
+                op.SetOperationFlags(flags).map_err(|err| err.to_string())?;
+                op.SetOwnerWindow(owner_hwnd(hwnd))
+                    .map_err(|err| err.to_string())?;
+                let dest_item: IShellItem = SHCreateItemFromParsingName(
+                    &HSTRING::from(dest_path.to_string_lossy().as_ref()),
+                    None,
+                )
+                .map_err(|err| err.to_string())?;
+                let data = OleGetClipboard().map_err(|err| err.to_string())?;
+                op.CopyItems(&data, &dest_item)
+                    .map_err(|_| "clipboard has no files to paste".to_string())?;
+                op.PerformOperations()
+                    .map_err(|_| "clipboard has no files to paste".to_string())?;
+            }
+            Ok(())
+        })();
+        unsafe {
+            CoUninitialize();
+        }
+        invalidate_icon_cache();
+        result
+    }
+
+    pub fn recycle_paths(hwnd: isize, paths: &[String]) -> Result<(), String> {
+        use windows::Win32::UI::Shell::{
+            FO_DELETE, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_SILENT, SHFILEOPSTRUCTW,
+            SHFileOperationW,
+        };
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let mut from: Vec<u16> = Vec::new();
+        for path in paths {
+            let trimmed = path.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            from.extend(std::path::Path::new(trimmed).as_os_str().encode_wide());
+            from.push(0);
+        }
+        from.push(0);
+        if from.len() < 2 {
+            return Ok(());
+        }
+        let mut op = SHFILEOPSTRUCTW {
+            hwnd: owner_hwnd(hwnd),
+            wFunc: FO_DELETE,
+            pFrom: PCWSTR(from.as_ptr()),
+            pTo: PCWSTR::null(),
+            fFlags: (FOF_ALLOWUNDO.0 | FOF_NOCONFIRMATION.0 | FOF_SILENT.0) as u16,
+            fAnyOperationsAborted: windows::core::BOOL(0),
+            hNameMappings: std::ptr::null_mut(),
+            lpszProgressTitle: PCWSTR::null(),
+        };
+        let code = unsafe { SHFileOperationW(&mut op) };
+        invalidate_icon_cache();
+        if code != 0 && !op.fAnyOperationsAborted.as_bool() {
+            return Err(format!("could not delete ({code})"));
+        }
+        Ok(())
+    }
+
     pub fn desktop_background() -> Result<super::DesktopBackground, String> {
         Ok(super::DesktopBackground {
             color: desktop_color(),
@@ -1514,6 +1658,24 @@ mod win {
         }
 
         #[test]
+        fn icon_target_splits_a_trailing_index() {
+            use super::split_icon_index;
+            assert_eq!(
+                split_icon_index("%SystemRoot%\\System32\\mycomput.dll,2"),
+                ("%SystemRoot%\\System32\\mycomput.dll", 2)
+            );
+            assert_eq!(
+                split_icon_index("%SystemRoot%\\System32\\cmd.exe"),
+                ("%SystemRoot%\\System32\\cmd.exe", 0)
+            );
+            // A comma that is part of the name, not an index.
+            assert_eq!(
+                split_icon_index("shell:::{ED7BA470-8E54-465E-825C-99712043E01C}"),
+                ("shell:::{ED7BA470-8E54-465E-825C-99712043E01C}", 0)
+            );
+        }
+
+        #[test]
         fn crop_strips_colored_start_tile() {
             let width = 32;
             let height = 32;
@@ -1639,6 +1801,10 @@ mod win {
         Err("open is Windows-only".into())
     }
 
+    pub fn shell_icon(_target: &str) -> Result<String, String> {
+        Err("icons are Windows-only".into())
+    }
+
     pub fn icon_data_url(_path: &std::path::Path) -> Result<String, String> {
         Err("icons are Windows-only".into())
     }
@@ -1665,6 +1831,14 @@ mod win {
     pub fn recycle_bin_properties() -> Result<(), String> {
         Err("recycle bin is Windows-only".into())
     }
+
+    pub fn paste_into(_hwnd: isize, _dest: Option<&str>) -> Result<(), String> {
+        Err("paste is Windows-only".into())
+    }
+
+    pub fn recycle_paths(_hwnd: isize, _paths: &[String]) -> Result<(), String> {
+        Err("delete is Windows-only".into())
+    }
 }
 
 pub fn list_icons() -> Result<Vec<HarvestedIcon>, String> {
@@ -1685,6 +1859,10 @@ pub fn pick_folder(hwnd: isize) -> Result<Option<String>, String> {
 
 pub fn open_item_with(path: &str, args: Option<&str>) -> Result<(), String> {
     win::open_item_with(path, args)
+}
+
+pub fn shell_icon(target: &str) -> Result<String, String> {
+    win::shell_icon(target)
 }
 
 pub fn icon_data_url(path: &std::path::Path) -> Result<String, String> {
@@ -1709,4 +1887,12 @@ pub fn empty_recycle_bin() -> Result<(), String> {
 
 pub fn recycle_bin_properties() -> Result<(), String> {
     win::recycle_bin_properties()
+}
+
+pub fn paste_into(hwnd: isize, dest: Option<&str>) -> Result<(), String> {
+    win::paste_into(hwnd, dest)
+}
+
+pub fn recycle_paths(hwnd: isize, paths: &[String]) -> Result<(), String> {
+    win::recycle_paths(hwnd, paths)
 }

@@ -1,6 +1,7 @@
 mod autostart;
 mod desktop;
 mod harvest;
+mod persist;
 mod search;
 mod taskbar;
 
@@ -38,6 +39,11 @@ fn list_desktop_icons() -> Result<Vec<harvest::HarvestedIcon>, String> {
 #[tauri::command]
 fn list_folder_icons(path: String) -> Result<Vec<harvest::HarvestedIcon>, String> {
     harvest::list_folder(&path)
+}
+
+#[tauri::command]
+fn shell_icon(target: String) -> Result<String, String> {
+    harvest::shell_icon(&target)
 }
 
 #[tauri::command]
@@ -96,20 +102,50 @@ fn recycle_bin_properties() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn paste_into_folder(window: WebviewWindow, dest: Option<String>) -> Result<(), String> {
+    let hwnd = window
+        .hwnd()
+        .map(|handle| handle.0 as isize)
+        .map_err(|err| err.to_string())?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    window
+        .run_on_main_thread(move || {
+            let _ = tx.send(harvest::paste_into(hwnd, dest.as_deref()));
+        })
+        .map_err(|err| err.to_string())?;
+    rx.recv().map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
+fn recycle_desktop_items(window: WebviewWindow, paths: Vec<String>) -> Result<(), String> {
+    let hwnd = window
+        .hwnd()
+        .map(|handle| handle.0 as isize)
+        .map_err(|err| err.to_string())?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    window
+        .run_on_main_thread(move || {
+            let _ = tx.send(harvest::recycle_paths(hwnd, &paths));
+        })
+        .map_err(|err| err.to_string())?;
+    rx.recv().map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
 fn desktop_background() -> Result<harvest::DesktopBackground, String> {
     harvest::desktop_background()
 }
 
 #[tauri::command]
 fn set_windows_taskbar_hidden(
-    window: WebviewWindow,
+    app: tauri::AppHandle,
     state: tauri::State<'_, DesktopState>,
     hidden: bool,
 ) -> Result<bool, String> {
     let now_hidden = taskbar::set_taskbar_autohide(hidden)?;
     // The work area changes when the taskbar reservation goes away; re-cover it.
     std::thread::sleep(std::time::Duration::from_millis(250));
-    let _ = desktop::recover(&window, &state);
+    let _ = desktop::recover_all(&app, &state);
     Ok(now_hidden)
 }
 
@@ -129,11 +165,28 @@ fn activate_window(hwnd: isize) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn this_desk(window: WebviewWindow) -> Result<desktop::DeskInfo, String> {
+    desktop::this_desk(&window)
+}
+
+#[tauri::command]
+fn list_desks(app: tauri::AppHandle) -> Result<Vec<desktop::DeskInfo>, String> {
+    desktop::list_desks(&app)
+}
+
+#[tauri::command]
+fn desk_hit(app: tauri::AppHandle) -> Option<desktop::DeskHit> {
+    desktop::desk_hit(&app)
+}
+
+#[tauri::command]
 fn focus_desktop(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(main) = app.get_webview_window("main") {
-        let _ = main.show();
-        let _ = main.unminimize();
-        let _ = main.set_focus();
+    for (label, window) in app.webview_windows() {
+        if label != "main" && !label.starts_with("desk-") {
+            continue;
+        }
+        let _ = window.show();
+        let _ = window.unminimize();
     }
     Ok(())
 }
@@ -163,6 +216,16 @@ fn set_autostart(enabled: bool) -> Result<bool, String> {
     Ok(autostart::is_enabled())
 }
 
+#[tauri::command]
+fn load_desktop_state(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    persist::load(&app)
+}
+
+#[tauri::command]
+fn save_desktop_state(app: tauri::AppHandle, json: String) -> Result<(), String> {
+    persist::save(&app, json)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(all(windows, not(debug_assertions)))]
@@ -179,12 +242,15 @@ pub fn run() {
             list_desktop_icons,
             list_folder_icons,
             list_known_folders,
+            shell_icon,
             pick_folder,
             open_desktop_item,
             recycle_bin,
             show_recycle_bin_menu,
             empty_recycle_bin,
             recycle_bin_properties,
+            paste_into_folder,
+            recycle_desktop_items,
             desktop_background,
             set_windows_taskbar_hidden,
             windows_taskbar_hidden,
@@ -195,6 +261,11 @@ pub fn run() {
             hide_search_window,
             autostart_enabled,
             set_autostart,
+            this_desk,
+            list_desks,
+            desk_hit,
+            load_desktop_state,
+            save_desktop_state,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -222,6 +293,9 @@ pub fn run() {
                     api.prevent_close();
                     let _ = window.hide();
                 }
+                return;
+            }
+            if window.label().starts_with("desk-") {
                 return;
             }
             if window.label() != "main" {

@@ -1,4 +1,5 @@
 import { TOP_SLOTS } from "@/lib/frecency"
+import { invoke, isTauri } from "@/lib/tauri"
 import { migrateStripToolIds } from "@/lib/strip-tools"
 import { FOLDER_VIEWS, type DesktopState, type FolderView } from "@/types"
 
@@ -15,6 +16,7 @@ function migrate(state: DesktopState): DesktopState {
       folderView: FOLDER_VIEWS.includes(alcove.folderView as FolderView)
         ? alcove.folderView
         : undefined,
+      stripId: alcove.stripId ?? null,
     })),
     icons: state.icons.map((icon) => ({
       ...icon,
@@ -29,26 +31,88 @@ function migrate(state: DesktopState): DesktopState {
   }
 }
 
-export function loadDesktopState(): DesktopState | null {
+export function parseDesktopState(raw: string): DesktopState | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
     return migrate(JSON.parse(raw) as DesktopState)
   } catch {
     return null
   }
 }
 
+export function loadDesktopState(): DesktopState | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    return parseDesktopState(raw)
+  } catch {
+    return null
+  }
+}
+
+function serialize(state: DesktopState): string {
+  const slim: DesktopState = {
+    ...state,
+    icons: state.icons.map(({ imageUrl: _imageUrl, ...icon }) => icon),
+  }
+  return JSON.stringify(slim)
+}
+
 export function saveDesktopState(state: DesktopState) {
   try {
-    const slim: DesktopState = {
-      ...state,
-      icons: state.icons.map(({ imageUrl: _imageUrl, ...icon }) => icon),
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(slim))
+    localStorage.setItem(STORAGE_KEY, serialize(state))
   } catch (error) {
     console.error("Could not save Alcove desktop", error)
   }
+}
+
+export async function hydrateDesktopState(): Promise<DesktopState | null> {
+  if (isTauri()) {
+    try {
+      const raw = await invoke<string | null>("load_desktop_state")
+      const parsed = raw ? parseDesktopState(raw) : null
+      if (parsed) {
+        try {
+          localStorage.setItem(STORAGE_KEY, serialize(parsed))
+        } catch {
+          // webview storage is a cache; the file is the real save
+        }
+        return parsed
+      }
+    } catch (error) {
+      console.error("Could not load Alcove desktop from disk", error)
+    }
+  }
+  return loadDesktopState()
+}
+
+export async function persistDesktopState(state: DesktopState) {
+  const json = serialize(state)
+  try {
+    localStorage.setItem(STORAGE_KEY, json)
+  } catch (error) {
+    console.error("Could not save Alcove desktop", error)
+  }
+  if (!isTauri()) return
+  try {
+    await invoke("save_desktop_state", { json })
+  } catch (error) {
+    console.error("Could not save Alcove desktop to disk", error)
+  }
+}
+
+export function subscribeDesktopState(
+  onChange: (state: DesktopState) => void,
+): () => void {
+  function onStorage(event: StorageEvent) {
+    if (event.key !== STORAGE_KEY || !event.newValue) return
+    try {
+      onChange(migrate(JSON.parse(event.newValue) as DesktopState))
+    } catch {
+      // ignore a corrupt write from another window
+    }
+  }
+  window.addEventListener("storage", onStorage)
+  return () => window.removeEventListener("storage", onStorage)
 }
 
 export function clearDesktopState() {

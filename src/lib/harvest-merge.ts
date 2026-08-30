@@ -49,6 +49,18 @@ export function folderLeaf(path: string) {
   return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path
 }
 
+/** True only for the in-browser mock. Harvest must not use this to wipe a real layout. */
+export function isSampleMock(state: {
+  phase: string
+  icons: { path?: string }[]
+}): boolean {
+  return (
+    state.phase === "onboarding" &&
+    state.icons.length > 0 &&
+    state.icons.every((icon) => !icon.path)
+  )
+}
+
 export function liveAlcoveIds(alcoves: Alcove[]): Set<string> {
   return new Set(
     alcoves.filter((alcove) => alcove.folderPath).map((alcove) => alcove.id),

@@ -24,6 +24,11 @@ description = "Read files and icons from a chosen folder"
 commands.allow = ["list_folder_icons"]
 
 [[permission]]
+identifier = "allow-shell-icon"
+description = "Read the Windows icon for a system launcher target"
+commands.allow = ["shell_icon"]
+
+[[permission]]
 identifier = "allow-list-known-folders"
 description = "List Windows known folders such as Downloads"
 commands.allow = ["list_known_folders"]
@@ -57,6 +62,16 @@ commands.allow = ["empty_recycle_bin"]
 identifier = "allow-recycle-bin-properties"
 description = "Open Recycle Bin properties"
 commands.allow = ["recycle_bin_properties"]
+
+[[permission]]
+identifier = "allow-paste-into-folder"
+description = "Paste clipboard files onto the Desktop or into a folder"
+commands.allow = ["paste_into_folder"]
+
+[[permission]]
+identifier = "allow-recycle-desktop-items"
+description = "Send Desktop files to the Recycle Bin"
+commands.allow = ["recycle_desktop_items"]
 
 [[permission]]
 identifier = "allow-desktop-background"
@@ -107,4 +122,29 @@ commands.allow = ["autostart_enabled"]
 identifier = "allow-set-autostart"
 description = "Turn sign-in startup on or off"
 commands.allow = ["set_autostart"]
+
+[[permission]]
+identifier = "allow-this-desk"
+description = "Read which monitor this Alcove window covers"
+commands.allow = ["this_desk"]
+
+[[permission]]
+identifier = "allow-list-desks"
+description = "List connected monitors for drawer assignment"
+commands.allow = ["list_desks"]
+
+[[permission]]
+identifier = "allow-desk-hit"
+description = "Hit-test which Alcove desk is under the cursor"
+commands.allow = ["desk_hit"]
+
+[[permission]]
+identifier = "allow-load-desktop-state"
+description = "Read the saved Alcove layout from AppData"
+commands.allow = ["load_desktop_state"]
+
+[[permission]]
+identifier = "allow-save-desktop-state"
+description = "Write the Alcove layout to AppData"
+commands.allow = ["save_desktop_state"]
 

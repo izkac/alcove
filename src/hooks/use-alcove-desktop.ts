@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   DEFAULT_PIN_IDS,
   INBOX_ID,
@@ -8,7 +8,7 @@ import {
 import { defaultAlcoveGlyph } from "@/lib/alcove-glyphs"
 import { pageSize } from "@/lib/density"
 import { TOP_SLOTS, pruneFrecency, recordOpen, refreshSlots } from "@/lib/frecency"
-import { mergeHarvest, mergeLiveFolder, toDesktopIcon } from "@/lib/harvest-merge"
+import { isSampleMock, mergeHarvest, mergeLiveFolder, toDesktopIcon } from "@/lib/harvest-merge"
 import type { HarvestedIcon } from "@/lib/harvest-merge"
 import {
   applySnapshot,
@@ -17,7 +17,12 @@ import {
   snapshotsForAlcoves,
   suggestionsFromIcons,
 } from "@/lib/organize"
-import { loadDesktopState, saveDesktopState } from "@/lib/storage"
+import {
+  hydrateDesktopState,
+  loadDesktopState,
+  persistDesktopState,
+  subscribeDesktopState,
+} from "@/lib/storage"
 import { DEFAULT_STRIP_TOOL_IDS, uniqueKnown } from "@/lib/strip-tools"
 import { invoke, isTauri } from "@/lib/tauri"
 import type {
@@ -85,7 +90,7 @@ function emptyDesktopState(): DesktopState {
 }
 
 function applyHarvest(current: DesktopState, harvested: HarvestedIcon[]): DesktopState {
-  const sampleOnly = current.icons.every((icon) => !icon.path)
+  const sampleOnly = isSampleMock(current)
   if (sampleOnly) {
     return {
       ...onboardingState(),
@@ -115,13 +120,56 @@ export function useAlcoveDesktop() {
   const [state, setState] = useState<DesktopState>(
     () => loadDesktopState() ?? onboardingState(),
   )
+  const [hydrated, setHydrated] = useState(!isTauri())
+  const applyingRemote = useRef(false)
 
   useEffect(() => {
-    saveDesktopState(state)
-  }, [state])
+    let cancelled = false
+    hydrateDesktopState().then((saved) => {
+      if (cancelled) return
+      if (saved) {
+        applyingRemote.current = true
+        setState(saved)
+      }
+      setHydrated(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
-    if (!isTauri()) return
+    if (!hydrated) return
+    if (applyingRemote.current) {
+      applyingRemote.current = false
+      return
+    }
+    if (isSampleMock(state)) return
+    void persistDesktopState(state)
+  }, [state, hydrated])
+
+  useEffect(
+    () =>
+      subscribeDesktopState((next) => {
+        applyingRemote.current = true
+        setState((current) => {
+          const images = new Map(
+            current.icons.map((icon) => [icon.id, icon.imageUrl]),
+          )
+          return {
+            ...next,
+            icons: next.icons.map((icon) => ({
+              ...icon,
+              imageUrl: icon.imageUrl ?? images.get(icon.id),
+            })),
+          }
+        })
+      }),
+    [],
+  )
+
+  useEffect(() => {
+    if (!isTauri() || !hydrated) return
     let cancelled = false
     invoke<HarvestedIcon[]>("list_desktop_icons")
       .then((harvested) => {
@@ -135,7 +183,7 @@ export function useAlcoveDesktop() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [hydrated])
 
   const liveKey = state.alcoves
     .filter((alcove) => alcove.folderPath)
@@ -144,7 +192,7 @@ export function useAlcoveDesktop() {
     .join("|")
 
   useEffect(() => {
-    if (!isTauri() || !liveKey) return
+    if (!isTauri() || !hydrated || !liveKey) return
     let cancelled = false
     const lives = state.alcoves.filter(
       (alcove): alcove is Alcove & { folderPath: string } => Boolean(alcove.folderPath),
@@ -173,7 +221,7 @@ export function useAlcoveDesktop() {
     }
     // liveKey is the list of id:path pairs; alcoves is read only to fetch those paths.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveKey])
+  }, [liveKey, hydrated])
 
   const sortedAlcoves = useMemo(
     () => [...state.alcoves].sort((a, b) => a.order - b.order),
@@ -379,7 +427,7 @@ export function useAlcoveDesktop() {
   }, [])
 
   const createAlcove = useCallback(
-    (name: string, color: AlcoveColor, iconIds: string[] = [], glyph?: string, folderPath?: string | null) => {
+    (name: string, color: AlcoveColor, iconIds: string[] = [], glyph?: string, folderPath?: string | null, stripId?: string | null) => {
       const id = crypto.randomUUID()
       const trimmed = name.trim() || "New Alcove"
       setState((current) => {
@@ -394,6 +442,7 @@ export function useAlcoveDesktop() {
           order,
           page: 0,
           folderPath: folderPath || null,
+          stripId: stripId || null,
         }
         const alcoves = [...current.alcoves, alcove]
         const iconSet = new Set(folderPath ? [] : iconIds)
@@ -670,6 +719,72 @@ export function useAlcoveDesktop() {
     })
   }, [])
 
+  const reloadHarvest = useCallback((assignAlcoveId?: string | null) => {
+    if (!isTauri()) return Promise.resolve()
+    return invoke<HarvestedIcon[]>("list_desktop_icons")
+      .then((harvested) => {
+        setState((current) => {
+          const before = new Set(
+            current.icons
+              .map((icon) => icon.path)
+              .filter((path): path is string => Boolean(path)),
+          )
+          let next = applyHarvest(current, harvested)
+          if (!assignAlcoveId) return next
+          const target = next.alcoves.find((alcove) => alcove.id === assignAlcoveId)
+          if (!target || target.folderPath) return next
+          return {
+            ...next,
+            icons: next.icons.map((icon) =>
+              icon.path && !before.has(icon.path)
+                ? { ...icon, alcoveId: assignAlcoveId, groupId: null }
+                : icon,
+            ),
+          }
+        })
+      })
+      .catch((error) => {
+        console.error("Could not refresh Desktop folder", error)
+      })
+  }, [])
+
+  const pasteFiles = useCallback(
+    async (dest: string | null, assignAlcoveId: string | null) => {
+      if (!isTauri()) {
+        dropIncomingFile()
+        return
+      }
+      await invoke("paste_into_folder", { dest })
+      if (dest && assignAlcoveId) {
+        refreshLiveFolder(assignAlcoveId)
+        return
+      }
+      await reloadHarvest(assignAlcoveId)
+    },
+    [dropIncomingFile, refreshLiveFolder, reloadHarvest],
+  )
+
+  const deleteIcon = useCallback(
+    async (icon: DesktopIcon) => {
+      if (icon.path && isTauri()) {
+        await invoke("recycle_desktop_items", { paths: [icon.path] })
+        const alcove = state.alcoves.find((item) => item.id === icon.alcoveId)
+        if (alcove?.folderPath) {
+          refreshLiveFolder(alcove.id)
+          return
+        }
+        await reloadHarvest()
+        return
+      }
+      setState((current) => ({
+        ...current,
+        icons: current.icons.filter((item) => item.id !== icon.id),
+        pinIds: current.pinIds.filter((id) => id !== icon.id),
+      }))
+    },
+    [refreshLiveFolder, reloadHarvest, state.alcoves],
+  )
+
   const revealIcon = useCallback((iconId: string) => {
     setState((current) => {
       const icon = current.icons.find((item) => item.id === iconId)
@@ -712,6 +827,15 @@ export function useAlcoveDesktop() {
 
   const setFocusedAlcove = useCallback((alcoveId: string | null) => {
     setState((current) => ({ ...current, focusedAlcoveId: alcoveId }))
+  }, [])
+
+  const setAlcoveStrip = useCallback((alcoveId: string, stripId: string) => {
+    setState((current) => ({
+      ...current,
+      alcoves: current.alcoves.map((alcove) =>
+        alcove.id === alcoveId && !alcove.isInbox ? { ...alcove, stripId } : alcove,
+      ),
+    }))
   }, [])
 
   const reorderAlcove = useCallback((dragId: string, beforeId: string) => {
@@ -790,11 +914,14 @@ export function useAlcoveDesktop() {
     moveGroup,
     moveIconToGroup,
     dropIncomingFile,
+    pasteFiles,
+    deleteIcon,
     revealIcon,
     setFocusMode,
     setStripEdge,
     setStripToolIds,
     setFocusedAlcove,
+    setAlcoveStrip,
     reorderAlcove,
   }
 }

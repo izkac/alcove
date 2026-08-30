@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef } from "react"
 import type { PointerEvent as ReactPointerEvent } from "react"
+import { invoke, isTauri } from "@/lib/tauri"
+import { deskChannel, type DeskHit } from "@/lib/desk-strip"
 import type { DesktopIcon } from "@/types"
 
 export type IconDropTarget =
@@ -64,7 +66,7 @@ function hideGhost() {
   ghost.replaceChildren()
 }
 
-function resolveTarget(x: number, y: number): {
+export function resolveTarget(x: number, y: number): {
   target: IconDropTarget
   hover: Element | null
 } {
@@ -128,6 +130,7 @@ function autoScroll(x: number, y: number): boolean {
 
 export function useIconPointerDrag(
   onDrop: (icon: DesktopIcon, target: IconDropTarget) => void,
+  onForeignDesk?: (icon: DesktopIcon, hit: DeskHit) => boolean,
 ) {
   const originRef = useRef<{ icon: DesktopIcon; x: number; y: number } | null>(
     null,
@@ -137,10 +140,15 @@ export function useIconPointerDrag(
   const pointRef = useRef({ x: 0, y: 0 })
   const rafRef = useRef(0)
   const onDropRef = useRef(onDrop)
+  const onForeignRef = useRef(onForeignDesk)
 
   useEffect(() => {
     onDropRef.current = onDrop
   }, [onDrop])
+
+  useEffect(() => {
+    onForeignRef.current = onForeignDesk
+  }, [onForeignDesk])
 
   const stopRaf = useCallback(() => {
     if (rafRef.current) {
@@ -168,6 +176,7 @@ export function useIconPointerDrag(
       if (event.button !== 0) return
       originRef.current = { icon, x: event.clientX, y: event.clientY }
       draggingRef.current = false
+      event.currentTarget.setPointerCapture?.(event.pointerId)
 
       const paint = () => {
         rafRef.current = 0
@@ -211,7 +220,17 @@ export function useIconPointerDrag(
         const y = upEvent.clientY
         endDrag()
         if (!origin || !wasDragging) return
-        onDropRef.current(origin.icon, resolveTarget(x, y).target)
+        const finish = (target: IconDropTarget) => onDropRef.current(origin.icon, target)
+        if (isTauri() && onForeignRef.current) {
+          invoke<DeskHit | null>("desk_hit")
+            .then((hit) => {
+              if (hit && onForeignRef.current?.(origin.icon, hit)) return
+              finish(resolveTarget(x, y).target)
+            })
+            .catch(() => finish(resolveTarget(x, y).target))
+          return
+        }
+        finish(resolveTarget(x, y).target)
       }
 
       window.addEventListener("pointermove", onMove)
@@ -222,4 +241,92 @@ export function useIconPointerDrag(
   )
 
   return { onPointerDown }
+}
+
+export function useAlcoveStripDrag(
+  currentDeskId: string,
+  onMoveToDesk: (alcoveId: string, deskId: string) => void,
+) {
+  const originRef = useRef<{ id: string; x: number; y: number } | null>(null)
+  const draggingRef = useRef(false)
+  const movedRef = useRef(false)
+  const onMoveRef = useRef(onMoveToDesk)
+  const deskRef = useRef(currentDeskId)
+  const channelRef = useRef<BroadcastChannel | null>(null)
+
+  useEffect(() => {
+    onMoveRef.current = onMoveToDesk
+    deskRef.current = currentDeskId
+  }, [onMoveToDesk, currentDeskId])
+
+  useEffect(() => {
+    channelRef.current = deskChannel()
+    return () => channelRef.current?.close()
+  }, [])
+
+  const onPointerDown = useCallback(
+    (alcoveId: string, event: ReactPointerEvent) => {
+      if (event.button !== 0) return
+      originRef.current = { id: alcoveId, x: event.clientX, y: event.clientY }
+      draggingRef.current = false
+      movedRef.current = false
+      event.currentTarget.setPointerCapture?.(event.pointerId)
+
+      const onMove = (moveEvent: PointerEvent) => {
+        const origin = originRef.current
+        if (!origin) return
+        if (!draggingRef.current) {
+          const dx = moveEvent.clientX - origin.x
+          const dy = moveEvent.clientY - origin.y
+          if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return
+          draggingRef.current = true
+          movedRef.current = true
+          document.body.style.cursor = "grabbing"
+        }
+        if (isTauri()) {
+          invoke<DeskHit | null>("desk_hit")
+            .then((hit) => {
+              channelRef.current?.postMessage({
+                type: "hover",
+                deskId: hit && hit.id !== deskRef.current ? hit.id : null,
+              })
+            })
+            .catch(() => undefined)
+        }
+      }
+
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove)
+        window.removeEventListener("pointerup", onUp)
+        window.removeEventListener("pointercancel", onUp)
+        document.body.style.removeProperty("cursor")
+        const origin = originRef.current
+        const wasDragging = draggingRef.current
+        originRef.current = null
+        draggingRef.current = false
+        channelRef.current?.postMessage({ type: "hover", deskId: null })
+        if (!origin || !wasDragging || !isTauri()) return
+        invoke<DeskHit | null>("desk_hit")
+          .then((hit) => {
+            if (hit && hit.id !== deskRef.current) {
+              onMoveRef.current(origin.id, hit.id)
+            }
+          })
+          .catch(() => undefined)
+      }
+
+      window.addEventListener("pointermove", onMove)
+      window.addEventListener("pointerup", onUp)
+      window.addEventListener("pointercancel", onUp)
+    },
+    [],
+  )
+
+  const skipClick = useCallback(() => {
+    if (!movedRef.current) return false
+    movedRef.current = false
+    return true
+  }, [])
+
+  return { onPointerDown, skipClick }
 }

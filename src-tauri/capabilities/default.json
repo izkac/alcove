@@ -5,7 +5,8 @@
   "windows": [
     "main",
     "bar",
-    "search"
+    "search",
+    "desk-*"
   ],
   "permissions": [
     "core:default",
@@ -15,12 +16,15 @@
     "allow-list-desktop-icons",
     "allow-list-folder-icons",
     "allow-list-known-folders",
+    "allow-shell-icon",
     "allow-pick-folder",
     "allow-open-desktop-item",
     "allow-recycle-bin",
     "allow-show-recycle-bin-menu",
     "allow-empty-recycle-bin",
     "allow-recycle-bin-properties",
+    "allow-paste-into-folder",
+    "allow-recycle-desktop-items",
     "allow-desktop-background",
     "allow-set-windows-taskbar-hidden",
     "allow-windows-taskbar-hidden",
@@ -30,6 +34,11 @@
     "allow-show-search-window",
     "allow-hide-search-window",
     "allow-autostart-enabled",
-    "allow-set-autostart"
+    "allow-set-autostart",
+    "allow-this-desk",
+    "allow-list-desks",
+    "allow-desk-hit",
+    "allow-load-desktop-state",
+    "allow-save-desktop-state"
   ]
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { SearchOverlayCard } from "@/components/search-spotlight"
-import { loadDesktopState } from "@/lib/storage"
+import { hydrateDesktopState, loadDesktopState } from "@/lib/storage"
 import { invoke, isTauri } from "@/lib/tauri"
 import type { Alcove, DesktopIcon, DesktopState } from "@/types"
 
@@ -14,6 +14,9 @@ export function SearchOverlay() {
   const [session, setSession] = useState(0)
 
   useEffect(() => {
+    void hydrateDesktopState().then((saved) => {
+      if (saved) setState(saved)
+    })
     const onStorage = () => setState(loadDesktopState())
     window.addEventListener("storage", onStorage)
     return () => window.removeEventListener("storage", onStorage)
@@ -33,7 +36,9 @@ export function SearchOverlay() {
   useEffect(() => {
     function onFocus() {
       shownAt.current = Date.now()
-      setState(loadDesktopState())
+      void hydrateDesktopState().then((saved) => {
+        if (saved) setState(saved)
+      })
       setSession((value) => value + 1)
     }
     function onKey(event: KeyboardEvent) {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { Dock } from "@/components/taskbar"
-import { loadDesktopState } from "@/lib/storage"
+import { hydrateDesktopState, loadDesktopState } from "@/lib/storage"
 import { invoke, isTauri } from "@/lib/tauri"
 import type { DesktopIcon } from "@/types"
 import { SquareStack } from "lucide-react"
@@ -14,6 +14,9 @@ export function BarStrip() {
   )
 
   useEffect(() => {
+    void hydrateDesktopState().then((saved) => {
+      if (saved) setState(saved)
+    })
     const onStorage = () => setState(loadDesktopState())
     window.addEventListener("storage", onStorage)
     const timer = window.setInterval(

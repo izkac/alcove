@@ -27,6 +27,8 @@ import {
   SquareTerminal,
   User,
 } from "lucide-react"
+import type { StripTool } from "@/lib/strip-tools"
+import { useShellIcon } from "@/lib/shell-icon"
 import { cn } from "@/lib/utils"
 
 const GLYPHS: Record<string, LucideIcon> = {
@@ -59,13 +61,32 @@ const GLYPHS: Record<string, LucideIcon> = {
 }
 
 type StripToolGlyphProps = {
-  glyph: string
+  tool: StripTool
   size: number
   className?: string
 }
 
-export function StripToolGlyph({ glyph, size, className }: StripToolGlyphProps) {
-  const Icon = GLYPHS[glyph] ?? SquareTerminal
+export function StripToolGlyph({ tool, size, className }: StripToolGlyphProps) {
+  const art = useShellIcon(tool.icon ?? tool.launch)
+  if (art) {
+    return (
+      <img
+        src={art}
+        width={size}
+        height={size}
+        alt=""
+        draggable={false}
+        decoding="async"
+        className={cn(
+          "bg-transparent object-contain drop-shadow-[0_1px_1px_rgba(0,0,0,0.45)]",
+          className,
+        )}
+        style={{ width: size, height: size }}
+        aria-hidden
+      />
+    )
+  }
+  const Icon = GLYPHS[tool.glyph] ?? SquareTerminal
   const inner = Math.round(size * 0.46)
   return (
     <div

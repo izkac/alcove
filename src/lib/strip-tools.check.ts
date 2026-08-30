@@ -42,4 +42,14 @@ assert.deepEqual(toggleStripToolId(["cmd"], "control"), ["cmd", "control"])
 assert.deepEqual(toggleStripToolId(["cmd", "control"], "cmd"), ["control"])
 assert.deepEqual(toggleStripToolId(["cmd"], "nope"), ["cmd"])
 
+// Icon overrides name a Windows resource, with an optional `,index`. Missing
+// path separators mean a TypeScript escape ate part of the path.
+for (const tool of STRIP_TOOLS) {
+  if (!tool.icon) continue
+  assert.ok(
+    /^%[A-Za-z]+%(\\[^\\,]+)+(,\d+)?$/.test(tool.icon),
+    `icon path looks mangled: ${tool.id} -> ${tool.icon}`,
+  )
+}
+
 console.log("strip tools: all checks passed")

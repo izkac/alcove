@@ -43,6 +43,8 @@ type AlcoveCanvasProps = {
   onTogglePin: (iconId: string) => void
   onMoveIcon: (iconId: string, alcoveId: string) => void
   onNewAlcoveWith: (icon: DesktopIcon) => void
+  onPaste?: () => void
+  onDeleteIcon?: (icon: DesktopIcon) => void
   onIconPointerDown?: (icon: DesktopIcon, event: PointerEvent) => void
   onNewGroup: () => void
   onRenameGroup: (group: IconGroup) => void
@@ -80,6 +82,8 @@ export function AlcoveCanvas({
   onTogglePin,
   onMoveIcon,
   onNewAlcoveWith,
+  onPaste,
+  onDeleteIcon,
   onIconPointerDown,
   onNewGroup,
   onRenameGroup,
@@ -423,8 +427,15 @@ export function AlcoveCanvas({
               onMove={onMoveIcon}
               onMoveToGroup={onMoveIconToGroup}
               onNewAlcove={onNewAlcoveWith}
+              onDelete={onDeleteIcon}
             />
-          ) : null}
+          ) : (
+            <>
+              {onPaste ? (
+                <ContextMenuItem onSelect={onPaste}>Paste</ContextMenuItem>
+              ) : null}
+            </>
+          )}
         </ContextMenuContent>
       </ContextMenu>
     </section>

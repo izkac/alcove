@@ -121,7 +121,7 @@ function ToolSlot({
             "hover:bg-white/12 focus-visible:ring-2 focus-visible:ring-white/50",
           )}
         >
-          <StripToolGlyph glyph={tool.glyph} size={34} />
+          <StripToolGlyph tool={tool} size={34} />
           <SlotLabel>{tool.label}</SlotLabel>
         </button>
       </ContextMenuTrigger>

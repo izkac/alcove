@@ -15,7 +15,9 @@ import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
 import { INBOX_ID } from "@/data/sample"
 import { cn } from "@/lib/utils"
 import type { Alcove, AlcoveColor } from "@/types"
+import type { DeskInfo } from "@/lib/desk-strip"
 import { Inbox, Plus, Search, Settings } from "lucide-react"
+import type { PointerEvent as ReactPointerEvent } from "react"
 
 type ShelfRailProps = {
   alcoves: Alcove[]
@@ -31,6 +33,12 @@ type ShelfRailProps = {
   onLinkFolder: (alcove: Alcove) => void
   onUnlinkFolder: (alcoveId: string) => void
   onDelete: (alcoveId: string) => void
+  desks?: DeskInfo[]
+  deskId?: string
+  stripHover?: boolean
+  onMoveToDesk?: (alcoveId: string, deskId: string) => void
+  onAlcovePointerDown?: (alcoveId: string, event: ReactPointerEvent) => void
+  skipAlcoveClick?: () => boolean
 }
 
 export function ShelfRail({
@@ -47,13 +55,26 @@ export function ShelfRail({
   onLinkFolder,
   onUnlinkFolder,
   onDelete,
+  desks = [],
+  deskId,
+  stripHover = false,
+  onMoveToDesk,
+  onAlcovePointerDown,
+  skipAlcoveClick,
 }: ShelfRailProps) {
   const inbox = alcoves.find((alcove) => alcove.isInbox)
   const rest = alcoves.filter((alcove) => !alcove.isInbox)
   const inboxCount = countFor(INBOX_ID)
+  const otherDesks = desks.filter((item) => item.id !== deskId)
 
   return (
-    <div className="flex h-full w-[76px] shrink-0 flex-col items-center gap-2.5 overflow-y-auto border-r border-white/15 bg-black/55 py-3 shadow-2xl backdrop-blur-2xl">
+    <div
+      data-alcove-strip=""
+      className={cn(
+        "flex h-full w-[76px] shrink-0 flex-col items-center gap-2.5 overflow-y-auto border-r border-white/15 bg-black/55 py-3 shadow-2xl backdrop-blur-2xl",
+        stripHover && "bg-white/15 ring-1 ring-white/40",
+      )}
+    >
       {inbox ? (
         <ContextMenu>
           <ContextMenuTrigger asChild>
@@ -94,7 +115,11 @@ export function ShelfRail({
                 type="button"
                 data-alcove-id={alcove.id}
                 title={alcove.name}
-                onClick={() => onSelect(alcove.id)}
+                onClick={() => {
+                  if (skipAlcoveClick?.()) return
+                  onSelect(alcove.id)
+                }}
+                onPointerDown={(event) => onAlcovePointerDown?.(alcove.id, event)}
                 className="flex flex-col items-center gap-0.5"
               >
                 <span
@@ -145,6 +170,24 @@ export function ShelfRail({
                   Mirror a folder…
                 </ContextMenuItem>
               )}
+              {otherDesks.length > 0 && onMoveToDesk ? (
+                <>
+                  <ContextMenuSeparator />
+                  <ContextMenuSub>
+                    <ContextMenuSubTrigger>Move to</ContextMenuSubTrigger>
+                    <ContextMenuSubContent>
+                      {otherDesks.map((item) => (
+                        <ContextMenuItem
+                          key={item.id}
+                          onSelect={() => onMoveToDesk(alcove.id, item.id)}
+                        >
+                          {item.name}
+                        </ContextMenuItem>
+                      ))}
+                    </ContextMenuSubContent>
+                  </ContextMenuSub>
+                </>
+              ) : null}
               <ContextMenuSeparator />
               <ContextMenuItem
                 variant="destructive"

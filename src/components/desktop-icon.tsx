@@ -60,6 +60,7 @@ type IconContextItemsProps = {
   onMove: (iconId: string, alcoveId: string) => void
   onMoveToGroup?: (iconId: string, groupId: string | null) => void
   onNewAlcove: (icon: DesktopIcon) => void
+  onDelete?: (icon: DesktopIcon) => void
 }
 
 export function IconContextItems({
@@ -73,6 +74,7 @@ export function IconContextItems({
   onMove,
   onMoveToGroup,
   onNewAlcove,
+  onDelete,
 }: IconContextItemsProps) {
   return (
     <>
@@ -127,6 +129,14 @@ export function IconContextItems({
       <ContextMenuItem onSelect={() => onNewAlcove(icon)}>
         New Alcove with this
       </ContextMenuItem>
+      ) : null}
+      {onDelete ? (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem variant="destructive" onSelect={() => onDelete(icon)}>
+            Delete
+          </ContextMenuItem>
+        </>
       ) : null}
     </>
   )

@@ -3,7 +3,7 @@
  * has to survive that merge. Run: npm run check
  */
 import assert from "node:assert/strict"
-import { mergeHarvest, mergeLiveFolder } from "./harvest-merge.ts"
+import { isSampleMock, mergeHarvest, mergeLiveFolder } from "./harvest-merge.ts"
 import type { Alcove, DesktopIcon, DesktopState } from "../types.ts"
 
 const apps: Alcove = {
@@ -179,6 +179,26 @@ assert.equal(
   afterLive.icons.find((icon) => icon.path === delphi.path)?.alcoveId,
   "apps",
   "Desktop icons stay put when a live folder refreshes",
+)
+
+assert.equal(
+  isSampleMock({ phase: "onboarding", icons: [{}, {}] }),
+  true,
+  "onboarding sample icons with no paths are the browser mock",
+)
+assert.equal(
+  isSampleMock({ phase: "ready", icons: [] }),
+  false,
+  "an empty real desktop is not the mock — harvest must not wipe it",
+)
+assert.equal(
+  isSampleMock({ phase: "onboarding", icons: [] }),
+  false,
+  "empty onboarding is not the mock",
+)
+assert.equal(
+  isSampleMock({ phase: "ready", icons: [{ path: "C:\\a.lnk" }] }),
+  false,
 )
 
 console.log("harvest merge: all checks passed")
