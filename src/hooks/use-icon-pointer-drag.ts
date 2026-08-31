@@ -13,6 +13,8 @@ export type IconDropTarget =
   | { kind: "alcove"; id: string }
   | { kind: "group"; alcoveId: string; groupId: string | null }
   | { kind: "pin" }
+  /** An app on the frequent strip: open the dragged files with it. */
+  | { kind: "launch"; app: string; label: string }
   | { kind: "wallpaper" }
 
 const DRAG_THRESHOLD = 6
@@ -198,6 +200,19 @@ export function resolveTarget(x: number, y: number): {
           groupId: group.dataset.groupRow || null,
         },
         hover: group,
+      }
+    }
+    // Before the drawer check: a strip app is a launcher, not a filing target,
+    // and the strip sits inside no drawer so nothing else claims these pixels.
+    const launch = node.closest("[data-strip-launch]")
+    if (launch instanceof HTMLElement && launch.dataset.stripLaunch) {
+      return {
+        target: {
+          kind: "launch",
+          app: launch.dataset.stripLaunch,
+          label: launch.dataset.stripLabel || launch.dataset.stripLaunch,
+        },
+        hover: launch,
       }
     }
     const alcove = node.closest("[data-alcove-id]")

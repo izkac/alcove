@@ -32,6 +32,7 @@ import {
   type IconDropTarget,
 } from "@/hooks/use-icon-pointer-drag"
 import { viewFor } from "@/lib/alcove-view"
+import { TOP_SLOTS } from "@/lib/frecency"
 import { useLicenceNudge, useUpdateCheck } from "@/lib/update"
 import { parentWithin } from "@/lib/crumbs"
 import { folderLeaf, toDesktopIcon, type HarvestedIcon } from "@/lib/harvest-merge"
@@ -176,6 +177,8 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
         onFocusMode={desktop.setFocusMode}
         onStripEdge={desktop.setStripEdge}
         onStripToolIds={desktop.setStripToolIds}
+        topSlotCount={state.topSlotCount ?? TOP_SLOTS}
+        onTopSlotCount={desktop.setTopSlotCount}
         onCollapseAll={() => {
           desktop.collapseAll()
           closeDrawerRef.current()
@@ -502,6 +505,21 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         desktop.pinIcons(ids)
         return
       }
+      if (target.kind === "launch") {
+        const files = icons.filter((icon) => icon.path)
+        if (files.length === 0 || !isTauri()) return
+        for (const icon of files) {
+          desktop.noteOpen(icon.id)
+          // ponytail: one quoted path per launch, so a multi-select opens N
+          // windows. Batch into a single argv if anyone actually asks.
+          invoke("open_desktop_item", {
+            path: target.app,
+            args: `"${icon.path}"`,
+          }).catch(() => toast(`Could not open ${icon.name} with ${target.label}`))
+        }
+        setSelectedIds([])
+        return
+      }
       desktop.moveIcons(ids, INBOX_ID)
       setSelectedIds([])
     },
@@ -604,6 +622,11 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     if (!channel) return
     function onMessage(event: MessageEvent<DeskChannelMessage>) {
       const data = event.data
+      if (data.type === "icon-launched") {
+        // One desk records it, or every monitor counts the same launch again.
+        if (desk.primary) desktop.noteOpen(data.iconId)
+        return
+      }
       if (data.type !== "icon-drop" || data.deskId !== desk.id) return
       const ids = data.iconIds?.length ? data.iconIds : [data.iconId]
       const icons = ids
@@ -617,7 +640,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
       channel.removeEventListener("message", onMessage)
       channel.close()
     }
-  }, [desk.id, dropIconsAt, state.icons])
+  }, [desk.id, desk.primary, desktop, dropIconsAt, state.icons])
 
   function newGroup() {
     if (!openAlcove) return
@@ -961,6 +984,8 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         onOpenChange={setSearchOpen}
         icons={state.icons}
         alcoves={sortedAlcoves}
+        frecency={state.frecency}
+        hide={state.topHide}
         onSelect={(icon) => {
           desktop.revealIcon(icon.id)
           if (icon.alcoveId) setOpenAlcoveId(icon.alcoveId)

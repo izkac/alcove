@@ -113,6 +113,8 @@ export type DesktopState = {
   frecency: Record<string, FrecencyEntry>
   /** Fixed-length slots; an icon keeps its index until something evicts it. */
   topSlots: (string | null)[]
+  /** How many app slots the strip holds. Clamped to the frecency limits. */
+  topSlotCount?: number
   /** Slots the user locked — never evicted. */
   topKeep: string[]
   /** Icons banned from the strip. */

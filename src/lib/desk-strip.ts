@@ -63,6 +63,16 @@ export type DeskGhostEndMessage = {
   type: "icon-ghost-end"
 }
 
+/**
+ * The search window launched something. It owns no state, so it says what it
+ * did and the primary desk records it — otherwise the launcher, where the most
+ * deliberate launches happen, teaches the frequent strip nothing.
+ */
+export type DeskLaunchMessage = {
+  type: "icon-launched"
+  iconId: string
+}
+
 export type DeskChannelMessage =
   | DeskDropMessage
   | DeskHoverMessage
@@ -70,6 +80,7 @@ export type DeskChannelMessage =
   | DeskGhostMessage
   | DeskDragHandoffMessage
   | DeskGhostEndMessage
+  | DeskLaunchMessage
 
 /** The ghost lives in one webview. Paint it here only while the cursor is on this desk. */
 export function ghostStaysHere(hit: DeskHit | null, currentDeskId: string) {

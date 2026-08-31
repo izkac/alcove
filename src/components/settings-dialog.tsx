@@ -12,8 +12,10 @@ import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { StripToolGlyph } from "@/components/strip-tool-glyph"
+import { Minus, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DENSITY_CONFIG } from "@/lib/density"
+import { TOP_SLOTS_MAX, TOP_SLOTS_MIN, clampSlotCount } from "@/lib/frecency"
 import {
   STRIP_TOOL_CATEGORIES,
   STRIP_TOOLS,
@@ -31,12 +33,14 @@ type SettingsDialogProps = {
   focusMode: boolean
   stripEdge: StripEdge
   stripToolIds: string[]
+  topSlotCount: number
   desktopAttached?: boolean | null
   onLayout: (id: LayoutId) => void
   onDensity: (density: Density) => void
   onFocusMode: (on: boolean) => void
   onStripEdge: (edge: StripEdge) => void
   onStripToolIds: (ids: string[]) => void
+  onTopSlotCount: (count: number) => void
   onCollapseAll: () => void
   onDropIncoming: () => void
   onLoadSample: () => void
@@ -152,6 +156,20 @@ function StripTab(props: SettingsDialogProps) {
           onChange={props.onStripEdge}
         />
       </section>
+
+      <SettingRow
+        label="Apps on the strip"
+        description={`How many slots the strip fills with what you open, up to ${TOP_SLOTS_MAX}. Shortcuts below do not count.`}
+      >
+        <Stepper
+          value={clampSlotCount(props.topSlotCount)}
+          min={TOP_SLOTS_MIN}
+          max={TOP_SLOTS_MAX}
+          onChange={props.onTopSlotCount}
+        />
+      </SettingRow>
+
+      <Separator />
 
       <section className="flex min-h-0 flex-1 flex-col gap-2">
         <div className="flex items-center justify-between">
@@ -411,6 +429,47 @@ function SettingRow({
         ) : null}
       </div>
       {children}
+    </div>
+  )
+}
+
+/** Minus / value / plus. The ends disable at the limits, which says what they are. */
+function Stepper({
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  value: number
+  min: number
+  max: number
+  onChange: (value: number) => void
+}) {
+  return (
+    <div className="inline-flex items-center gap-0.5 rounded-[10px] bg-foreground/5 p-[3px]">
+      <Button
+        size="icon"
+        variant="ghost"
+        className="size-[26px]"
+        aria-label="Fewer slots"
+        disabled={value <= min}
+        onClick={() => onChange(value - 1)}
+      >
+        <Minus className="size-3.5" />
+      </Button>
+      <span className="w-7 text-center text-[0.8rem] font-medium tabular-nums">
+        {value}
+      </span>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="size-[26px]"
+        aria-label="More slots"
+        disabled={value >= max}
+        onClick={() => onChange(value + 1)}
+      >
+        <Plus className="size-3.5" />
+      </Button>
     </div>
   )
 }

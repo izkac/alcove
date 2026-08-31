@@ -68,6 +68,14 @@ export function FrequentStrip({
                 <button
                   type="button"
                   title={icon.name}
+                  // Only apps take a dropped file. Dropping a photo on a
+                  // spreadsheet would be a launch command with no meaning.
+                  data-strip-launch={
+                    icon.kind === "app" || icon.kind === "shortcut"
+                      ? icon.path
+                      : undefined
+                  }
+                  data-strip-label={icon.name}
                   onClick={() => onOpen(icon)}
                   className={cn(
                     "relative flex w-[64px] shrink-0 flex-col items-center gap-1 rounded-xl px-1 py-1.5 outline-none transition",
@@ -115,6 +123,8 @@ function ToolSlot({
         <button
           type="button"
           title={tool.label}
+          data-strip-launch={tool.launch}
+          data-strip-label={tool.label}
           onClick={() => onOpen(tool)}
           className={cn(
             "relative flex w-[64px] shrink-0 flex-col items-center gap-1 rounded-xl px-1 py-1.5 outline-none transition",

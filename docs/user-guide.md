@@ -65,10 +65,11 @@ stays at the top. Right-click for **Move up** / **Move down**.
 A row of your most-used items along the top or bottom edge. You do not fill it; it
 fills itself from what you actually open.
 
-It has eight slots, and it is deliberately reluctant to rearrange them. An item's
-score halves every two weeks, so old habits fade, and a newcomer has to beat the
-weakest item on the strip by half again before it takes the slot. Items keep their
-position as ranks shift, so nothing slides out from under your cursor.
+It starts with eight slots — Settings lets you pick anywhere from three to sixteen —
+and it is deliberately reluctant to rearrange them. An item's score halves every two
+weeks, so old habits fade, and a newcomer has to beat the weakest item on the strip
+by half again before it takes the slot. Items keep their position as ranks shift, so
+nothing slides out from under your cursor.
 
 Right-click any slot to override it: **Keep in this slot** nails an item down so the
 ranking cannot displace it, and **Never show here** bans one for good. **Show in its
@@ -147,9 +148,14 @@ Open Settings from the gear at the bottom of the rail. It has three tabs.
 
 **General** — Layout, icon size, and Collapse all.
 
-**Frequent strip** — whether the strip sits at the top or bottom of the screen, and
-which Windows shortcuts appear on its left. The shortcuts are grouped by category:
-System, Command, Folders, Network and Developer.
+**Frequent strip** — whether the strip sits at the top or bottom of the screen, how
+many app slots it holds, and which Windows shortcuts appear on its left. The
+shortcuts are grouped by category: System, Command, Folders, Network and Developer,
+and they do not count towards the slot number.
+
+Changing the number never disturbs what is already there: growing adds empty slots
+on the end and fills them from what you have opened before, and shrinking drops from
+the end only. Nothing that stays moves position.
 
 **System** —
 
@@ -177,6 +183,8 @@ System, Command, Folders, Network and Developer.
 | **Shift+click** an icon | Select the range from the last clicked icon |
 | **Enter** | Open the selected icons |
 | **Delete** | Send the selected icons — or the focused icon — to the Recycle Bin |
+| **1**–**9** in search | Open that numbered result, before you type anything |
+| **Backspace** | Go up a level in a drilled-into folder |
 | **Esc** | Clear the selection, or close search |
 | **Ctrl+Shift+F12** | Emergency release — hands the desktop back to Explorer |
 
@@ -187,6 +195,15 @@ got — the rail's Search button always says Ctrl+Space regardless.
 Ctrl+Space opens a standalone search window that works from anywhere in Windows. It
 reads your last saved arrangement, so a drawer you created seconds ago may take a
 moment to appear there.
+
+Before you type it shows two short lists: **Today**, the files you have changed since
+midnight, and **Frequent**, what you open most. Press **1** to **9** to open one
+without touching the mouse. Today is the half the frequent strip cannot cover — the
+document you were editing twenty minutes ago and will never open again after Friday.
+
+Once you type, results are ranked by how often you actually open them, not just by
+how well the name matches. Something you use daily wins a close call, but a weak
+match never beats a strong one however often you open it.
 
 ---
 
@@ -200,6 +217,7 @@ moment to appear there.
 | Drag an icon onto a drawer | File it there |
 | Drag selected icons onto a drawer, group, pin, or another screen | File all of them there |
 | Drag an icon onto the corner pins | Pin it so it never moves |
+| Drag a file onto an app on the frequent strip | Open it with that app, instead of its usual one |
 | Drag an icon onto empty wallpaper | Send it back to the Inbox |
 | Drag an icon to another screen | Move it to that screen's desk |
 | Click an icon | Select it. Ctrl+click adds; Shift+click takes a range |

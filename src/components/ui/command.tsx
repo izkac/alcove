@@ -39,12 +39,15 @@ function CommandDialog({
   children,
   className,
   showCloseButton = false,
+  filter,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string
   description?: string
   className?: string
   showCloseButton?: boolean
+  /** Passed through to the inner Command, so callers can rank results. */
+  filter?: React.ComponentProps<typeof CommandPrimitive>["filter"]
 }) {
   return (
     <Dialog {...props}>
@@ -59,7 +62,10 @@ function CommandDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <Command className="max-h-[min(28rem,70vh)] overflow-hidden rounded-xl bg-popover">
+        <Command
+          filter={filter}
+          className="max-h-[min(28rem,70vh)] overflow-hidden rounded-xl bg-popover"
+        >
           {children}
         </Command>
       </DialogContent>

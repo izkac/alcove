@@ -6,7 +6,16 @@
  */
 import assert from "node:assert/strict"
 import { CANVAS_MIN_ITEMS, viewFor } from "./alcove-view.ts"
-import { TOP_SLOTS, recordOpen, refreshSlots, scoreAt } from "./frecency.ts"
+import {
+  TOP_SLOTS,
+  TOP_SLOTS_MAX,
+  TOP_SLOTS_MIN,
+  clampSlotCount,
+  recordOpen,
+  refreshSlots,
+  resizeSlots,
+  scoreAt,
+} from "./frecency.ts"
 import type { Frecency } from "./frecency.ts"
 
 const DAY = 24 * 60 * 60 * 1000
@@ -84,5 +93,43 @@ assert.equal(viewFor({}, CANVAS_MIN_ITEMS + 1), "canvas")
 // …and an explicit choice always beats the count, in both directions.
 assert.equal(viewFor({ view: "panel" }, 500), "panel")
 assert.equal(viewFor({ view: "canvas" }, 0), "canvas")
+
+// --- resizing the strip (Settings) ---
+
+// The limits hold whatever is thrown at them, including junk from an old save.
+assert.equal(clampSlotCount(undefined), TOP_SLOTS)
+assert.equal(clampSlotCount(Number.NaN), TOP_SLOTS)
+assert.equal(clampSlotCount(0), TOP_SLOTS_MIN)
+assert.equal(clampSlotCount(-5), TOP_SLOTS_MIN)
+assert.equal(clampSlotCount(999), TOP_SLOTS_MAX, "the cap is a cap")
+assert.equal(clampSlotCount(7.6), 8, "a fractional count rounds")
+
+// Growing must not move anything: the strip's whole value is holding still.
+assert.deepEqual(
+  resizeSlots(["a", "b", "c"], 5),
+  ["a", "b", "c", null, null],
+  "growing only appends empty slots",
+)
+// Shrinking drops from the end, never from the middle.
+assert.deepEqual(resizeSlots(["a", "b", "c", "d"], 3), ["a", "b", "c"])
+assert.deepEqual(
+  resizeSlots(["a", "b", "c", "d"], 999),
+  ["a", "b", "c", "d", ...Array.from({ length: TOP_SLOTS_MAX - 4 }, () => null)],
+  "resizing past the cap stops at the cap",
+)
+
+// refreshSlots takes its size from the array it is given, not the default, so a
+// resized strip does not silently snap back to eight on the next open.
+const small = refreshSlots(
+  [null, null, null],
+  { ...opens("a", 9), ...opens("b", 8), ...opens("c", 7), ...opens("d", 6) },
+  opts,
+)
+assert.equal(small.length, 3, "a shrunk strip stays shrunk")
+assert.deepEqual(small, ["a", "b", "c"], "and the weakest candidate is left out")
+
+// Grown slots fill from history that was already there.
+const grown = refreshSlots(resizeSlots(["a"], 4), { ...opens("a", 9), ...opens("b", 5) }, opts)
+assert.deepEqual(grown, ["a", "b", null, null], "a new slot fills from what we know")
 
 console.log("frecency + view rule: all checks passed")

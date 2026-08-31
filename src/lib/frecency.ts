@@ -1,6 +1,34 @@
 import type { FrecencyEntry } from "@/types"
 
+/** Slots the frequent strip starts with. Settings can change it. */
 export const TOP_SLOTS = 8
+
+/** Below this the strip is not worth the screen edge it occupies. */
+export const TOP_SLOTS_MIN = 3
+
+/**
+ * Past this the strip stops being "the things you actually open" and turns into
+ * a second desktop — which is the clutter Alcove exists to remove. It is also
+ * one centred row on a screen edge, so it physically runs out of room.
+ */
+export const TOP_SLOTS_MAX = 16
+
+export function clampSlotCount(count: number | undefined | null): number {
+  if (typeof count !== "number" || !Number.isFinite(count)) return TOP_SLOTS
+  return Math.min(TOP_SLOTS_MAX, Math.max(TOP_SLOTS_MIN, Math.round(count)))
+}
+
+/**
+ * Grow or shrink the strip without disturbing what stays. Holding still is the
+ * strip's whole point, so growing only appends empty slots and shrinking only
+ * drops from the end — nothing that keeps its place ever changes index.
+ */
+export function resizeSlots(
+  slots: (string | null)[],
+  count: number | undefined | null,
+): (string | null)[] {
+  return Array.from({ length: clampSlotCount(count) }, (_, index) => slots[index] ?? null)
+}
 
 /** Opens lose half their weight every two weeks, so old habits fade out. */
 const HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000
@@ -45,7 +73,9 @@ export function refreshSlots(
   const locked = new Set(keep)
   const seen = new Set<string>()
 
-  const next: (string | null)[] = Array.from({ length: TOP_SLOTS }, (_, index) => {
+  // The array carries the size — Settings resizes it, this only re-seats it.
+  const size = slots.length > 0 ? slots.length : TOP_SLOTS
+  const next: (string | null)[] = Array.from({ length: size }, (_, index) => {
     const id = slots[index] ?? null
     if (!id || hidden.has(id) || seen.has(id) || !exists(id)) return null
     seen.add(id)
@@ -91,4 +121,16 @@ export function pruneFrecency(frecency: Frecency, exists: (id: string) => boolea
   const kept = Object.keys(frecency).filter(exists)
   if (kept.length === Object.keys(frecency).length) return frecency
   return Object.fromEntries(kept.map((id) => [id, frecency[id]]))
+}
+
+/**
+ * How much a launcher result's text match is worth once we know how often it is
+ * actually opened. Multiplied into the fuzzy match score, so a non-match stays a
+ * non-match — frecency only settles ties and near-ties, it never lets a poor
+ * match beat a good one.
+ */
+export function rankLaunch(match: number, frecencyScore: number): number {
+  if (match <= 0) return 0
+  const boost = 1 + 0.6 * (1 - Math.pow(0.5, Math.max(0, frecencyScore) / 4))
+  return match * boost
 }

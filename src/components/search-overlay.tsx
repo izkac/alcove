@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { SearchOverlayCard } from "@/components/search-spotlight"
+import { deskChannel } from "@/lib/desk-strip"
 import { hydrateDesktopState, loadDesktopState } from "@/lib/storage"
 import { invoke, isTauri } from "@/lib/tauri"
 import type { Alcove, DesktopIcon, DesktopState } from "@/types"
@@ -77,6 +78,14 @@ export function SearchOverlay() {
     if (icon.path && isTauri()) {
       invoke("open_desktop_item", { path: icon.path }).catch(() => undefined)
     }
+    // This window holds a read-only copy of the state, so it must not write it
+    // back — it would clobber whatever the desks changed meanwhile. Announce
+    // the launch instead and let the desk that owns the state record it.
+    const channel = deskChannel()
+    if (channel) {
+      channel.postMessage({ type: "icon-launched", iconId: icon.id })
+      channel.close()
+    }
     hide()
   }
 
@@ -93,6 +102,8 @@ export function SearchOverlay() {
           key={session}
           icons={icons}
           alcoves={alcoves}
+          frecency={state?.frecency}
+          hide={state?.topHide}
           onSelect={pick}
         />
       </div>

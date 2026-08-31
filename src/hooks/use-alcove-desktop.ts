@@ -8,7 +8,14 @@ import {
 import { defaultAlcoveGlyph } from "@/lib/alcove-glyphs"
 import { reorderAlcoves } from "@/lib/alcove-order"
 import { pageSize } from "@/lib/density"
-import { TOP_SLOTS, pruneFrecency, recordOpen, refreshSlots } from "@/lib/frecency"
+import {
+  TOP_SLOTS,
+  clampSlotCount,
+  pruneFrecency,
+  recordOpen,
+  refreshSlots,
+  resizeSlots,
+} from "@/lib/frecency"
 import { isSampleMock, mergeHarvest, mergeLiveFolder, toDesktopIcon } from "@/lib/harvest-merge"
 import type { HarvestedIcon } from "@/lib/harvest-merge"
 import {
@@ -39,12 +46,13 @@ import type {
   SuggestedGroup,
 } from "@/types"
 
-const emptySlots = (): (string | null)[] =>
-  Array.from({ length: TOP_SLOTS }, () => null)
+const emptySlots = (count?: number): (string | null)[] =>
+  Array.from({ length: clampSlotCount(count) }, () => null)
 
-const topDefaults = () => ({
+/** Contents only — the strip's *size* is a preference and survives a clear. */
+const topDefaults = (count?: number) => ({
   frecency: {},
-  topSlots: emptySlots(),
+  topSlots: emptySlots(count),
   topKeep: [] as string[],
   topHide: [] as string[],
 })
@@ -67,6 +75,7 @@ function onboardingState(): DesktopState {
     focusedAlcoveId: INBOX_ID,
     highlightedIconId: null,
     stripToolIds: [...DEFAULT_STRIP_TOOL_IDS],
+    topSlotCount: TOP_SLOTS,
     ...topDefaults(),
   }
 }
@@ -636,7 +645,30 @@ export function useAlcoveDesktop() {
   }, [])
 
   const clearTopStrip = useCallback(() => {
-    setState((current) => ({ ...current, ...topDefaults() }))
+    setState((current) => ({ ...current, ...topDefaults(current.topSlotCount) }))
+  }, [])
+
+  /**
+   * Resize the strip. New slots fill from the history we already have rather
+   * than staying blank until the next open, and shrinking drops from the end so
+   * nothing that stays moves under the cursor.
+   */
+  const setTopSlotCount = useCallback((count: number) => {
+    setState((current) => {
+      const next = clampSlotCount(count)
+      if (next === clampSlotCount(current.topSlotCount)) return current
+      const ids = new Set(current.icons.map((icon) => icon.id))
+      return {
+        ...current,
+        topSlotCount: next,
+        topSlots: refreshSlots(resizeSlots(current.topSlots, next), current.frecency, {
+          now: Date.now(),
+          exists: (id) => ids.has(id),
+          keep: current.topKeep,
+          hide: current.topHide,
+        }),
+      }
+    })
   }, [])
 
   const setAlcoveView = useCallback((alcoveId: string, view: AlcoveView) => {
@@ -970,6 +1002,7 @@ export function useAlcoveDesktop() {
     toggleTopKeep,
     hideFromTop,
     clearTopStrip,
+    setTopSlotCount,
     setAlcoveView,
     setFolderView,
     createGroup,

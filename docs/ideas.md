@@ -284,7 +284,12 @@ Written down so they stop coming back:
 
 ## Status
 
-- **5, 9, 10** — not built.
+- **5, 10** — not built.
+- **9** — implemented, but in the launcher rather than as a second strip. The
+  risk this page named — "two horizontal strips is one too many" — turned out to
+  be the answer: Ctrl+Space's empty box is space that is free by definition, so
+  Today and Frequent live there with 1-9 to fire them. See `src/lib/launcher.ts`
+  (self-check: `npm run check`).
 - **4** — implemented. Drill-down is a transient cursor in
   `desktop-shell.tsx` (never persisted, reset when the drawer closes), the trail
   in `src/lib/crumbs.ts` (self-check: `npm run check`) rendered by

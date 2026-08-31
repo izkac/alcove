@@ -1,4 +1,4 @@
-import { TOP_SLOTS } from "@/lib/frecency"
+import { clampSlotCount, resizeSlots } from "@/lib/frecency"
 import { invoke, isTauri } from "@/lib/tauri"
 import { migrateStripToolIds } from "@/lib/strip-tools"
 import { FOLDER_VIEWS, type DesktopState, type FolderView } from "@/types"
@@ -23,7 +23,8 @@ function migrate(state: DesktopState): DesktopState {
       groupId: icon.groupId ?? null,
     })),
     frecency: state.frecency ?? {},
-    topSlots: Array.from({ length: TOP_SLOTS }, (_, index) => slots[index] ?? null),
+    topSlotCount: clampSlotCount(state.topSlotCount),
+    topSlots: resizeSlots(slots, state.topSlotCount),
     topKeep: state.topKeep ?? [],
     topHide: state.topHide ?? [],
     stripEdge: state.stripEdge === "bottom" ? "bottom" : "top",
