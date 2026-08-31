@@ -30,6 +30,7 @@ type FolderItemsProps = {
   view: FolderView
   iconSize: number
   highlightedIconId: string | null
+  selectedIds?: string[]
   empty: string
   onOpen: (icon: DesktopIcon) => void
   onPointerDown?: (icon: DesktopIcon, event: PointerEvent) => void
@@ -40,6 +41,7 @@ export function FolderItems({
   view,
   iconSize,
   highlightedIconId,
+  selectedIds = [],
   empty,
   onOpen,
   onPointerDown,
@@ -53,6 +55,7 @@ export function FolderItems({
         items={items}
         iconSize={iconSize}
         highlightedIconId={highlightedIconId}
+        selectedIds={selectedIds}
         onOpen={onOpen}
         onPointerDown={onPointerDown}
       />
@@ -64,6 +67,7 @@ export function FolderItems({
         items={items}
         iconSize={iconSize}
         highlightedIconId={highlightedIconId}
+        selectedIds={selectedIds}
         onOpen={onOpen}
         onPointerDown={onPointerDown}
       />
@@ -81,7 +85,7 @@ export function FolderItems({
           key={icon.id}
           icon={icon}
           size={iconSize}
-          highlighted={highlightedIconId === icon.id}
+          highlighted={highlightedIconId === icon.id || selectedIds.includes(icon.id)}
           onOpen={onOpen}
           onPointerDown={onPointerDown}
         />
@@ -96,6 +100,7 @@ function ListRows({
   items,
   iconSize,
   highlightedIconId,
+  selectedIds = [],
   onOpen,
   onPointerDown,
 }: RowProps) {
@@ -109,7 +114,7 @@ function ListRows({
           key={icon.id}
           icon={icon}
           iconSize={iconSize}
-          highlighted={highlightedIconId === icon.id}
+          highlighted={highlightedIconId === icon.id || selectedIds.includes(icon.id)}
           onOpen={onOpen}
           onPointerDown={onPointerDown}
         />
@@ -122,6 +127,7 @@ function DetailRows({
   items,
   iconSize,
   highlightedIconId,
+  selectedIds = [],
   onOpen,
   onPointerDown,
 }: RowProps) {
@@ -172,7 +178,9 @@ function DetailRows({
             "grid w-full min-w-0 items-center rounded-md px-2 py-1 text-left text-white/95 outline-none",
             DETAIL_GRID,
             "hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/50",
-            highlightedIconId === icon.id && "bg-sky-400/25 ring-2 ring-sky-300",
+            highlightedIconId === icon.id || selectedIds.includes(icon.id)
+              ? "bg-sky-400/25 ring-2 ring-sky-300"
+              : undefined,
           )}
         >
           <span className="flex min-w-0 items-center gap-2">

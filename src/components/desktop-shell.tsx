@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react"
+import type { PointerEvent as ReactPointerEvent } from "react"
 import { toast } from "sonner"
 import { AlcoveCanvas } from "@/components/alcove-canvas"
 import { AlcovePanel } from "@/components/alcove-panel"
@@ -31,6 +32,13 @@ import {
 } from "@/hooks/use-icon-pointer-drag"
 import { viewFor } from "@/lib/alcove-view"
 import { alcovesOnDesk, deskChannel, type DeskChannelMessage } from "@/lib/desk-strip"
+import {
+  dragIconIds,
+  iconPack,
+  rangeIconIds,
+  toggleIconId,
+  visibleIconIds,
+} from "@/lib/icon-select"
 import { DEFAULT_STRIP_TOOL_IDS, toolsForIds, type StripTool } from "@/lib/strip-tools"
 import { invoke, isTauri } from "@/lib/tauri"
 import { disproportionateId, totalByteSize } from "@/lib/weight"
@@ -44,19 +52,19 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
   const { state } = desktop
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [createWithIcon, setCreateWithIcon] = useState<DesktopIcon | null>(null)
+  const [createWithIcons, setCreateWithIcons] = useState<DesktopIcon[]>([])
   const [editAlcove, setEditAlcove] = useState<Alcove | null>(null)
   const [desktopAttached, setDesktopAttached] = useState<boolean | null>(null)
   const closeDrawerRef = useRef<() => void>(() => undefined)
 
   const onOpenSettings = useCallback(() => setSettingsOpen(true), [])
-  const onOpenCreate = useCallback((icon?: DesktopIcon | null) => {
+  const onOpenCreate = useCallback((icons: DesktopIcon[] = []) => {
     setEditAlcove(null)
-    setCreateWithIcon(icon ?? null)
+    setCreateWithIcons(icons)
     setDialogOpen(true)
   }, [])
   const onOpenEdit = useCallback((alcove: Alcove) => {
-    setCreateWithIcon(null)
+    setCreateWithIcons([])
     setEditAlcove(alcove)
     setDialogOpen(true)
   }, [])
@@ -103,17 +111,21 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
       <CreateAlcoveDialog
         open={dialogOpen}
         alcove={editAlcove}
-        seedName={createWithIcon ? createWithIcon.name.replace(/\.[^.]+$/, "") : ""}
+        seedName={
+          createWithIcons.length === 1
+            ? createWithIcons[0].name.replace(/\.[^.]+$/, "")
+            : ""
+        }
         onOpenChange={(open) => {
           setDialogOpen(open)
-          if (!open) setCreateWithIcon(null)
+          if (!open) setCreateWithIcons([])
         }}
         onCreate={(name, color: AlcoveColor, glyph, folderPath) => {
           const make = (stripId?: string | null) =>
             desktop.createAlcove(
               name,
               color,
-              folderPath ? [] : createWithIcon ? [createWithIcon.id] : [],
+              folderPath ? [] : createWithIcons.map((icon) => icon.id),
               glyph,
               folderPath,
               stripId,
@@ -190,7 +202,7 @@ type DesktopWorkspaceProps = {
   desktop: AlcoveDesktopApi
   closeDrawerRef: { current: () => void }
   onOpenSettings: () => void
-  onOpenCreate: (icon?: DesktopIcon | null) => void
+  onOpenCreate: (icons?: DesktopIcon[]) => void
   onOpenEdit: (alcove: Alcove) => void
 }
 
@@ -211,6 +223,13 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     | null
   >(null)
   const [openAlcoveId, setOpenAlcoveId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [selectAnchorId, setSelectAnchorId] = useState<string | null>(null)
+  const selectedRef = useRef(selectedIds)
+  const pendingCollapseRef = useRef<string | null>(null)
+  useEffect(() => {
+    selectedRef.current = selectedIds
+  })
 
   const openSearch = useCallback(() => {
     if (isTauri()) {
@@ -231,6 +250,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         event.preventDefault()
         desktop.collapseAll()
         setOpenAlcoveId(null)
+        setSelectedIds([])
       }
       if (meta && event.key.toLowerCase() === "n") {
         event.preventDefault()
@@ -242,7 +262,10 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
   }, [desktop, onOpenCreate, openSearch])
 
   useEffect(() => {
-    closeDrawerRef.current = () => setOpenAlcoveId(null)
+    closeDrawerRef.current = () => {
+      setOpenAlcoveId(null)
+      setSelectedIds([])
+    }
   })
 
   const onlyInbox = sortedAlcoves.length === 1 && sortedAlcoves[0]?.isInbox
@@ -296,10 +319,19 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     })
   }
 
-  function removeIcon(icon: DesktopIcon) {
-    desktop.deleteIcon(icon).catch((err) => {
+  function removeIcons(icons: DesktopIcon[]) {
+    desktop.deleteIcons(icons).catch((err) => {
       toast(err instanceof Error ? err.message : String(err))
     })
+    setSelectedIds([])
+  }
+
+  function removeIcon(icon: DesktopIcon) {
+    removeIcons([icon])
+  }
+
+  function idsFor(id: string) {
+    return selectedIds.includes(id) && selectedIds.length > 1 ? selectedIds : [id]
   }
 
   useEffect(() => {
@@ -310,7 +342,45 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         event.preventDefault()
         pasteHere()
       }
+      if (meta && event.key.toLowerCase() === "a") {
+        event.preventDefault()
+        const ids = visibleIconIds()
+        setSelectedIds(ids)
+        setSelectAnchorId(ids[0] ?? null)
+        return
+      }
+      if (event.key === "Escape") {
+        if (selectedIds.length > 0) {
+          event.preventDefault()
+          setSelectedIds([])
+        }
+        return
+      }
+      const selected = selectedIds
+        .map((id) => state.icons.find((item) => item.id === id))
+        .filter((icon): icon is DesktopIcon => Boolean(icon))
+      if (event.key === "Enter") {
+        const host = document.activeElement instanceof Element
+          ? document.activeElement.closest("[data-desktop-icon]")
+          : null
+        const id = host instanceof HTMLElement ? host.dataset.desktopIcon : undefined
+        const focused = id
+          ? state.icons.find((item) => item.id === id)
+          : null
+        const pack = focused
+          ? iconPack(focused, selectedIds, state.icons)
+          : selected
+        if (pack.length === 0) return
+        event.preventDefault()
+        for (const icon of pack) openIcon(icon)
+        return
+      }
       if (event.key === "Delete") {
+        if (selected.length > 0) {
+          event.preventDefault()
+          removeIcons(selected)
+          return
+        }
         const host = document.activeElement instanceof Element
           ? document.activeElement.closest("[data-desktop-icon]")
           : null
@@ -327,43 +397,64 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [desktop, openAlcove, state.icons])
+  }, [desktop, openAlcove, selectedIds, state.icons])
 
   const applyDrop = useCallback(
-    (icon: DesktopIcon, target: IconDropTarget) => {
+    (icons: DesktopIcon[], target: IconDropTarget) => {
+      const ids = icons.map((icon) => icon.id)
       if (target.kind === "group") {
-        desktop.moveIconToGroup(icon.id, target.alcoveId, target.groupId)
+        desktop.moveIconsToGroup(ids, target.alcoveId, target.groupId)
+        setSelectedIds([])
         return
       }
       if (target.kind === "alcove") {
-        if (icon.alcoveId !== target.id) desktop.moveIcon(icon.id, target.id)
+        const moving = icons.filter((icon) => icon.alcoveId !== target.id)
+        if (moving.length > 0) {
+          desktop.moveIcons(
+            moving.map((icon) => icon.id),
+            target.id,
+          )
+        }
+        setSelectedIds([])
         return
       }
       if (target.kind === "pin") {
-        if (!state.pinIds.includes(icon.id)) desktop.togglePin(icon.id)
+        desktop.pinIcons(ids)
         return
       }
-      desktop.moveIcon(icon.id, INBOX_ID)
+      desktop.moveIcons(ids, INBOX_ID)
+      setSelectedIds([])
     },
-    [desktop, state.pinIds],
+    [desktop],
   )
 
-  const dropIconAt = useCallback(
-    (icon: DesktopIcon, x: number, y: number) => {
-      applyDrop(icon, resolveTarget(x, y).target)
+  const dropIconsAt = useCallback(
+    (icons: DesktopIcon[], x: number, y: number) => {
+      applyDrop(icons, resolveTarget(x, y).target)
     },
     [applyDrop],
+  )
+
+  const companionsFor = useCallback(
+    (grabbed: DesktopIcon) => {
+      const ids = dragIconIds(selectedRef.current, grabbed.id)
+      return ids
+        .map((id) => state.icons.find((item) => item.id === id))
+        .filter((icon): icon is DesktopIcon => Boolean(icon))
+    },
+    [state.icons],
   )
 
   const { onPointerDown } = useIconPointerDrag(
     desk.id,
     applyDrop,
-    (icon, hit) => {
-      if (hit.id === desk.id) return false
+    (icons, hit) => {
+      if (hit.id === desk.id || icons.length === 0) return false
       const channel = deskChannel()
       channel?.postMessage({
         type: "icon-drop",
-        iconId: icon.id,
+        iconId: icons[0].id,
+        iconIds: icons.map((icon) => icon.id),
         deskId: hit.id,
         x: hit.x,
         y: hit.y,
@@ -371,17 +462,62 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
       channel?.close()
       return true
     },
-    (iconId, x, y) => {
-      const icon = state.icons.find((item) => item.id === iconId)
-      if (icon) dropIconAt(icon, x, y)
+    (iconIds, x, y) => {
+      const icons = iconIds
+        .map((id) => state.icons.find((item) => item.id === id))
+        .filter((icon): icon is DesktopIcon => Boolean(icon))
+      if (icons.length > 0) dropIconsAt(icons, x, y)
+    },
+    companionsFor,
+    (icon) => {
+      if (pendingCollapseRef.current !== icon.id) return
+      pendingCollapseRef.current = null
+      setSelectedIds([icon.id])
+      setSelectAnchorId(icon.id)
     },
   )
 
+  function onIconPointerDown(icon: DesktopIcon, event: ReactPointerEvent) {
+    if (event.button !== 0) {
+      onPointerDown(icon, event)
+      return
+    }
+    if (event.ctrlKey || event.metaKey || event.shiftKey) event.preventDefault()
+    const meta = event.ctrlKey || event.metaKey
+    const shift = event.shiftKey
+    pendingCollapseRef.current = null
+    if (shift) {
+      const next = rangeIconIds(
+        visibleIconIds(),
+        selectAnchorId ?? icon.id,
+        icon.id,
+      )
+      selectedRef.current = next
+      setSelectedIds(next)
+    } else if (meta) {
+      const next = toggleIconId(selectedRef.current, icon.id)
+      selectedRef.current = next
+      setSelectedIds(next)
+      setSelectAnchorId(icon.id)
+    } else if (!selectedRef.current.includes(icon.id)) {
+      selectedRef.current = [icon.id]
+      setSelectedIds([icon.id])
+      setSelectAnchorId(icon.id)
+    } else {
+      pendingCollapseRef.current = icon.id
+    }
+    onPointerDown(icon, event)
+  }
+
   const { onPointerDown: onAlcovePointerDown, skipClick: skipAlcoveClick } =
-    useAlcoveStripDrag(desk.id, (alcoveId, stripId) => {
-      desktop.setAlcoveStrip(alcoveId, stripId)
-      if (openAlcoveId === alcoveId) setOpenAlcoveId(null)
-    })
+    useAlcoveStripDrag(
+      desk.id,
+      (alcoveId, stripId) => {
+        desktop.setAlcoveStrip(alcoveId, stripId)
+        if (openAlcoveId === alcoveId) setOpenAlcoveId(null)
+      },
+      desktop.reorderAlcove,
+    )
 
   useEffect(() => {
     const channel = deskChannel()
@@ -389,16 +525,19 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     function onMessage(event: MessageEvent<DeskChannelMessage>) {
       const data = event.data
       if (data.type !== "icon-drop" || data.deskId !== desk.id) return
-      const icon = state.icons.find((item) => item.id === data.iconId)
-      if (!icon) return
-      dropIconAt(icon, data.x, data.y)
+      const ids = data.iconIds?.length ? data.iconIds : [data.iconId]
+      const icons = ids
+        .map((id) => state.icons.find((item) => item.id === id))
+        .filter((icon): icon is DesktopIcon => Boolean(icon))
+      if (icons.length === 0) return
+      dropIconsAt(icons, data.x, data.y)
     }
     channel.addEventListener("message", onMessage)
     return () => {
       channel.removeEventListener("message", onMessage)
       channel.close()
     }
-  }, [desk.id, dropIconAt, state.icons])
+  }, [desk.id, dropIconsAt, state.icons])
 
   function newGroup() {
     if (!openAlcove) return
@@ -421,6 +560,8 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
           desktop.revealIcon(iconId)
           const icon = state.icons.find((item) => item.id === iconId)
           if (icon?.alcoveId) setOpenAlcoveId(icon.alcoveId)
+          setSelectedIds([iconId])
+          setSelectAnchorId(iconId)
         }}
       />
     ) : null
@@ -460,10 +601,12 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                     }}
                     onAlcovePointerDown={onAlcovePointerDown}
                     skipAlcoveClick={skipAlcoveClick}
+                    onReorder={desktop.reorderAlcove}
                     onSelect={(alcoveId) => {
                       setOpenAlcoveId((current) =>
                         current === alcoveId ? null : alcoveId,
                       )
+                      setSelectedIds([])
                       desktop.setFocusedAlcove(alcoveId)
                       desktop.refreshLiveFolder(alcoveId)
                     }}
@@ -498,7 +641,10 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                           : "relative z-10 flex min-h-0 flex-1 items-start overflow-auto p-4 md:p-6"
                       }
                     onPointerDown={(event) => {
-                      if (event.target === event.currentTarget) setOpenAlcoveId(null)
+                      if (event.target === event.currentTarget) {
+                        setOpenAlcoveId(null)
+                        setSelectedIds([])
+                      }
                     }}
                     onDoubleClick={(event) => {
                       if (event.target === event.currentTarget) onOpenCreate()
@@ -513,7 +659,11 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                         pinIds={state.pinIds}
                         density={state.density}
                         highlightedIconId={state.highlightedIconId}
-                        onClose={() => setOpenAlcoveId(null)}
+                        selectedIds={selectedIds}
+                        onClose={() => {
+                          setOpenAlcoveId(null)
+                          setSelectedIds([])
+                        }}
                         onCompact={() => desktop.setAlcoveView(openAlcove.id, "panel")}
                         onEdit={() => onOpenEdit(openAlcove)}
                         onDelete={
@@ -530,12 +680,26 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                         onRenameIcon={(icon) =>
                           setRename({ kind: "icon", id: icon.id, value: icon.name })
                         }
-                        onTogglePin={desktop.togglePin}
-                        onMoveIcon={desktop.moveIcon}
-                        onNewAlcoveWith={(icon) => onOpenCreate(icon)}
+                        onSetPinned={(ids, pin) => {
+                          if (pin) desktop.pinIcons(ids)
+                          else desktop.unpinIcons(ids)
+                        }}
+                        onMoveIcon={(iconId, alcoveId) => {
+                          desktop.moveIcons(idsFor(iconId), alcoveId)
+                          setSelectedIds([])
+                        }}
+                        onNewAlcoveWith={(icons) => {
+                          onOpenCreate(icons)
+                          setSelectedIds([])
+                        }}
                         onPaste={pasteHere}
-                        onDeleteIcon={removeIcon}
-                        onIconPointerDown={onPointerDown}
+                        onDeleteIcon={(icon) => {
+                          const pack = idsFor(icon.id)
+                            .map((id) => state.icons.find((item) => item.id === id))
+                            .filter((item): item is DesktopIcon => Boolean(item))
+                          removeIcons(pack)
+                        }}
+                        onIconPointerDown={onIconPointerDown}
                         onNewGroup={newGroup}
                         onRenameGroup={(group) =>
                           setRename({
@@ -551,9 +715,14 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                         onMoveGroup={(groupId, delta) =>
                           desktop.moveGroup(openAlcove.id, groupId, delta)
                         }
-                        onMoveIconToGroup={(iconId, groupId) =>
-                          desktop.moveIconToGroup(iconId, openAlcove.id, groupId)
-                        }
+                        onMoveIconToGroup={(iconId, groupId) => {
+                          desktop.moveIconsToGroup(
+                            idsFor(iconId),
+                            openAlcove.id,
+                            groupId,
+                          )
+                          setSelectedIds([])
+                        }}
                         onFolderView={(view) =>
                           desktop.setFolderView(openAlcove.id, view)
                         }
@@ -568,7 +737,11 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                         pinIds={state.pinIds}
                         density={state.density}
                         highlightedIconId={state.highlightedIconId}
-                        onToggle={() => setOpenAlcoveId(null)}
+                        selectedIds={selectedIds}
+                        onToggle={() => {
+                          setOpenAlcoveId(null)
+                          setSelectedIds([])
+                        }}
                         onEdit={() => onOpenEdit(openAlcove)}
                         onRecolor={(color) =>
                           desktop.recolorAlcove(openAlcove.id, color)
@@ -584,16 +757,30 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                         onRenameIcon={(icon) =>
                           setRename({ kind: "icon", id: icon.id, value: icon.name })
                         }
-                        onTogglePin={desktop.togglePin}
-                        onMoveIcon={desktop.moveIcon}
-                        onNewAlcoveWith={(icon) => onOpenCreate(icon)}
+                        onSetPinned={(ids, pin) => {
+                          if (pin) desktop.pinIcons(ids)
+                          else desktop.unpinIcons(ids)
+                        }}
+                        onMoveIcon={(iconId, alcoveId) => {
+                          desktop.moveIcons(idsFor(iconId), alcoveId)
+                          setSelectedIds([])
+                        }}
+                        onNewAlcoveWith={(icons) => {
+                          onOpenCreate(icons)
+                          setSelectedIds([])
+                        }}
                         onPaste={pasteHere}
-                        onDeleteIcon={removeIcon}
+                        onDeleteIcon={(icon) => {
+                          const pack = idsFor(icon.id)
+                            .map((id) => state.icons.find((item) => item.id === id))
+                            .filter((item): item is DesktopIcon => Boolean(item))
+                          removeIcons(pack)
+                        }}
                         onFocus={() => desktop.setFocusedAlcove(openAlcove.id)}
                         onDropIncoming={
                           openAlcove.isInbox ? desktop.dropIncomingFile : undefined
                         }
-                        onIconPointerDown={onPointerDown}
+                        onIconPointerDown={onIconPointerDown}
                         onFolderView={(view) =>
                           desktop.setFolderView(openAlcove.id, view)
                         }
@@ -611,7 +798,14 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
           <ContextMenuItem onSelect={() => onOpenCreate()}>
             New Alcove
           </ContextMenuItem>
-          <ContextMenuItem onSelect={desktop.collapseAll}>Collapse all</ContextMenuItem>
+          <ContextMenuItem
+            onSelect={() => {
+              desktop.collapseAll()
+              setSelectedIds([])
+            }}
+          >
+            Collapse all
+          </ContextMenuItem>
           {isTauri() ? null : (
             <>
               <ContextMenuSeparator />
@@ -659,6 +853,8 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         onSelect={(icon) => {
           desktop.revealIcon(icon.id)
           if (icon.alcoveId) setOpenAlcoveId(icon.alcoveId)
+          setSelectedIds([icon.id])
+          setSelectAnchorId(icon.id)
         }}
       />
     </div>

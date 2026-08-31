@@ -57,7 +57,8 @@ The strip down the left edge, and the main way you get around. It holds the Inbo
 the top, then one tile per drawer, with New Alcove, Search and Settings at the
 bottom. Each tile shows the drawer's name, its item count, and — for drawers holding
 files with a size — how much disk space they take. The heaviest drawer is tinted when
-it clearly outweighs the rest.
+it clearly outweighs the rest. Drag a drawer up or down to change its place — the tile follows the pointer. Inbox
+stays at the top. Right-click for **Move up** / **Move down**.
 
 ### The frequent strip
 
@@ -171,8 +172,12 @@ System, Command, Folders, Network and Developer.
 | **Ctrl+N** | New Alcove |
 | **Ctrl+Shift+H** | Collapse every drawer |
 | **Ctrl+V** | Paste clipboard files into the open drawer's folder, or onto the Desktop |
-| **Delete** | Send the focused icon to the Recycle Bin — click an icon first |
-| **Esc** | Close search |
+| **Ctrl+A** | Select every icon in the open drawer |
+| **Ctrl+click** an icon | Add or remove it from the selection |
+| **Shift+click** an icon | Select the range from the last clicked icon |
+| **Enter** | Open the selected icons |
+| **Delete** | Send the selected icons — or the focused icon — to the Recycle Bin |
+| **Esc** | Clear the selection, or close search |
 | **Ctrl+Shift+F12** | Emergency release — hands the desktop back to Explorer |
 
 If another program has already claimed Ctrl+Space, Alcove falls back to
@@ -190,14 +195,18 @@ moment to appear there.
 | Action | Does |
 | --- | --- |
 | Click a rail tile | Open that drawer; click again to close it |
+| Drag a drawer tile up or down | Change its place on the rail |
+| Drag a drawer to another screen | Move it to that screen's desk |
 | Drag an icon onto a drawer | File it there |
+| Drag selected icons onto a drawer, group, pin, or another screen | File all of them there |
 | Drag an icon onto the corner pins | Pin it so it never moves |
 | Drag an icon onto empty wallpaper | Send it back to the Inbox |
 | Drag an icon to another screen | Move it to that screen's desk |
+| Click an icon | Select it. Ctrl+click adds; Shift+click takes a range |
 | Double-click an icon | Open the file with its normal Windows program |
 | Double-click the wallpaper | Make a new Alcove |
-| Right-click a drawer tile | Its menu — edit, icon, colour, mirror a folder, move to another screen, delete |
-| Right-click an icon | Open, Rename, Pin, Move to, New Alcove with this, Delete |
+| Right-click a drawer tile | Its menu — edit, move up/down, icon, colour, mirror a folder, move to another screen, delete |
+| Right-click an icon | Open, Pin, Move to, New Alcove, Delete apply to the whole selection. Rename is one at a time |
 | Right-click a frequent strip slot | Open, Show in its Alcove, Keep in this slot, Never show here |
 | Right-click the wallpaper | Paste, New Alcove, Collapse all |
 

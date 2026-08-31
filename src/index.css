@@ -146,6 +146,10 @@
     opacity: 0.4;
     }
 
+  [data-alcove-strip] [data-drag-source] {
+    opacity: 0.22;
+    }
+
   [data-drop-hover] {
     background-color: rgb(255 255 255 / 0.1);
     box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 0.4);

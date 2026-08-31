@@ -44,6 +44,7 @@ type ShelfRailProps = {
   onMoveToDesk?: (alcoveId: string, deskId: string) => void
   onAlcovePointerDown?: (alcoveId: string, event: ReactPointerEvent) => void
   skipAlcoveClick?: () => boolean
+  onReorder?: (dragId: string, targetId: string) => void
 }
 
 export function ShelfRail({
@@ -68,6 +69,7 @@ export function ShelfRail({
   onMoveToDesk,
   onAlcovePointerDown,
   skipAlcoveClick,
+  onReorder,
 }: ShelfRailProps) {
   const inbox = alcoves.find((alcove) => alcove.isInbox)
   const rest = alcoves.filter((alcove) => !alcove.isInbox)
@@ -111,11 +113,13 @@ export function ShelfRail({
 
       <span className="h-px w-11 bg-white/15" />
 
-      {rest.map((alcove) => {
+      {rest.map((alcove, index) => {
         const styles = ALCOVE_COLOR_STYLES[alcove.color]
         const active = openAlcoveId === alcove.id
         const glyph = resolveAlcoveGlyph(alcove)
         const bytes = sizeFor(alcove.id)
+        const above = rest[index - 1]
+        const below = rest[index + 1]
         return (
           <ContextMenu key={alcove.id}>
             <ContextMenuTrigger asChild>
@@ -158,6 +162,22 @@ export function ShelfRail({
             </ContextMenuTrigger>
             <ContextMenuContent className="w-56">
               <ContextMenuItem onSelect={() => onEdit(alcove)}>Edit…</ContextMenuItem>
+              {onReorder ? (
+                <>
+                  <ContextMenuItem
+                    disabled={!above}
+                    onSelect={() => above && onReorder(alcove.id, above.id)}
+                  >
+                    Move up
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    disabled={!below}
+                    onSelect={() => below && onReorder(alcove.id, below.id)}
+                  >
+                    Move down
+                  </ContextMenuItem>
+                </>
+              ) : null}
               <ContextMenuSub>
                 <ContextMenuSubTrigger>Icon</ContextMenuSubTrigger>
                 <ContextMenuSubContent className="w-[232px] p-2">

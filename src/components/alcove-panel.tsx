@@ -21,6 +21,7 @@ import { AlcoveGlyphGrid, resolveAlcoveGlyph } from "@/lib/alcove-glyphs"
 import { DENSITY_CONFIG } from "@/lib/density"
 import { folderIconSize, folderViewFor } from "@/lib/folder-view"
 import { folderLeaf } from "@/lib/harvest-merge"
+import { iconPack } from "@/lib/icon-select"
 import { cn } from "@/lib/utils"
 import type { Alcove, AlcoveColor, Density, DesktopIcon, FolderView } from "@/types"
 import { Inbox, Maximize2, Pencil, Search, Trash2 } from "lucide-react"
@@ -33,6 +34,7 @@ type AlcovePanelProps = {
   pinIds: string[]
   density: Density
   highlightedIconId: string | null
+  selectedIds?: string[]
   dimmed?: boolean
   onToggle: () => void
   onEdit: () => void
@@ -41,9 +43,9 @@ type AlcovePanelProps = {
   onDelete: () => void
   onOpenIcon: (icon: DesktopIcon) => void
   onRenameIcon: (icon: DesktopIcon) => void
-  onTogglePin: (iconId: string) => void
+  onSetPinned: (iconIds: string[], pinned: boolean) => void
   onMoveIcon: (iconId: string, alcoveId: string) => void
-  onNewAlcoveWith: (icon: DesktopIcon) => void
+  onNewAlcoveWith: (icons: DesktopIcon[]) => void
   onFocus: () => void
   onDropIncoming?: () => void
   onPaste?: () => void
@@ -84,6 +86,7 @@ function ExpandedAlcove({
   pinIds,
   density,
   highlightedIconId,
+  selectedIds = [],
   dimmed,
   onToggle,
   onEdit,
@@ -92,7 +95,7 @@ function ExpandedAlcove({
   onDelete,
   onOpenIcon,
   onRenameIcon,
-  onTogglePin,
+  onSetPinned,
   onMoveIcon,
   onNewAlcoveWith,
   onFocus,
@@ -287,6 +290,7 @@ function ExpandedAlcove({
                 view={itemView}
                 iconSize={itemSize}
                 highlightedIconId={highlightedIconId}
+                selectedIds={selectedIds}
                 empty={`No icons match “${query.trim()}”.`}
                 onOpen={handleOpen}
                 onPointerDown={onIconPointerDown}
@@ -298,6 +302,7 @@ function ExpandedAlcove({
                   icon={icon}
                   size={config.icon}
                   highlighted={highlightedIconId === icon.id}
+                  selected={selectedIds.includes(icon.id)}
                   onOpen={handleOpen}
                   onPointerDown={onIconPointerDown}
                 />
@@ -310,11 +315,12 @@ function ExpandedAlcove({
         {menuIcon ? (
           <IconContextItems
             icon={menuIcon}
+            pack={iconPack(menuIcon, selectedIds, icons)}
             alcoves={allAlcoves}
             pinned={pinIds.includes(menuIcon.id)}
             onOpen={onOpenIcon}
             onRename={onRenameIcon}
-            onTogglePin={onTogglePin}
+            onSetPinned={onSetPinned}
             onMove={onMoveIcon}
             onNewAlcove={onNewAlcoveWith}
             onDelete={onDeleteIcon}

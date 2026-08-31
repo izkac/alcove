@@ -32,7 +32,24 @@ function ghostEl(): HTMLElement {
   return el
 }
 
-function fillGhostFromArt(name: string, imageUrl?: string) {
+function fillAlcoveGhost(alcoveId: string) {
+  const ghost = ghostEl()
+  ghost.replaceChildren()
+  ghost.style.color = ""
+  ghost.style.fontSize = ""
+  const source = document.querySelector(
+    `[data-alcove-strip] [data-alcove-id="${CSS.escape(alcoveId)}"]`,
+  )
+  if (!(source instanceof HTMLElement)) return
+  const clone = source.cloneNode(true) as HTMLElement
+  clone.removeAttribute("data-alcove-id")
+  clone.removeAttribute(SOURCE_ATTR)
+  clone.style.opacity = "1"
+  clone.style.pointerEvents = "none"
+  ghost.appendChild(clone)
+}
+
+function fillGhostFromArt(name: string, imageUrl?: string, count = 1) {
   const ghost = ghostEl()
   ghost.replaceChildren()
   if (imageUrl) {
@@ -44,14 +61,15 @@ function fillGhostFromArt(name: string, imageUrl?: string) {
     img.style.height = "48px"
     img.style.objectFit = "contain"
     ghost.appendChild(img)
-    return
+  } else {
+    ghost.textContent = name
+    ghost.style.color = "white"
+    ghost.style.fontSize = "12px"
   }
-  ghost.textContent = name
-  ghost.style.color = "white"
-  ghost.style.fontSize = "12px"
+  addCountBadge(count)
 }
 
-function fillGhost(icon: DesktopIcon) {
+function fillGhost(icon: DesktopIcon, count = 1) {
   const ghost = ghostEl()
   ghost.replaceChildren()
   const source = document.querySelector(
@@ -65,16 +83,28 @@ function fillGhost(icon: DesktopIcon) {
     if (clone instanceof HTMLImageElement) clone.style.objectFit = "contain"
     ghost.appendChild(clone)
   } else {
-    fillGhostFromArt(icon.name, icon.imageUrl)
+    fillGhostFromArt(icon.name, icon.imageUrl, count)
+    return
   }
+  addCountBadge(count)
 }
 
-function ghostArt(icon: DesktopIcon) {
+function addCountBadge(count: number) {
+  if (count < 2) return
+  const badge = document.createElement("span")
+  badge.textContent = String(count)
+  badge.style.cssText =
+    "position:absolute;top:-8px;right:-8px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#38bdf8;color:#0c4a6e;font:700 11px/20px sans-serif;text-align:center"
+  ghostEl().appendChild(badge)
+}
+
+function ghostArt(icon: DesktopIcon, iconIds: string[]) {
   const img = ghostEl().querySelector("img")
   return {
     iconId: icon.id,
     name: icon.name,
     imageUrl: img instanceof HTMLImageElement ? img.src : icon.imageUrl,
+    iconIds,
   }
 }
 
@@ -159,15 +189,29 @@ function autoScroll(x: number, y: number): boolean {
   return false
 }
 
+type DragOrigin = {
+  icon: DesktopIcon
+  icons: DesktopIcon[]
+  x: number
+  y: number
+}
+
+type GhostArt = {
+  iconId: string
+  name: string
+  imageUrl?: string
+  iconIds?: string[]
+}
+
 export function useIconPointerDrag(
   deskId: string,
-  onDrop: (icon: DesktopIcon, target: IconDropTarget) => void,
-  onForeignDesk?: (icon: DesktopIcon, hit: DeskHit) => boolean,
-  onRemoteDrop?: (iconId: string, x: number, y: number) => void,
+  onDrop: (icons: DesktopIcon[], target: IconDropTarget) => void,
+  onForeignDesk?: (icons: DesktopIcon[], hit: DeskHit) => boolean,
+  onRemoteDrop?: (iconIds: string[], x: number, y: number) => void,
+  companionsFor?: (grabbed: DesktopIcon) => DesktopIcon[],
+  onClickWithoutDrag?: (icon: DesktopIcon) => void,
 ) {
-  const originRef = useRef<{ icon: DesktopIcon; x: number; y: number } | null>(
-    null,
-  )
+  const originRef = useRef<DragOrigin | null>(null)
   const draggingRef = useRef(false)
   const handedOffRef = useRef(false)
   const awayRef = useRef(false)
@@ -176,16 +220,14 @@ export function useIconPointerDrag(
   const rafRef = useRef(0)
   const deskIdRef = useRef(deskId)
   const channelRef = useRef<BroadcastChannel | null>(null)
-  const foreignArtRef = useRef<{
-    iconId: string
-    name: string
-    imageUrl?: string
-  } | null>(null)
+  const foreignArtRef = useRef<GhostArt | null>(null)
   const foreignHereRef = useRef(false)
   const takeHandoffRef = useRef(false)
   const onDropRef = useRef(onDrop)
   const onForeignRef = useRef(onForeignDesk)
   const onRemoteRef = useRef(onRemoteDrop)
+  const companionsRef = useRef(companionsFor)
+  const onClickRef = useRef(onClickWithoutDrag)
 
   useEffect(() => {
     deskIdRef.current = deskId
@@ -202,6 +244,14 @@ export function useIconPointerDrag(
   useEffect(() => {
     onRemoteRef.current = onRemoteDrop
   }, [onRemoteDrop])
+
+  useEffect(() => {
+    companionsRef.current = companionsFor
+  }, [companionsFor])
+
+  useEffect(() => {
+    onClickRef.current = onClickWithoutDrag
+  }, [onClickWithoutDrag])
 
   const stopRaf = useCallback(() => {
     if (rafRef.current) {
@@ -260,7 +310,7 @@ export function useIconPointerDrag(
         const art = foreignArtRef.current
         if (!art) return
         foreignHereRef.current = true
-        fillGhostFromArt(art.name, art.imageUrl)
+        fillGhostFromArt(art.name, art.imageUrl, art.iconIds?.length ?? 1)
         showGhost(data.x, data.y)
         hoverRef.current = setHover(
           resolveTarget(data.x, data.y).hover,
@@ -290,7 +340,7 @@ export function useIconPointerDrag(
       if (!foreignHereRef.current && !takeHandoffRef.current) return
       foreignHereRef.current = true
       const art = foreignArtRef.current
-      fillGhostFromArt(art.name, art.imageUrl)
+      fillGhostFromArt(art.name, art.imageUrl, art.iconIds?.length ?? 1)
       showGhost(event.clientX, event.clientY)
       hoverRef.current = setHover(
         resolveTarget(event.clientX, event.clientY).hover,
@@ -315,7 +365,7 @@ export function useIconPointerDrag(
       const y = event.clientY
       clearForeignGhost()
       channel?.postMessage({ type: "icon-ghost-end" } satisfies DeskChannelMessage)
-      onRemoteRef.current?.(art.iconId, x, y)
+      onRemoteRef.current?.(art.iconIds?.length ? art.iconIds : [art.iconId], x, y)
     }
 
     channel.addEventListener("message", onMessage)
@@ -333,11 +383,15 @@ export function useIconPointerDrag(
   const onPointerDown = useCallback(
     (icon: DesktopIcon, event: ReactPointerEvent) => {
       if (event.button !== 0) return
-      originRef.current = { icon, x: event.clientX, y: event.clientY }
+      originRef.current = { icon, icons: [icon], x: event.clientX, y: event.clientY }
       draggingRef.current = false
       handedOffRef.current = false
       awayRef.current = false
-      event.currentTarget.setPointerCapture?.(event.pointerId)
+      try {
+        event.currentTarget.setPointerCapture?.(event.pointerId)
+      } catch {
+        // Capture needs a real pointer; window listeners still see the drag.
+      }
 
       const paintAway = (hit: DeskHit) => {
         hideGhost()
@@ -360,7 +414,7 @@ export function useIconPointerDrag(
           } satisfies DeskChannelMessage)
           awayRef.current = false
           const origin = originRef.current
-          if (origin) fillGhost(origin.icon)
+          if (origin) fillGhost(origin.icon, origin.icons.length)
         }
         showGhost(x, y)
         hoverRef.current = setHover(resolveTarget(x, y).hover, hoverRef.current)
@@ -406,16 +460,20 @@ export function useIconPointerDrag(
           const dx = moveEvent.clientX - origin.x
           const dy = moveEvent.clientY - origin.y
           if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return
+          const pack = companionsRef.current?.(origin.icon) ?? [origin.icon]
+          origin.icons = pack.length > 0 ? pack : [origin.icon]
           draggingRef.current = true
-          fillGhost(origin.icon)
+          fillGhost(origin.icon, origin.icons.length)
           showGhost(moveEvent.clientX, moveEvent.clientY)
           document.body.style.cursor = "grabbing"
-          document
-            .querySelector(`[data-desktop-icon="${CSS.escape(origin.icon.id)}"]`)
-            ?.setAttribute(SOURCE_ATTR, "")
+          for (const item of origin.icons) {
+            document
+              .querySelector(`[data-desktop-icon="${CSS.escape(item.id)}"]`)
+              ?.setAttribute(SOURCE_ATTR, "")
+          }
           channelRef.current?.postMessage({
             type: "icon-drag-begin",
-            ...ghostArt(origin.icon),
+            ...ghostArt(origin.icon, origin.icons.map((item) => item.id)),
           } satisfies DeskChannelMessage)
         }
         if (!rafRef.current) {
@@ -423,12 +481,12 @@ export function useIconPointerDrag(
         }
       }
 
-      const finishDrop = (origin: DesktopIcon, x: number, y: number) => {
-        const done = (target: IconDropTarget) => onDropRef.current(origin, target)
+      const finishDrop = (icons: DesktopIcon[], x: number, y: number) => {
+        const done = (target: IconDropTarget) => onDropRef.current(icons, target)
         if (isTauri() && onForeignRef.current) {
           invoke<DeskHit | null>("desk_hit")
             .then((hit) => {
-              if (hit && onForeignRef.current?.(origin, hit)) return
+              if (hit && onForeignRef.current?.(icons, hit)) return
               done(resolveTarget(x, y).target)
             })
             .catch(() => done(resolveTarget(x, y).target))
@@ -450,8 +508,13 @@ export function useIconPointerDrag(
           type: "icon-ghost-end",
         } satisfies DeskChannelMessage)
         endDrag()
-        if (!origin || !wasDragging || handedOff) return
-        finishDrop(origin.icon, x, y)
+        if (!origin) return
+        if (!wasDragging) {
+          onClickRef.current?.(origin.icon)
+          return
+        }
+        if (handedOff) return
+        finishDrop(origin.icons, x, y)
       }
 
       const onCancel = () => {
@@ -494,25 +557,43 @@ export function useIconPointerDrag(
   return { onPointerDown }
 }
 
+function railAlcoveAt(x: number, y: number): { id: string; node: HTMLElement } | null {
+  for (const node of document.elementsFromPoint(x, y)) {
+    if (!(node instanceof Element)) continue
+    const tile = node.closest("[data-alcove-id]")
+    if (!(tile instanceof HTMLElement) || !tile.dataset.alcoveId) continue
+    if (!tile.closest("[data-alcove-strip]")) continue
+    return { id: tile.dataset.alcoveId, node: tile }
+  }
+  return null
+}
+
 export function useAlcoveStripDrag(
   currentDeskId: string,
   onMoveToDesk: (alcoveId: string, deskId: string) => void,
+  onReorder: (dragId: string, targetId: string) => void,
 ) {
   const originRef = useRef<{ id: string; x: number; y: number } | null>(null)
   const draggingRef = useRef(false)
   const movedRef = useRef(false)
+  const hoverRef = useRef<Element | null>(null)
   const onMoveRef = useRef(onMoveToDesk)
+  const onReorderRef = useRef(onReorder)
   const deskRef = useRef(currentDeskId)
   const channelRef = useRef<BroadcastChannel | null>(null)
 
   useEffect(() => {
     onMoveRef.current = onMoveToDesk
+    onReorderRef.current = onReorder
     deskRef.current = currentDeskId
-  }, [onMoveToDesk, currentDeskId])
+  }, [onMoveToDesk, onReorder, currentDeskId])
 
   useEffect(() => {
     channelRef.current = deskChannel()
-    return () => channelRef.current?.close()
+    return () => {
+      channelRef.current?.close()
+      hideGhost()
+    }
   }, [])
 
   const onPointerDown = useCallback(
@@ -521,7 +602,17 @@ export function useAlcoveStripDrag(
       originRef.current = { id: alcoveId, x: event.clientX, y: event.clientY }
       draggingRef.current = false
       movedRef.current = false
-      event.currentTarget.setPointerCapture?.(event.pointerId)
+      try {
+        event.currentTarget.setPointerCapture?.(event.pointerId)
+      } catch {
+        // Capture needs a real pointer; window listeners still see the drag.
+      }
+
+      const paintHover = (x: number, y: number, sourceId: string) => {
+        const hit = railAlcoveAt(x, y)
+        const node = hit && hit.id !== sourceId ? hit.node : null
+        hoverRef.current = setHover(node, hoverRef.current)
+      }
 
       const onMove = (moveEvent: PointerEvent) => {
         const origin = originRef.current
@@ -532,8 +623,17 @@ export function useAlcoveStripDrag(
           if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return
           draggingRef.current = true
           movedRef.current = true
+          fillAlcoveGhost(origin.id)
+          showGhost(moveEvent.clientX, moveEvent.clientY)
           document.body.style.cursor = "grabbing"
+          document
+            .querySelector(
+              `[data-alcove-strip] [data-alcove-id="${CSS.escape(origin.id)}"]`,
+            )
+            ?.setAttribute(SOURCE_ATTR, "")
         }
+        moveGhost(moveEvent.clientX, moveEvent.clientY)
+        paintHover(moveEvent.clientX, moveEvent.clientY, origin.id)
         if (isTauri()) {
           invoke<DeskHit | null>("desk_hit")
             .then((hit) => {
@@ -546,21 +646,32 @@ export function useAlcoveStripDrag(
         }
       }
 
-      const onUp = () => {
+      const onUp = (upEvent: PointerEvent) => {
         window.removeEventListener("pointermove", onMove)
         window.removeEventListener("pointerup", onUp)
         window.removeEventListener("pointercancel", onUp)
         document.body.style.removeProperty("cursor")
+        hideGhost()
+        hoverRef.current = setHover(null, hoverRef.current)
+        document
+          .querySelectorAll(`[data-alcove-strip] [${SOURCE_ATTR}]`)
+          .forEach((node) => node.removeAttribute(SOURCE_ATTR))
         const origin = originRef.current
         const wasDragging = draggingRef.current
         originRef.current = null
         draggingRef.current = false
         channelRef.current?.postMessage({ type: "hover", deskId: null })
-        if (!origin || !wasDragging || !isTauri()) return
+        if (!origin || !wasDragging) return
+        const hit = railAlcoveAt(upEvent.clientX, upEvent.clientY)
+        if (hit && hit.id !== origin.id) {
+          onReorderRef.current(origin.id, hit.id)
+          return
+        }
+        if (!isTauri()) return
         invoke<DeskHit | null>("desk_hit")
-          .then((hit) => {
-            if (hit && hit.id !== deskRef.current) {
-              onMoveRef.current(origin.id, hit.id)
+          .then((deskHit) => {
+            if (deskHit && deskHit.id !== deskRef.current) {
+              onMoveRef.current(origin.id, deskHit.id)
             }
           })
           .catch(() => undefined)

@@ -6,6 +6,7 @@ import {
   SAMPLE_ICONS,
 } from "@/data/sample"
 import { defaultAlcoveGlyph } from "@/lib/alcove-glyphs"
+import { reorderAlcoves } from "@/lib/alcove-order"
 import { pageSize } from "@/lib/density"
 import { TOP_SLOTS, pruneFrecency, recordOpen, refreshSlots } from "@/lib/frecency"
 import { isSampleMock, mergeHarvest, mergeLiveFolder, toDesktopIcon } from "@/lib/harvest-merge"
@@ -502,17 +503,24 @@ export function useAlcoveDesktop() {
       })
   }, [state.alcoves])
 
-  const moveIcon = useCallback((iconId: string, alcoveId: string) => {
+  const moveIcons = useCallback((iconIds: string[], alcoveId: string) => {
+    if (iconIds.length === 0) return
+    const ids = new Set(iconIds)
     setState((current) => {
       const target = current.alcoves.find((alcove) => alcove.id === alcoveId)
-      const icon = current.icons.find((item) => item.id === iconId)
-      const from = current.alcoves.find((alcove) => alcove.id === icon?.alcoveId)
-      if (target?.folderPath || from?.folderPath) return current
+      if (target?.folderPath) return current
+      let changed = false
+      const icons = current.icons.map((item) => {
+        if (!ids.has(item.id)) return item
+        const from = current.alcoves.find((alcove) => alcove.id === item.alcoveId)
+        if (from?.folderPath) return item
+        changed = true
+        return { ...item, alcoveId, groupId: null }
+      })
+      if (!changed) return current
       return {
         ...current,
-        icons: current.icons.map((item) =>
-          item.id === iconId ? { ...item, alcoveId, groupId: null } : item,
-        ),
+        icons,
         focusedAlcoveId: alcoveId,
         alcoves: current.alcoves.map((alcove) =>
           alcove.id === alcoveId ? { ...alcove, collapsed: false } : alcove,
@@ -520,6 +528,10 @@ export function useAlcoveDesktop() {
       }
     })
   }, [])
+
+  const moveIcon = useCallback((iconId: string, alcoveId: string) => {
+    moveIcons([iconId], alcoveId)
+  }, [moveIcons])
 
   const renameIcon = useCallback((iconId: string, name: string) => {
     const trimmed = name.trim()
@@ -540,6 +552,28 @@ export function useAlcoveDesktop() {
       }
       if (current.pinIds.length >= 8) return current
       return { ...current, pinIds: [...current.pinIds, iconId] }
+    })
+  }, [])
+
+  const pinIcons = useCallback((iconIds: string[]) => {
+    setState((current) => {
+      const pins = [...current.pinIds]
+      let changed = false
+      for (const id of iconIds) {
+        if (pins.includes(id)) continue
+        if (pins.length >= 8) break
+        pins.push(id)
+        changed = true
+      }
+      return changed ? { ...current, pinIds: pins } : current
+    })
+  }, [])
+
+  const unpinIcons = useCallback((iconIds: string[]) => {
+    const ids = new Set(iconIds)
+    setState((current) => {
+      const pinIds = current.pinIds.filter((id) => !ids.has(id))
+      return pinIds.length === current.pinIds.length ? current : { ...current, pinIds }
     })
   }, [])
 
@@ -686,17 +720,26 @@ export function useAlcoveDesktop() {
     }))
   }, [])
 
-  const moveIconToGroup = useCallback(
-    (iconId: string, alcoveId: string, groupId: string | null) => {
+  const moveIconsToGroup = useCallback(
+    (iconIds: string[], alcoveId: string, groupId: string | null) => {
+      if (iconIds.length === 0) return
+      const ids = new Set(iconIds)
       setState((current) => ({
         ...current,
         icons: current.icons.map((icon) =>
-          icon.id === iconId ? { ...icon, alcoveId, groupId } : icon,
+          ids.has(icon.id) ? { ...icon, alcoveId, groupId } : icon,
         ),
         focusedAlcoveId: alcoveId,
       }))
     },
     [],
+  )
+
+  const moveIconToGroup = useCallback(
+    (iconId: string, alcoveId: string, groupId: string | null) => {
+      moveIconsToGroup([iconId], alcoveId, groupId)
+    },
+    [moveIconsToGroup],
   )
 
   const dropIncomingFile = useCallback(() => {
@@ -764,25 +807,38 @@ export function useAlcoveDesktop() {
     [dropIncomingFile, refreshLiveFolder, reloadHarvest],
   )
 
-  const deleteIcon = useCallback(
-    async (icon: DesktopIcon) => {
-      if (icon.path && isTauri()) {
-        await invoke("recycle_desktop_items", { paths: [icon.path] })
-        const alcove = state.alcoves.find((item) => item.id === icon.alcoveId)
-        if (alcove?.folderPath) {
-          refreshLiveFolder(alcove.id)
-          return
+  const deleteIcons = useCallback(
+    async (icons: DesktopIcon[]) => {
+      if (icons.length === 0) return
+      const paths = icons
+        .map((icon) => icon.path)
+        .filter((path): path is string => Boolean(path))
+      if (paths.length > 0 && isTauri()) {
+        await invoke("recycle_desktop_items", { paths })
+        const live = new Set<string>()
+        for (const icon of icons) {
+          const alcove = state.alcoves.find((item) => item.id === icon.alcoveId)
+          if (alcove?.folderPath) live.add(alcove.id)
         }
+        for (const alcoveId of live) refreshLiveFolder(alcoveId)
         await reloadHarvest()
         return
       }
+      const ids = new Set(icons.map((icon) => icon.id))
       setState((current) => ({
         ...current,
-        icons: current.icons.filter((item) => item.id !== icon.id),
-        pinIds: current.pinIds.filter((id) => id !== icon.id),
+        icons: current.icons.filter((item) => !ids.has(item.id)),
+        pinIds: current.pinIds.filter((id) => !ids.has(id)),
       }))
     },
     [refreshLiveFolder, reloadHarvest, state.alcoves],
+  )
+
+  const deleteIcon = useCallback(
+    async (icon: DesktopIcon) => {
+      await deleteIcons([icon])
+    },
+    [deleteIcons],
   )
 
   const revealIcon = useCallback((iconId: string) => {
@@ -838,19 +894,10 @@ export function useAlcoveDesktop() {
     }))
   }, [])
 
-  const reorderAlcove = useCallback((dragId: string, beforeId: string) => {
-    if (dragId === beforeId) return
+  const reorderAlcove = useCallback((dragId: string, targetId: string) => {
     setState((current) => {
-      const sorted = [...current.alcoves].sort((a, b) => a.order - b.order)
-      const from = sorted.findIndex((alcove) => alcove.id === dragId)
-      const to = sorted.findIndex((alcove) => alcove.id === beforeId)
-      if (from < 0 || to < 0) return current
-      const [moved] = sorted.splice(from, 1)
-      sorted.splice(to, 0, moved)
-      return {
-        ...current,
-        alcoves: sorted.map((alcove, index) => ({ ...alcove, order: index })),
-      }
+      const alcoves = reorderAlcoves(current.alcoves, dragId, targetId)
+      return alcoves === current.alcoves ? current : { ...current, alcoves }
     })
   }, [])
 
@@ -902,6 +949,8 @@ export function useAlcoveDesktop() {
     moveIcon,
     renameIcon,
     togglePin,
+    pinIcons,
+    unpinIcons,
     noteOpen,
     toggleTopKeep,
     hideFromTop,
@@ -913,9 +962,12 @@ export function useAlcoveDesktop() {
     deleteGroup,
     moveGroup,
     moveIconToGroup,
+    moveIcons,
+    moveIconsToGroup,
     dropIncomingFile,
     pasteFiles,
     deleteIcon,
+    deleteIcons,
     revealIcon,
     setFocusMode,
     setStripEdge,

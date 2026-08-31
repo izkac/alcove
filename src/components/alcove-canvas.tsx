@@ -20,6 +20,7 @@ import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
 import { DENSITY_CONFIG } from "@/lib/density"
 import { folderIconSize, folderViewFor } from "@/lib/folder-view"
 import { folderLeaf } from "@/lib/harvest-merge"
+import { iconPack } from "@/lib/icon-select"
 import { ALCOVE_COLOR_IDS } from "@/types"
 import { cn } from "@/lib/utils"
 import type { Alcove, AlcoveColor, Density, DesktopIcon, FolderView, IconGroup } from "@/types"
@@ -32,6 +33,7 @@ type AlcoveCanvasProps = {
   pinIds: string[]
   density: Density
   highlightedIconId: string | null
+  selectedIds?: string[]
   onClose: () => void
   onCompact: () => void
   onEdit: () => void
@@ -40,9 +42,9 @@ type AlcoveCanvasProps = {
   onSetGlyph: (glyph: string) => void
   onOpenIcon: (icon: DesktopIcon) => void
   onRenameIcon: (icon: DesktopIcon) => void
-  onTogglePin: (iconId: string) => void
+  onSetPinned: (iconIds: string[], pinned: boolean) => void
   onMoveIcon: (iconId: string, alcoveId: string) => void
-  onNewAlcoveWith: (icon: DesktopIcon) => void
+  onNewAlcoveWith: (icons: DesktopIcon[]) => void
   onPaste?: () => void
   onDeleteIcon?: (icon: DesktopIcon) => void
   onIconPointerDown?: (icon: DesktopIcon, event: PointerEvent) => void
@@ -71,6 +73,7 @@ export function AlcoveCanvas({
   pinIds,
   density,
   highlightedIconId,
+  selectedIds = [],
   onClose,
   onCompact,
   onEdit,
@@ -79,7 +82,7 @@ export function AlcoveCanvas({
   onSetGlyph,
   onOpenIcon,
   onRenameIcon,
-  onTogglePin,
+  onSetPinned,
   onMoveIcon,
   onNewAlcoveWith,
   onPaste,
@@ -142,6 +145,7 @@ export function AlcoveCanvas({
         view={itemView}
         iconSize={itemSize}
         highlightedIconId={highlightedIconId}
+        selectedIds={selectedIds}
         empty={empty}
         onOpen={handleOpen}
         onPointerDown={onIconPointerDown}
@@ -159,6 +163,7 @@ export function AlcoveCanvas({
             icon={icon}
             size={config.icon}
             highlighted={highlightedIconId === icon.id}
+            selected={selectedIds.includes(icon.id)}
             onOpen={handleOpen}
             onPointerDown={onIconPointerDown}
           />
@@ -418,12 +423,13 @@ export function AlcoveCanvas({
           {menuIcon ? (
             <IconContextItems
               icon={menuIcon}
+              pack={iconPack(menuIcon, selectedIds, icons)}
               alcoves={allAlcoves}
               pinned={pinIds.includes(menuIcon.id)}
               groups={groups}
               onOpen={onOpenIcon}
               onRename={onRenameIcon}
-              onTogglePin={onTogglePin}
+              onSetPinned={onSetPinned}
               onMove={onMoveIcon}
               onMoveToGroup={onMoveIconToGroup}
               onNewAlcove={onNewAlcoveWith}

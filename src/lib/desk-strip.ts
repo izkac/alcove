@@ -29,6 +29,7 @@ const CHANNEL = "alcove-desk"
 export type DeskDropMessage = {
   type: "icon-drop"
   iconId: string
+  iconIds?: string[]
   deskId: string
   x: number
   y: number
@@ -44,6 +45,7 @@ export type DeskDragBeginMessage = {
   iconId: string
   name: string
   imageUrl?: string
+  iconIds?: string[]
 }
 
 export type DeskGhostMessage = {
