@@ -17,6 +17,7 @@
     "allow-list-folder-icons",
     "allow-list-known-folders",
     "allow-shell-icon",
+    "allow-thumbnail",
     "allow-pick-folder",
     "allow-open-desktop-item",
     "allow-recycle-bin",
@@ -39,6 +40,10 @@
     "allow-list-desks",
     "allow-desk-hit",
     "allow-load-desktop-state",
-    "allow-save-desktop-state"
+    "allow-save-desktop-state",
+    "allow-update-available",
+    "allow-install-update",
+    "allow-licence-status",
+    "allow-activate-licence"
   ]
 }

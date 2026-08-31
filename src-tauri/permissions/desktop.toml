@@ -29,6 +29,11 @@ description = "Read the Windows icon for a system launcher target"
 commands.allow = ["shell_icon"]
 
 [[permission]]
+identifier = "allow-thumbnail"
+description = "Read a document's own thumbnail for the preview card"
+commands.allow = ["thumbnail"]
+
+[[permission]]
 identifier = "allow-list-known-folders"
 description = "List Windows known folders such as Downloads"
 commands.allow = ["list_known_folders"]
@@ -148,3 +153,22 @@ identifier = "allow-save-desktop-state"
 description = "Write the Alcove layout to AppData"
 commands.allow = ["save_desktop_state"]
 
+[[permission]]
+identifier = "allow-update-available"
+description = "Check the release feed for a newer Alcove"
+commands.allow = ["update_available"]
+
+[[permission]]
+identifier = "allow-install-update"
+description = "Download and run the Alcove update installer"
+commands.allow = ["install_update"]
+
+[[permission]]
+identifier = "allow-licence-status"
+description = "Read the stored Alcove licence"
+commands.allow = ["licence_status"]
+
+[[permission]]
+identifier = "allow-activate-licence"
+description = "Verify and store an Alcove licence key"
+commands.allow = ["activate_licence"]

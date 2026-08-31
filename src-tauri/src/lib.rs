@@ -1,9 +1,11 @@
 mod autostart;
 mod desktop;
 mod harvest;
+mod licence;
 mod persist;
 mod search;
 mod taskbar;
+mod update;
 
 use desktop::DesktopState;
 use tauri::{Manager, WebviewWindow};
@@ -213,6 +215,28 @@ fn set_autostart(enabled: bool) -> Result<bool, String> {
     Ok(autostart::is_enabled())
 }
 
+/// The newer version on the release feed, or null when we are current or
+/// offline. Never errors: a failed check must not become a popup.
+#[tauri::command]
+async fn update_available(app: tauri::AppHandle) -> Option<update::Available> {
+    update::check(&app).await
+}
+
+#[tauri::command]
+fn licence_status(app: tauri::AppHandle) -> Option<licence::Licence> {
+    licence::load(&app)
+}
+
+#[tauri::command]
+fn activate_licence(app: tauri::AppHandle, key: String) -> Result<licence::Licence, String> {
+    licence::store(&app, &key)
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    update::install(&app).await
+}
+
 #[tauri::command]
 fn load_desktop_state(app: tauri::AppHandle) -> Result<Option<String>, String> {
     persist::load(&app)
@@ -231,6 +255,7 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(DesktopState::default())
         .invoke_handler(tauri::generate_handler![
             attach_to_desktop,
@@ -264,6 +289,10 @@ pub fn run() {
             desk_hit,
             load_desktop_state,
             save_desktop_state,
+            update_available,
+            install_update,
+            licence_status,
+            activate_licence,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

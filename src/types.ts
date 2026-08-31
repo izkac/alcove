@@ -119,4 +119,8 @@ export type DesktopState = {
   topHide: string[]
   /** System shortcuts pinned on the left of the frequent strip. */
   stripToolIds: string[]
+  /** First run, ms since epoch. The licence nudge waits on this. */
+  firstRunAt?: number
+  /** When the licence nudge was dismissed. Set once, then never asked again. */
+  licenceNudgedAt?: number | null
 }

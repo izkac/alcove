@@ -78,6 +78,65 @@ Produces a current-user NSIS installer at
 `src-tauri\target\release\bundle\nsis\`. The window stays hidden until it already
 covers the desktop, so it does not appear small and then stretch.
 
+## Licence
+
+Alcove is free and complete. Every feature, every monitor, no time limit, no
+nag at startup — it starts with Windows and *is* your desktop, and something
+that asks for money every morning is what bundled junk does.
+
+A licence buys **updates**: newer versions for the period it covers. When it
+lapses the copy you have keeps working forever, in full — you just stop being
+offered newer ones. That means there is nothing to revoke, no activation server,
+and no check that can fail and lock you out. Keys are verified offline against a
+public key built into the app.
+
+The source is here to read, build and modify for yourself. Redistributing builds
+is the one thing it does not allow — see [LICENCE.md](LICENCE.md).
+
+To issue a key:
+
+```bat
+node scripts/issue-licence.mjs "buyer@example.com" 12
+```
+
+Signs `<name>|<expiry>` with `%USERPROFILE%\.tauri\alcove-licence.key` and prints the key
+to send. That key is separate from the update signing key on purpose: a leaked
+licence key must not also be able to push a build to every install. Both live
+outside this repo and neither can be regenerated.
+
+## Releasing an update
+
+Alcove updates itself. Shortly after it starts, the primary desk asks
+`https://github.com/izkac/alcove/releases/latest/download/latest.json` whether
+there is a newer build and offers it as a toast; Settings → System → Updates
+checks on demand. A failed check is silent — being offline is not an event.
+
+Updates are signed, and the app refuses anything that does not verify against
+the public key in `tauri.conf.json`. The private key is at
+`%USERPROFILE%\.tauri\alcove.key`, is **not** in this repo, and cannot be
+regenerated: lose it and existing installs can never be updated again. Back it
+up somewhere you would not lose a password.
+
+To cut a release:
+
+1. Bump `version` in `package.json` and `src-tauri/tauri.conf.json`.
+2. Build with the signing key in the environment:
+
+```bat
+set TAURI_SIGNING_PRIVATE_KEY_PATH=%USERPROFILE%\.tauri\alcove.key
+set TAURI_SIGNING_PRIVATE_KEY_PASSWORD=
+npm run installer
+```
+
+3. Publish the `.exe`, the `.exe.sig`, and a `latest.json` naming that version
+   and the installer URL, as a GitHub release. Everything lands in
+   `src-tauri\target\release\bundle\nsis\`.
+
+Installing runs the NSIS installer, which takes the running Alcove down with it.
+Because Alcove hides Explorer's icon list while attached, the update path hands
+the desktop back *between* the download and the install — after the installer
+starts, none of our code is guaranteed to run again.
+
 ## Where your settings live
 
 Layout, drawers, pins and preferences are written to
