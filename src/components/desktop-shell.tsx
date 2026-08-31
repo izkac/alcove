@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from "react"
 import { toast } from "sonner"
 import { AlcoveCanvas } from "@/components/alcove-canvas"
 import { AlcovePanel } from "@/components/alcove-panel"
+import { PreviewCard } from "@/components/preview-card"
 import {
   CreateAlcoveDialog,
   prefetchKnownFolders,
@@ -276,6 +277,11 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     : null
   const openIcons = openAlcove ? iconsIn(openAlcove.id) : []
   const openView = openAlcove ? viewFor(openAlcove, openIcons.length) : "panel"
+  // One selected item means "what is this?"; a multi-selection means "move these".
+  const previewIcon =
+    selectedIds.length === 1
+      ? openIcons.find((item) => item.id === selectedIds[0]) ?? null
+      : null
   const heavyAlcoveId = disproportionateId(
     deskAlcoves.map((alcove) => ({
       id: alcove.id,
@@ -786,6 +792,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                         }
                       />
                     ) : null}
+                    <PreviewCard icon={previewIcon} />
                     </div>
                     {state.stripEdge === "bottom" ? frequentStrip : null}
                   </div>

@@ -46,6 +46,13 @@ fn shell_icon(target: String) -> Result<String, String> {
     harvest::shell_icon(&target)
 }
 
+/// Async so a cold PDF/video thumbnail extraction runs off the main thread —
+/// this fires on every selection change and must never stall the desktop.
+#[tauri::command]
+async fn thumbnail(path: String) -> Result<Option<String>, String> {
+    harvest::thumb_data_url(std::path::Path::new(&path))
+}
+
 #[tauri::command]
 fn list_known_folders() -> Vec<harvest::KnownFolder> {
     harvest::known_folders()
@@ -233,6 +240,7 @@ pub fn run() {
             list_folder_icons,
             list_known_folders,
             shell_icon,
+            thumbnail,
             pick_folder,
             open_desktop_item,
             recycle_bin,

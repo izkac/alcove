@@ -61,7 +61,8 @@ mod win {
         FOLDERID_Downloads, FOLDERID_Pictures, FOLDERID_PublicDesktop, FOLDERID_Screenshots,
         IShellItem2, IShellItemImageFactory, KF_FLAG_DEFAULT, SHFILEINFOW, SHGFI_DISPLAYNAME,
         SHGFI_SYSICONINDEX, SHGSI_SYSICONINDEX, SHSTOCKICONINFO, SIID_RECYCLER, SIID_RECYCLERFULL,
-        SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY, SHIL_EXTRALARGE, SHIL_JUMBO,
+        SIIGBF, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY, SIIGBF_THUMBNAILONLY, SHIL_EXTRALARGE,
+        SHIL_JUMBO,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         CreatePopupMenu, DestroyIcon, DestroyMenu, DrawIconEx, GetIconInfo, TrackPopupMenu,
@@ -274,6 +275,8 @@ mod win {
     const EXTRACT_PX: i32 = 256;
     const MIN_ICON_EDGE: u32 = 40;
     const CACHE_TAG: &str = "q6";
+    /// Preview edge. Big enough to read a page of a PDF, small enough to cache.
+    const THUMB_PX: i32 = 512;
     const PKEY_APPUSERMODEL_ID: windows::Win32::Foundation::PROPERTYKEY =
         windows::Win32::Foundation::PROPERTYKEY {
             fmtid: windows::core::GUID::from_u128(0x9f4c2855_9f79_4b39_a8d0_e1d42de1d5f3),
@@ -302,7 +305,7 @@ mod win {
         let (raw, index) = split_icon_index(target);
         let path = expand_env_path(raw);
         let png = if !path.exists() {
-            shell_item_png(raw, EXTRACT_PX, MIN_ICON_EDGE)?
+            shell_item_png(raw, EXTRACT_PX, MIN_ICON_EDGE, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK)?
         } else if index > 0 {
             // Cache is keyed by path alone, so non-zero indices skip it.
             private_extract_png(&path, index, EXTRACT_PX, MIN_ICON_EDGE)?
@@ -326,19 +329,46 @@ mod win {
     }
 
     pub fn icon_data_url(path: &Path) -> Result<String, String> {
-        let png = icon_png(path, None)?;
-        Ok(format!(
+        Ok(png_data_url(&icon_png(path, None)?))
+    }
+
+    /// The document's own thumbnail — page one of a PDF, the first frame of a
+    /// video, the photo itself — the same bitmap Explorer shows in Large Icons
+    /// view. `Ok(None)` when the type has no thumbnail provider (exes,
+    /// shortcuts, most folders); the caller keeps the icon it already has.
+    pub fn thumb_data_url(path: &Path) -> Result<Option<String>, String> {
+        let _com = ComGuard::new();
+        if let Some(cached) = read_icon_cache(path, THUMB_PX) {
+            return Ok(Some(png_data_url(&cached)));
+        }
+        // THUMBNAILONLY means "no icon fallback" — a miss is the answer, not an
+        // error, so we can tell "here is the document" from "there is nothing
+        // to show" instead of caching a blown-up 48px icon as a preview.
+        let Ok(png) = shell_item_png(
+            &path.to_string_lossy(),
+            THUMB_PX,
+            0,
+            SIIGBF_THUMBNAILONLY | SIIGBF_BIGGERSIZEOK,
+        ) else {
+            return Ok(None);
+        };
+        write_icon_cache(path, THUMB_PX, &png);
+        Ok(Some(png_data_url(&png)))
+    }
+
+    fn png_data_url(png: &[u8]) -> String {
+        format!(
             "data:image/png;base64,{}",
             base64::engine::general_purpose::STANDARD.encode(png)
-        ))
+        )
     }
 
     fn icon_png(path: &Path, jumbo: Option<&IImageList>) -> Result<Vec<u8>, String> {
-        if let Some(cached) = read_icon_cache(path) {
+        if let Some(cached) = read_icon_cache(path, ICON_PX) {
             return Ok(cached);
         }
         let png = extract_fresh(path, jumbo)?;
-        write_icon_cache(path, &png);
+        write_icon_cache(path, ICON_PX, &png);
         Ok(png)
     }
 
@@ -361,12 +391,12 @@ mod win {
         if let Ok(png) = imagelist_png(path, None, SHIL_EXTRALARGE as i32, MIN_ICON_EDGE) {
             return Ok(png);
         }
-        if let Ok(png) = shell_item_png(&path.to_string_lossy(), EXTRACT_PX, MIN_ICON_EDGE) {
+        if let Ok(png) = shell_item_png(&path.to_string_lossy(), EXTRACT_PX, MIN_ICON_EDGE, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK) {
             return Ok(png);
         }
         if let Some(aumid) = app_user_model_id(path) {
             let parsing = format!("shell:AppsFolder\\{aumid}");
-            if let Ok(png) = shell_item_png(&parsing, EXTRACT_PX, MIN_ICON_EDGE) {
+            if let Ok(png) = shell_item_png(&parsing, EXTRACT_PX, MIN_ICON_EDGE, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK) {
                 return Ok(png);
             }
         }
@@ -385,7 +415,7 @@ mod win {
         Some(dir)
     }
 
-    fn icon_cache_path(path: &Path) -> Option<std::path::PathBuf> {
+    fn icon_cache_path(path: &Path, px: i32) -> Option<std::path::PathBuf> {
         use std::time::UNIX_EPOCH;
         let meta = std::fs::metadata(path).ok()?;
         let mtime = meta
@@ -400,19 +430,19 @@ mod win {
             hash = hash.wrapping_mul(0x100000001b3);
         }
         Some(icon_cache_dir()?.join(format!(
-            "{hash:016x}-{mtime}-{}-{ICON_PX}-{CACHE_TAG}.png",
+            "{hash:016x}-{mtime}-{}-{px}-{CACHE_TAG}.png",
             meta.len()
         )))
     }
 
-    fn read_icon_cache(path: &Path) -> Option<Vec<u8>> {
-        let file = icon_cache_path(path)?;
+    fn read_icon_cache(path: &Path, px: i32) -> Option<Vec<u8>> {
+        let file = icon_cache_path(path, px)?;
         let bytes = std::fs::read(file).ok()?;
         (bytes.len() > 32).then_some(bytes)
     }
 
-    fn write_icon_cache(path: &Path, png: &[u8]) {
-        let Some(file) = icon_cache_path(path) else {
+    fn write_icon_cache(path: &Path, px: i32, png: &[u8]) {
+        let Some(file) = icon_cache_path(path, px) else {
             return;
         };
         let _ = std::fs::write(file, png);
@@ -771,18 +801,18 @@ mod win {
         png
     }
 
-    fn shell_item_png(parsing: &str, size: i32, min_edge: u32) -> Result<Vec<u8>, String> {
+    fn shell_item_png(
+        parsing: &str,
+        size: i32,
+        min_edge: u32,
+        flags: SIIGBF,
+    ) -> Result<Vec<u8>, String> {
         let hstring = HSTRING::from(parsing);
         let factory: IShellItemImageFactory =
             unsafe { SHCreateItemFromParsingName(&hstring, None) }
                 .map_err(|err| err.to_string())?;
-        let hbmp = unsafe {
-            factory.GetImage(
-                SIZE { cx: size, cy: size },
-                SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK,
-            )
-        }
-        .map_err(|err| err.to_string())?;
+        let hbmp = unsafe { factory.GetImage(SIZE { cx: size, cy: size }, flags) }
+            .map_err(|err| err.to_string())?;
         let png = unsafe { hbitmap_to_png(hbmp, min_edge) };
         unsafe {
             let _ = DeleteObject(HGDIOBJ(hbmp.0));
@@ -810,7 +840,7 @@ mod win {
 
     fn recycle_bin_inner() -> Result<super::RecycleBin, String> {
         const PARSING: &str = "shell:RecycleBinFolder";
-        let png = recycle_bin_png().or_else(|_| shell_item_png(PARSING, EXTRACT_PX, 0))?;
+        let png = recycle_bin_png().or_else(|_| shell_item_png(PARSING, EXTRACT_PX, 0, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK))?;
         let image_url = format!(
             "data:image/png;base64,{}",
             base64::engine::general_purpose::STANDARD.encode(png)
@@ -1813,6 +1843,10 @@ mod win {
         Err("icons are Windows-only".into())
     }
 
+    pub fn thumb_data_url(_path: &std::path::Path) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+
     pub fn recycle_bin() -> Result<super::RecycleBin, String> {
         Err("recycle bin is Windows-only".into())
     }
@@ -1871,6 +1905,10 @@ pub fn shell_icon(target: &str) -> Result<String, String> {
 
 pub fn icon_data_url(path: &std::path::Path) -> Result<String, String> {
     win::icon_data_url(path)
+}
+
+pub fn thumb_data_url(path: &std::path::Path) -> Result<Option<String>, String> {
+    win::thumb_data_url(path)
 }
 
 pub fn recycle_bin() -> Result<RecycleBin, String> {
