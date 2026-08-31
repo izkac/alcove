@@ -178,7 +178,7 @@ function ExpandedAlcove({
                   : config.panel,
           }}
           className={cn(
-            "flex max-h-[min(78vh,760px)] max-w-full flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/55 shadow-2xl transition-opacity duration-200",
+            "flex max-h-[min(78vh,760px)] max-w-full flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/95 shadow-2xl transition-opacity duration-200",
             styles.glow,
             dimmed && "opacity-25",
           )}

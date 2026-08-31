@@ -16,6 +16,7 @@ import {
   refreshSlots,
   resizeSlots,
 } from "@/lib/frecency"
+import { cellAt, clampCell, fieldRect, freeCell } from "@/lib/pin-grid"
 import { isSampleMock, mergeHarvest, mergeLiveFolder, toDesktopIcon } from "@/lib/harvest-merge"
 import type { HarvestedIcon } from "@/lib/harvest-merge"
 import {
@@ -56,6 +57,25 @@ const topDefaults = (count?: number) => ({
   topKeep: [] as string[],
   topHide: [] as string[],
 })
+
+/** How many pins the bottom-right stack holds before it stops being a shelf. */
+const CORNER_PINS = 8
+
+/** Takes icons off the desktop entirely — the corner stack and the wallpaper. */
+function dropPins(current: DesktopState, iconIds: string[]): DesktopState {
+  const ids = new Set(iconIds)
+  const pinIds = current.pinIds.filter((id) => !ids.has(id))
+  const pinAt = { ...(current.pinAt ?? {}) }
+  let cleared = false
+  for (const id of ids) {
+    if (pinAt[id]) {
+      delete pinAt[id]
+      cleared = true
+    }
+  }
+  if (!cleared && pinIds.length === current.pinIds.length) return current
+  return { ...current, pinIds, pinAt }
+}
 
 function sampleIcons(): DesktopIcon[] {
   return SAMPLE_ICONS.map((icon) => ({ ...icon, alcoveId: null }))
@@ -563,13 +583,15 @@ export function useAlcoveDesktop() {
     }))
   }, [])
 
+  /** The corner stack is a shelf, not a desktop — eight is all it holds. */
+  const cornerFull = (current: DesktopState) =>
+    current.pinIds.filter((id) => !current.pinAt?.[id]).length >= CORNER_PINS
+
   const togglePin = useCallback((iconId: string) => {
     setState((current) => {
       const pinned = current.pinIds.includes(iconId)
-      if (pinned) {
-        return { ...current, pinIds: current.pinIds.filter((id) => id !== iconId) }
-      }
-      if (current.pinIds.length >= 8) return current
+      if (pinned) return dropPins(current, [iconId])
+      if (cornerFull(current)) return current
       return { ...current, pinIds: [...current.pinIds, iconId] }
     })
   }, [])
@@ -580,7 +602,7 @@ export function useAlcoveDesktop() {
       let changed = false
       for (const id of iconIds) {
         if (pins.includes(id)) continue
-        if (pins.length >= 8) break
+        if (pins.filter((pin) => !current.pinAt?.[pin]).length >= CORNER_PINS) break
         pins.push(id)
         changed = true
       }
@@ -589,10 +611,48 @@ export function useAlcoveDesktop() {
   }, [])
 
   const unpinIcons = useCallback((iconIds: string[]) => {
-    const ids = new Set(iconIds)
+    setState((current) => dropPins(current, iconIds))
+  }, [])
+
+  /**
+   * Parks icons on the wallpaper where they were dropped, snapped to the grid.
+   * A dragged pack lays itself out down the column instead of stacking.
+   */
+  const parkIcons = useCallback(
+    (iconIds: string[], x: number, y: number, deskId: string) => {
+      if (iconIds.length === 0) return
+      setState((current) => {
+        const field = fieldRect()
+        const width = field.width
+        const height = field.height
+        const pinAt = { ...(current.pinAt ?? {}) }
+        const moving = new Set(iconIds)
+        const taken = Object.entries(pinAt)
+          .filter(
+            ([id, spot]) =>
+              !moving.has(id) && (spot.deskId == null || spot.deskId === deskId),
+          )
+          .map(([, spot]) => clampCell(spot, width, height))
+        let wanted = cellAt(x - field.left, y - field.top, width, height)
+        for (const id of iconIds) {
+          const cell = freeCell(taken, wanted, width, height)
+          pinAt[id] = { ...cell, deskId }
+          taken.push(cell)
+          wanted = cell
+        }
+        const pinIds = [...current.pinIds]
+        for (const id of iconIds) if (!pinIds.includes(id)) pinIds.push(id)
+        return { ...current, pinIds, pinAt }
+      })
+    },
+    [],
+  )
+
+  /** Filing an icon into a drawer takes it off the wallpaper. Corner pins stay. */
+  const unparkIcons = useCallback((iconIds: string[]) => {
     setState((current) => {
-      const pinIds = current.pinIds.filter((id) => !ids.has(id))
-      return pinIds.length === current.pinIds.length ? current : { ...current, pinIds }
+      const parked = iconIds.filter((id) => current.pinAt?.[id])
+      return parked.length === 0 ? current : dropPins(current, parked)
     })
   }, [])
 
@@ -869,8 +929,8 @@ export function useAlcoveDesktop() {
       const ids = new Set(icons.map((icon) => icon.id))
       setState((current) => ({
         ...current,
+        ...dropPins(current, [...ids]),
         icons: current.icons.filter((item) => !ids.has(item.id)),
-        pinIds: current.pinIds.filter((id) => !ids.has(id)),
       }))
     },
     [refreshLiveFolder, reloadHarvest, state.alcoves],
@@ -948,12 +1008,14 @@ export function useAlcoveDesktop() {
     [state.icons],
   )
 
+  /** The bottom-right stack: pinned, but never parked anywhere in particular. */
   const pinnedIcons = useMemo(
     () =>
       state.pinIds
+        .filter((id) => !state.pinAt?.[id])
         .map((id) => state.icons.find((icon) => icon.id === id))
         .filter((icon): icon is DesktopIcon => Boolean(icon)),
-    [state.icons, state.pinIds],
+    [state.icons, state.pinIds, state.pinAt],
   )
 
   /** Slot order is the render order — nulls are trailing empty slots. */
@@ -997,6 +1059,8 @@ export function useAlcoveDesktop() {
     togglePin,
     pinIcons,
     unpinIcons,
+    parkIcons,
+    unparkIcons,
     noteOpen,
     dismissLicenceNudge,
     toggleTopKeep,

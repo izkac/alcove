@@ -52,6 +52,18 @@ export type DesktopIcon = {
   groupId?: string | null
 }
 
+/**
+ * Where a parked icon sits on the wallpaper. Cells, not pixels: a monitor that
+ * changes resolution must not strand an icon off-screen, and two icons must
+ * never land on the same spot.
+ */
+export type PinSpot = {
+  col: number
+  row: number
+  /** Monitor it was parked on. Null = every desk shows it. */
+  deskId?: string | null
+}
+
 export type IconGroup = {
   id: string
   name: string
@@ -101,6 +113,8 @@ export type DesktopState = {
   alcoves: Alcove[]
   icons: DesktopIcon[]
   pinIds: string[]
+  /** Pins the user parked somewhere. No entry = the bottom-right stack. */
+  pinAt?: Record<string, PinSpot>
   density: Density
   layoutId: LayoutId
   layoutSnapshots: LayoutSnapshots

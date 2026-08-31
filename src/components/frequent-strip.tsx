@@ -46,11 +46,13 @@ export function FrequentStrip({
     // In flow, so the desktop below it never has to know the strip's height.
     <div
       className={cn(
-        "relative z-20 flex shrink-0 justify-center px-4 md:px-6",
+        // Only the bar takes clicks: the empty width either side of it is
+        // desktop, and an icon parked up there has to stay reachable.
+        "pointer-events-none relative z-20 flex shrink-0 justify-center px-4 md:px-6",
         edge === "bottom" ? "pt-1 pb-3" : "pt-3 pb-1",
       )}
     >
-      <div className="flex max-w-full items-start gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-black/40 px-2 py-1.5 shadow-2xl backdrop-blur-2xl">
+      <div className="pointer-events-auto flex max-w-full items-start gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-black/40 px-2 py-1.5 shadow-2xl backdrop-blur-2xl">
         {tools.map((tool) => (
           <ToolSlot key={tool.id} tool={tool} onOpen={onOpenTool} />
         ))}

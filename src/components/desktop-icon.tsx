@@ -110,11 +110,11 @@ export function IconContextItems({
       <ContextMenuItem onSelect={() => onSetPinned(ids, !pinned)}>
         {count > 1
           ? pinned
-            ? `Unpin ${count} items`
-            : `Pin ${count} items`
+            ? `Take ${count} items off the desktop`
+            : `Put ${count} items on the desktop`
           : pinned
-            ? "Unpin from desktop"
-            : "Pin to desktop"}
+            ? "Take off the desktop"
+            : "Put on the desktop"}
       </ContextMenuItem>
       <ContextMenuSeparator />
       {groups && groups.length > 0 && onMoveToGroup ? (

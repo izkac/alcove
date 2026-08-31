@@ -182,7 +182,7 @@ export function AlcoveCanvas({
     <section
       data-alcove-id={alcove.id}
       className={cn(
-        "flex h-full w-full min-h-0 flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/55 shadow-2xl",
+        "flex h-full w-full min-h-0 flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/95 shadow-2xl",
         styles.glow,
       )}
     >

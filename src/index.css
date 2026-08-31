@@ -155,6 +155,25 @@
     box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 0.4);
     }
 
+  /*
+   * Drag an icon and the open drawer goes see-through.
+   *
+   * A drawer wide enough to cover the desktop would otherwise swallow every
+   * pixel you might want to drop an icon on, leaving no way out but closing it
+   * first. Its header and group rows stay live, so filing into the drawer you
+   * are looking at still works — everything else falls through to the wallpaper.
+   */
+  html[data-icon-drag] section[data-alcove-id] {
+    opacity: 0.4;
+    pointer-events: none;
+    transition: opacity 150ms ease;
+    }
+
+  html[data-icon-drag] section[data-alcove-id] > header,
+  html[data-icon-drag] section[data-alcove-id] [data-group-row] {
+    pointer-events: auto;
+    }
+
   .alcove-icon-tile {
     contain: layout style;
     }

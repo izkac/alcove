@@ -1119,6 +1119,9 @@ mod win {
             wFunc: FO_DELETE,
             pFrom: PCWSTR(from.as_ptr()),
             pTo: PCWSTR::null(),
+            // Alcove asks before calling this, and Windows' own prompt is off
+            // by default anyway, so asking here would be a second dialog most
+            // people never see. ALLOWUNDO keeps the Recycle Bin as the net.
             fFlags: (FOF_ALLOWUNDO.0 | FOF_NOCONFIRMATION.0 | FOF_SILENT.0) as u16,
             fAnyOperationsAborted: windows::core::BOOL(0),
             hNameMappings: std::ptr::null_mut(),

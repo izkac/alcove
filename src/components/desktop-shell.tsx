@@ -4,6 +4,7 @@ import { toast } from "sonner"
 import { AlcoveCanvas } from "@/components/alcove-canvas"
 import { AlcovePanel } from "@/components/alcove-panel"
 import { PreviewCard } from "@/components/preview-card"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import {
   CreateAlcoveDialog,
   prefetchKnownFolders,
@@ -11,6 +12,7 @@ import {
 import { DesktopCorner } from "@/components/desktop-corner"
 import { FrequentStrip } from "@/components/frequent-strip"
 import { OnboardingDialog } from "@/components/onboarding-dialog"
+import { PinField } from "@/components/pin-field"
 import { ShelfRail } from "@/components/shelf-rail"
 import { RenameDialog } from "@/components/rename-dialog"
 import { SearchSpotlight } from "@/components/search-spotlight"
@@ -22,7 +24,6 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
-import { INBOX_ID } from "@/data/sample"
 import type { AlcoveDesktopApi } from "@/hooks/use-alcove-desktop"
 import { useDesk } from "@/hooks/use-desk"
 import {
@@ -236,6 +237,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     | { kind: "group"; id: string; alcoveId: string; value: string }
     | null
   >(null)
+  const [pendingDelete, setPendingDelete] = useState<DesktopIcon[] | null>(null)
   const [openAlcoveId, setOpenAlcoveId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [drill, setDrill] = useState<
@@ -389,7 +391,13 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     setDrill(null)
   }, [openAlcoveId])
 
+  // Every delete route -- menu, Delete key, parked icons -- lands here, so the
+  // question gets asked once and cannot be skipped by taking another road.
   function removeIcons(icons: DesktopIcon[]) {
+    if (icons.length > 0) setPendingDelete(icons)
+  }
+
+  function confirmedRemove(icons: DesktopIcon[]) {
     desktop.deleteIcons(icons).catch((err) => {
       toast(err instanceof Error ? err.message : String(err))
     })
@@ -487,6 +495,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
       const ids = icons.map((icon) => icon.id)
       if (target.kind === "group") {
         desktop.moveIconsToGroup(ids, target.alcoveId, target.groupId)
+        desktop.unparkIcons(ids)
         setSelectedIds([])
         return
       }
@@ -498,11 +507,21 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
             target.id,
           )
         }
+        desktop.unparkIcons(ids)
         setSelectedIds([])
         return
       }
       if (target.kind === "pin") {
         desktop.pinIcons(ids)
+        return
+      }
+      if (target.kind === "wallpaper") {
+        // Parking shows an icon on the desktop; it does not move it. Whatever
+        // drawer it was sorted into keeps it, so the desktop is a second view
+        // of the same file rather than a place things fall out of.
+        desktop.parkIcons(ids, target.x, target.y, desk.id)
+        setOpenAlcoveId(null)
+        setSelectedIds([])
         return
       }
       if (target.kind === "launch") {
@@ -520,10 +539,8 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         setSelectedIds([])
         return
       }
-      desktop.moveIcons(ids, INBOX_ID)
-      setSelectedIds([])
     },
-    [desktop],
+    [desktop, desk.id],
   )
 
   const dropIconsAt = useCallback(
@@ -738,6 +755,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                   <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                     {state.stripEdge !== "bottom" ? frequentStrip : null}
                     <div
+                      data-pin-origin=""
                       className={
                         openView === "canvas"
                           ? "relative z-10 flex min-h-0 flex-1 p-4 md:p-6"
@@ -753,6 +771,25 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                       if (event.target === event.currentTarget) onOpenCreate()
                     }}
                   >
+                    <PinField
+                      icons={state.icons}
+                      pinAt={state.pinAt}
+                      deskId={desk.id}
+                      selectedIds={selectedIds}
+                      highlightedIconId={state.highlightedIconId}
+                      onOpen={openIcon}
+                      onRename={(icon) =>
+                        setRename({ kind: "icon", id: icon.id, value: icon.name })
+                      }
+                      onUnpark={(icon) => desktop.unpinIcons(idsFor(icon.id))}
+                      onDelete={(icon) => {
+                        const pack = idsFor(icon.id)
+                          .map((id) => state.icons.find((item) => item.id === id))
+                          .filter((item): item is DesktopIcon => Boolean(item))
+                        removeIcons(pack)
+                      }}
+                      onIconPointerDown={onIconPointerDown}
+                    />
                     {openAlcove && openView === "canvas" ? (
                       <AlcoveCanvas
                         key={openAlcove.id}
@@ -784,7 +821,9 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                           setRename({ kind: "icon", id: icon.id, value: icon.name })
                         }
                         onSetPinned={(ids, pin) => {
-                          if (pin) desktop.pinIcons(ids)
+                          // From inside a drawer there is nowhere to drag to,
+                          // so the menu parks it: 0,0 means the first free cell.
+                          if (pin) desktop.parkIcons(ids, 0, 0, desk.id)
                           else desktop.unpinIcons(ids)
                         }}
                         onMoveIcon={(iconId, alcoveId) => {
@@ -876,7 +915,9 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                           setRename({ kind: "icon", id: icon.id, value: icon.name })
                         }
                         onSetPinned={(ids, pin) => {
-                          if (pin) desktop.pinIcons(ids)
+                          // From inside a drawer there is nowhere to drag to,
+                          // so the menu parks it: 0,0 means the first free cell.
+                          if (pin) desktop.parkIcons(ids, 0, 0, desk.id)
                           else desktop.unpinIcons(ids)
                         }}
                         onMoveIcon={(iconId, alcoveId) => {
@@ -952,7 +993,9 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
       </ContextMenu>
       <DesktopCorner
         pinnedIcons={desktop.pinnedIcons}
+        selectedIds={selectedIds}
         onOpenIcon={openIcon}
+        onIconPointerDown={onIconPointerDown}
       />
       <OnboardingDialog
         open={state.phase === "onboarding"}
@@ -960,6 +1003,26 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         clutterCount={state.icons.length}
         onOrganize={desktop.organize}
         onStartEmpty={desktop.startEmpty}
+      />
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={
+          pendingDelete && pendingDelete.length > 1
+            ? `Delete ${pendingDelete.length} items?`
+            : `Delete ${pendingDelete?.[0]?.name ?? ""}?`
+        }
+        body="This moves the real file to the Recycle Bin, where Windows can put it back. Everything else Alcove does — drawers, groups, the desktop — leaves your files alone."
+        confirmLabel={
+          pendingDelete && pendingDelete.length > 1
+            ? `Delete ${pendingDelete.length} items`
+            : "Delete"
+        }
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null)
+        }}
+        onConfirm={() => {
+          if (pendingDelete) confirmedRemove(pendingDelete)
+        }}
       />
       <RenameDialog
         open={rename !== null}

@@ -15,7 +15,8 @@ export type IconDropTarget =
   | { kind: "pin" }
   /** An app on the frequent strip: open the dragged files with it. */
   | { kind: "launch"; app: string; label: string }
-  | { kind: "wallpaper" }
+  /** Empty desktop: park the icons on the wallpaper, where they were dropped. */
+  | { kind: "wallpaper"; x: number; y: number }
 
 const DRAG_THRESHOLD = 6
 const GHOST_ID = "alcove-drag-ghost"
@@ -227,7 +228,7 @@ export function resolveTarget(x: number, y: number): {
       return { target: { kind: "pin" }, hover: pin }
     }
   }
-  return { target: { kind: "wallpaper" }, hover: null }
+  return { target: { kind: "wallpaper", x, y }, hover: null }
 }
 
 function setHover(node: Element | null, previous: Element | null) {
@@ -550,18 +551,18 @@ export function useIconPointerDrag(
         }
       }
 
-      const finishDrop = (icons: DesktopIcon[], x: number, y: number) => {
-        const done = (target: IconDropTarget) => onDropRef.current(icons, target)
+      const finishDrop = (icons: DesktopIcon[], target: IconDropTarget) => {
+        const done = () => onDropRef.current(icons, target)
         if (isTauri() && onForeignRef.current) {
           invoke<DeskHit | null>("desk_hit")
             .then((hit) => {
               if (hit && onForeignRef.current?.(icons, hit)) return
-              done(resolveTarget(x, y).target)
+              done()
             })
-            .catch(() => done(resolveTarget(x, y).target))
+            .catch(done)
           return
         }
-        done(resolveTarget(x, y).target)
+        done()
       }
 
       const onUp = (upEvent: PointerEvent) => {
@@ -573,17 +574,20 @@ export function useIconPointerDrag(
         const handedOff = handedOffRef.current
         const x = upEvent.clientX
         const y = upEvent.clientY
+        // Read the target before endDrag: a drawer only lets a drop through to
+        // the wallpaper while the drag is on, and endDrag turns that off.
+        const target = wasDragging ? resolveTarget(x, y).target : null
         channelRef.current?.postMessage({
           type: "icon-ghost-end",
         } satisfies DeskChannelMessage)
         endDrag()
         if (!origin) return
-        if (!wasDragging) {
+        if (!wasDragging || !target) {
           onClickRef.current?.(origin.icon)
           return
         }
         if (handedOff) return
-        finishDrop(origin.icons, x, y)
+        finishDrop(origin.icons, target)
       }
 
       const onCancel = () => {

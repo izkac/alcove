@@ -48,8 +48,9 @@ An Alcove is a named group of icons. It has a colour, an icon, and a count.
 ### The Inbox
 
 The Inbox is the drawer that catches everything not filed anywhere else. New files
-that appear on your Desktop land here, and dragging an icon onto empty wallpaper
-sends it back here. It is always present and cannot be deleted.
+that appear on your Desktop land here and stay until you file them. It is always
+present and cannot be deleted. Leaving an icon on the wallpaper is not the same as
+leaving it unsorted — an icon you park keeps the drawer it belongs to.
 
 ### The shelf rail
 
@@ -78,11 +79,35 @@ Alcove** jumps to wherever the item actually lives.
 The left of the strip holds **shortcuts** — Windows tools like Control Panel,
 Services and Command Prompt. Choose which appear in Settings.
 
+### Icons on the wallpaper
+
+Drag an icon out of a drawer and drop it anywhere on the wallpaper: it stays there.
+The desktop is still yours — Alcove only insists that what you leave out is what you
+meant to leave out. Parked icons snap to a grid, so two can never land on top of each
+other, and a screen that changes size pulls them back on rather than losing them off
+the edge.
+
+Parking an icon does not take it out of its drawer. It stays sorted where it was, and
+the desktop is simply a second place you can see it from — so everything can be
+categorised and the handful you reach for daily can still be out on the wallpaper.
+
+**Put on the desktop** in an icon's right-click menu does the same as the drag, from
+wherever the icon is — useful inside a drawer, where a group row under the pointer
+claims the drop. To put one away, drag it back onto a drawer — on the rail, or the
+title bar of the open one — or use **Take off the desktop**.
+
+A drawer wide enough to cover the screen would leave nowhere to drop. So while you
+drag, the open drawer goes see-through and lets the drop fall past it onto the
+wallpaper; its title bar and group rows stay live, for when you meant to file it
+there after all. Drop on the wallpaper and the drawer closes so you can see where the
+icon landed.
+
 ### Pinned icons and the Recycle Bin
 
 The bottom-right corner holds up to eight pinned icons stacked above the Recycle Bin.
-Pinned icons never move, whatever the frequent strip is doing — drag an icon there,
-or use **Pin to desktop** in its menu.
+Pinned icons never move, whatever the frequent strip is doing — drag an icon onto the
+stack to add it. Drag one out of the stack onto the wallpaper to give it a place of
+its own instead.
 
 The Recycle Bin is the real one: right-clicking it gives you Windows' own menu, not
 Alcove's.
@@ -130,15 +155,18 @@ much fits in a drawer before it starts scrolling.
 
 ## Renaming, pinning and deleting
 
-Right-click any icon for **Open**, **Rename**, **Pin to desktop**, **Move to** (another
-drawer), **New Alcove with this**, and **Delete**.
+Right-click any icon for **Open**, **Rename**, **Put on the desktop**, **Move to**
+(another drawer), **New Alcove with this**, and **Delete**.
 
-Two things worth knowing:
+Worth knowing:
 
 - **Rename changes the label in Alcove only.** The file on disk keeps its real name.
-- **Delete is a real Recycle Bin delete**, the same as deleting in Explorer.
-- You can pin **eight** icons. Pinned icons sit above the Recycle Bin in the
-  bottom-right corner and never move. The ninth pin is ignored.
+- **Delete is a real Recycle Bin delete**, the same as deleting in Explorer — the
+  one thing Alcove does that leaves your Desktop folder, so Windows asks first.
+  Everything else (drawers, groups, parking, renaming) only ever changes Alcove.
+- You can pin **eight** icons to the corner stack. They sit above the Recycle Bin in
+  the bottom-right corner and never move. The ninth pin is ignored. Icons you park on
+  the wallpaper yourself do not count — park as many as the screen holds.
 
 ---
 
@@ -217,14 +245,15 @@ match never beats a strong one however often you open it.
 | Drag an icon onto a drawer | File it there |
 | Drag selected icons onto a drawer, group, pin, or another screen | File all of them there |
 | Drag an icon onto the corner pins | Pin it so it never moves |
+| Drag an icon onto empty wallpaper | Leave it there, where you dropped it |
+| Drag an icon out of a drawer that fills the screen | The drawer goes see-through; drop anywhere but its title bar or a group row |
 | Drag a file onto an app on the frequent strip | Open it with that app, instead of its usual one |
-| Drag an icon onto empty wallpaper | Send it back to the Inbox |
 | Drag an icon to another screen | Move it to that screen's desk |
 | Click an icon | Select it. Ctrl+click adds; Shift+click takes a range |
 | Double-click an icon | Open the file with its normal Windows program |
 | Double-click the wallpaper | Make a new Alcove |
 | Right-click a drawer tile | Its menu — edit, move up/down, icon, colour, mirror a folder, move to another screen, delete |
-| Right-click an icon | Open, Pin, Move to, New Alcove, Delete apply to the whole selection. Rename is one at a time |
+| Right-click an icon | Open, Put on the desktop, Move to, New Alcove, Delete apply to the whole selection. Rename is one at a time |
 | Right-click a frequent strip slot | Open, Show in its Alcove, Keep in this slot, Never show here |
 | Right-click the wallpaper | Paste, New Alcove, Collapse all |
 

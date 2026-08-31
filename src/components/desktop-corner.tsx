@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
-import { IconGlyph } from "@/components/icon-glyph"
+import { DesktopIconTile } from "@/components/desktop-icon"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -12,7 +12,7 @@ import { invoke, isTauri } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
 import type { DesktopIcon } from "@/types"
 import { Trash2 } from "lucide-react"
-import type { MouseEvent } from "react"
+import type { MouseEvent, PointerEvent } from "react"
 
 type RecycleBinInfo = {
   name: string
@@ -22,10 +22,17 @@ type RecycleBinInfo = {
 
 type DesktopCornerProps = {
   pinnedIcons: DesktopIcon[]
+  selectedIds: string[]
   onOpenIcon: (icon: DesktopIcon) => void
+  onIconPointerDown: (icon: DesktopIcon, event: PointerEvent) => void
 }
 
-export function DesktopCorner({ pinnedIcons, onOpenIcon }: DesktopCornerProps) {
+export function DesktopCorner({
+  pinnedIcons,
+  selectedIds,
+  onOpenIcon,
+  onIconPointerDown,
+}: DesktopCornerProps) {
   const [bin, setBin] = useState<RecycleBinInfo | null>(null)
 
   useEffect(() => {
@@ -117,19 +124,17 @@ export function DesktopCorner({ pinnedIcons, onOpenIcon }: DesktopCornerProps) {
           className="pointer-events-auto flex flex-col items-center gap-1"
         >
           {pinnedIcons.map((icon) => (
-            <button
-              key={icon.id}
-              type="button"
-              title={icon.name}
-              onDoubleClick={() => onOpenIcon(icon)}
-              onClick={() => onOpenIcon(icon)}
-              className="flex w-[76px] flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-white/95 hover:bg-white/10"
-            >
-              <IconGlyph icon={icon} size={48} />
-              <span className="line-clamp-2 w-full text-center text-[11px] leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">
-                {icon.name}
-              </span>
-            </button>
+            // A stacked pin drags like any other icon: pull one onto the
+            // wallpaper and it stays where you drop it.
+            <div key={icon.id} className="w-[76px]">
+              <DesktopIconTile
+                icon={icon}
+                size={48}
+                selected={selectedIds.includes(icon.id)}
+                onOpen={onOpenIcon}
+                onPointerDown={onIconPointerDown}
+              />
+            </div>
           ))}
         </div>
       ) : null}

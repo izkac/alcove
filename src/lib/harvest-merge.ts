@@ -132,14 +132,28 @@ function carryIds(state: DesktopState, renamed: Map<string, DesktopIcon>): Deskt
   const swap = (id: string) => toNew.get(id) ?? id
   const frecency: DesktopState["frecency"] = {}
   for (const [id, entry] of Object.entries(state.frecency)) frecency[swap(id)] = entry
+  const pinAt: NonNullable<DesktopState["pinAt"]> = {}
+  for (const [id, spot] of Object.entries(state.pinAt ?? {})) pinAt[swap(id)] = spot
   return {
     ...state,
     pinIds: state.pinIds.map(swap),
+    pinAt,
     topSlots: state.topSlots.map((id) => (id ? swap(id) : id)),
     topKeep: state.topKeep.map(swap),
     topHide: state.topHide.map(swap),
     frecency,
   }
+}
+
+/** A deleted file keeps no spot on the wallpaper. */
+function prunePinAt(
+  pinAt: DesktopState["pinAt"],
+  ids: Set<string>,
+): DesktopState["pinAt"] {
+  if (!pinAt) return pinAt
+  const kept: NonNullable<DesktopState["pinAt"]> = {}
+  for (const [id, spot] of Object.entries(pinAt)) if (ids.has(id)) kept[id] = spot
+  return kept
 }
 
 /** Re-reads Desktop files without dropping the user's Alcove / group placement. */
@@ -189,6 +203,7 @@ export function mergeHarvest(
     ...carried,
     icons,
     pinIds: carried.pinIds.filter((id) => ids.has(id)),
+    pinAt: prunePinAt(carried.pinAt, ids),
   }
 }
 
@@ -225,5 +240,6 @@ export function mergeLiveFolder(
     ...carried,
     icons,
     pinIds: carried.pinIds.filter((id) => ids.has(id)),
+    pinAt: prunePinAt(carried.pinAt, ids),
   }
 }
