@@ -80,7 +80,11 @@ export function ShelfRail({
     <div
       data-alcove-strip=""
       className={cn(
-        "flex h-full w-[76px] shrink-0 flex-col items-center gap-2.5 overflow-y-auto border-r border-white/15 bg-black/55 py-3 shadow-2xl backdrop-blur-2xl",
+        "flex h-full w-[76px] shrink-0 flex-col items-center gap-2.5 overflow-y-auto border-r border-white/15 bg-black/55 py-3 shadow-2xl backdrop-blur-2xl transition-colors",
+        // Faint cue for the length of a drag (the hook sets data-icon-drag on
+        // <html>): the whole rail is a target, not just the tiles. It only says
+        // "aim here" — it never widens, so it cannot move what you aim at.
+        "[[data-icon-drag]_&]:border-sky-300/70 [[data-icon-drag]_&]:bg-black/75",
         stripHover && "bg-white/15 ring-1 ring-white/40",
       )}
     >

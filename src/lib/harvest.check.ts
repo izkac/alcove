@@ -3,7 +3,7 @@
  * has to survive that merge. Run: npm run check
  */
 import assert from "node:assert/strict"
-import { isSampleMock, mergeHarvest, mergeLiveFolder } from "./harvest-merge.ts"
+import { isSampleMock, mergeHarvest, mergeLiveFolder, renameMap } from "./harvest-merge.ts"
 import type { Alcove, DesktopIcon, DesktopState } from "../types.ts"
 
 const apps: Alcove = {
@@ -199,6 +199,84 @@ assert.equal(
 assert.equal(
   isSampleMock({ phase: "ready", icons: [{ path: "C:\\a.lnk" }] }),
   false,
+)
+
+// --- renaming a file outside Alcove must not unfile it ---
+
+const notes: DesktopIcon = {
+  id: "C:\\notes.docx",
+  name: "notes.docx",
+  kind: "document",
+  alcoveId: "apps",
+  groupHint: "documents",
+  path: "C:\\notes.docx",
+  groupId: "coding",
+  byteSize: 4096,
+  modifiedAt: 1_700_000_000_000,
+}
+const renamedNotes = { ...notes, id: "C:\\Q3 notes.docx", name: "Q3 notes.docx", path: "C:\\Q3 notes.docx" }
+
+assert.equal(
+  renameMap([notes], [harvested(renamedNotes)]).get(renamedNotes.path!)?.id,
+  notes.id,
+  "same size and mtime at a new path is the same file",
+)
+
+const afterRename = mergeHarvest(
+  { ...state([notes]), pinIds: [notes.id], frecency: { [notes.id]: { score: 3, at: 1 } } },
+  [harvested(renamedNotes)],
+  "inbox",
+)
+const carriedIcon = afterRename.icons.find((icon) => icon.path === renamedNotes.path)
+assert.equal(carriedIcon?.alcoveId, "apps", "a renamed file keeps its drawer")
+assert.equal(carriedIcon?.groupId, "coding", "a renamed file keeps its group row")
+assert.deepEqual(afterRename.pinIds, [renamedNotes.id], "the pin follows the rename")
+assert.equal(
+  afterRename.frecency[renamedNotes.id!]?.score,
+  3,
+  "frecency history follows the rename",
+)
+assert.equal(afterRename.frecency[notes.id], undefined, "the dead id is not left behind")
+
+// Two files sharing a size and a timestamp are ambiguous — guessing would file
+// one of them into the other's drawer, so neither is matched.
+const twinA: DesktopIcon = { ...notes, id: "C:\\a.txt", path: "C:\\a.txt", name: "a.txt" }
+const twinB: DesktopIcon = { ...notes, id: "C:\\b.txt", path: "C:\\b.txt", name: "b.txt" }
+assert.equal(
+  renameMap(
+    [twinA, twinB],
+    [harvested({ ...twinA, id: "C:\\c.txt", path: "C:\\c.txt" })],
+  ).size,
+  0,
+  "an ambiguous fingerprint is left unmatched",
+)
+
+// A folder has no size, so it can never be fingerprinted into someone else.
+const folder: DesktopIcon = {
+  ...notes,
+  id: "C:\\Work",
+  path: "C:\\Work",
+  name: "Work",
+  kind: "folder",
+  byteSize: null,
+}
+assert.equal(
+  renameMap([folder], [harvested({ ...folder, id: "C:\\Work2", path: "C:\\Work2" })]).size,
+  0,
+  "folders are never matched by fingerprint",
+)
+
+// A genuinely new file must not inherit a deleted file's placement by accident.
+const deleted = mergeHarvest(state([delphi]), [], "inbox")
+assert.equal(deleted.icons.length, 0, "a deleted file with no replacement just goes")
+
+const renamedInFolder = mergeLiveFolder(withLive, "downloads", [
+  harvested({ ...zip, id: "C:\\Users\\me\\Downloads\\final.zip", path: "C:\\Users\\me\\Downloads\\final.zip" }),
+])
+assert.equal(
+  renamedInFolder.icons.find((icon) => icon.path?.endsWith("final.zip"))?.groupId,
+  "zips",
+  "renaming inside a live folder keeps the group row",
 )
 
 console.log("harvest merge: all checks passed")

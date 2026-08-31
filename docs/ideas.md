@@ -284,7 +284,16 @@ Written down so they stop coming back:
 
 ## Status
 
-- **4, 5, 8, 9, 10** — not built.
+- **5, 9, 10** — not built.
+- **4** — implemented. Drill-down is a transient cursor in
+  `desktop-shell.tsx` (never persisted, reset when the drawer closes), the trail
+  in `src/lib/crumbs.ts` (self-check: `npm run check`) rendered by
+  `src/components/folder-crumbs.tsx`. `Backspace` goes up, `Enter` on an empty
+  selection hands the folder to Explorer.
+- **8 Half A** — implemented. `railBand` in `use-icon-pointer-drag.ts` gives
+  every pixel between the first and last rail tile to the nearest drawer, and
+  anything left of the rail's right edge counts. Half B (widening) stays unbuilt
+  on purpose — see Revision 2 above.
 - **6, 7** — implemented. Frecency and slot logic in `src/lib/frecency.ts`
   (self-check: `npm run check`), strip in `src/components/frequent-strip.tsx`,
   canvas in `src/components/alcove-canvas.tsx`.

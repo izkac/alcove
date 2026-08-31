@@ -274,6 +274,14 @@ pub fn run() {
                 )?;
             }
 
+            // A killed or crashed run leaves Explorer's icons hidden and nothing
+            // on screen to say why. Put them back before we hide them again.
+            if persist::desktop_left_hidden(app.handle()) {
+                log::warn!("previous run left the desktop icons hidden; restoring");
+                desktop::repair_hidden_desktop();
+                persist::mark_desktop_hidden(app.handle(), false);
+            }
+
             if let Some(main) = app.get_webview_window("main") {
                 let _ = main.hide();
                 let state = app.state::<DesktopState>();
@@ -310,6 +318,16 @@ pub fn run() {
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|handle, event| {
+            // Second net under on_window_event: a quit that never destroys the
+            // main window must still hand the desktop back.
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(main) = handle.get_webview_window("main") {
+                    let state = handle.state::<DesktopState>();
+                    let _ = desktop::detach(&main, &state);
+                }
+            }
+        });
 }

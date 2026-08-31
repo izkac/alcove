@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AlcoveChip } from "@/components/alcove-chip"
 import { DesktopIconTile, IconContextItems } from "@/components/desktop-icon"
 import { FolderItems } from "@/components/folder-items"
+import { FolderCrumbs } from "@/components/folder-crumbs"
 import { FolderViewSwitch } from "@/components/folder-view-switch"
 import {
   ContextMenu,
@@ -20,7 +21,6 @@ import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
 import { AlcoveGlyphGrid, resolveAlcoveGlyph } from "@/lib/alcove-glyphs"
 import { DENSITY_CONFIG } from "@/lib/density"
 import { folderIconSize, folderViewFor } from "@/lib/folder-view"
-import { folderLeaf } from "@/lib/harvest-merge"
 import { iconPack } from "@/lib/icon-select"
 import { cn } from "@/lib/utils"
 import type { Alcove, AlcoveColor, Density, DesktopIcon, FolderView } from "@/types"
@@ -53,6 +53,10 @@ type AlcovePanelProps = {
   onIconPointerDown?: (icon: DesktopIcon, event: PointerEvent) => void
   onExpandCanvas?: () => void
   onFolderView?: (view: FolderView) => void
+  /** Folder currently shown, when drilled below the drawer's own folder. */
+  folderPath?: string | null
+  onCrumb?: (path: string) => void
+  onOpenFolderHere?: () => void
 }
 
 export function AlcovePanel(props: AlcovePanelProps) {
@@ -105,6 +109,9 @@ function ExpandedAlcove({
   onIconPointerDown,
   onExpandCanvas,
   onFolderView,
+  folderPath,
+  onCrumb,
+  onOpenFolderHere,
 }: AlcovePanelProps) {
   const config = DENSITY_CONFIG[density]
   const [query, setQuery] = useState("")
@@ -181,23 +188,27 @@ function ExpandedAlcove({
             <button
               type="button"
               onClick={onToggle}
-              className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-medium text-white"
+              className="flex min-w-0 items-center gap-2 text-left text-sm font-medium text-white"
             >
               {alcove.isInbox ? <Inbox className="size-3.5 opacity-80" /> : null}
-              <span className="min-w-0 truncate">
-                {alcove.name}
-                {alcove.folderPath ? (
-                  <span className="ml-1.5 font-normal text-white/45">
-                    {folderLeaf(alcove.folderPath)}
-                  </span>
-                ) : null}
-              </span>
+              <span className="min-w-0 truncate">{alcove.name}</span>
               <span className="text-xs font-normal text-white/60">
                 {query.trim()
                   ? `${filtered.length}/${icons.length}`
                   : icons.length}
               </span>
             </button>
+            {alcove.folderPath ? (
+              <FolderCrumbs
+                root={alcove.folderPath}
+                path={folderPath}
+                onCrumb={onCrumb}
+                onOpenHere={onOpenFolderHere}
+                className="min-w-0 flex-1 text-xs"
+              />
+            ) : (
+              <span className="flex-1" />
+            )}
             <button
               type="button"
               title="Edit Alcove"

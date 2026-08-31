@@ -32,6 +32,8 @@ import {
   type IconDropTarget,
 } from "@/hooks/use-icon-pointer-drag"
 import { viewFor } from "@/lib/alcove-view"
+import { parentWithin } from "@/lib/crumbs"
+import { folderLeaf, toDesktopIcon, type HarvestedIcon } from "@/lib/harvest-merge"
 import { alcovesOnDesk, deskChannel, type DeskChannelMessage } from "@/lib/desk-strip"
 import {
   dragIconIds,
@@ -225,6 +227,9 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
   >(null)
   const [openAlcoveId, setOpenAlcoveId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [drill, setDrill] = useState<
+    { alcoveId: string; path: string; icons: DesktopIcon[] } | null
+  >(null)
   const [selectAnchorId, setSelectAnchorId] = useState<string | null>(null)
   const selectedRef = useRef(selectedIds)
   const pendingCollapseRef = useRef<string | null>(null)
@@ -275,7 +280,10 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
   const openAlcove = openAlcoveId
     ? deskAlcoves.find((alcove) => alcove.id === openAlcoveId) ?? null
     : null
-  const openIcons = openAlcove ? iconsIn(openAlcove.id) : []
+  // Transient: a drilled folder is a view, never state. Merging it into the
+  // drawer would overwrite the drawer's own contents and the groups on them.
+  const drillIcons = drill && drill.alcoveId === openAlcove?.id ? drill.icons : null
+  const openIcons = drillIcons ?? (openAlcove ? iconsIn(openAlcove.id) : [])
   const openView = openAlcove ? viewFor(openAlcove, openIcons.length) : "panel"
   // One selected item means "what is this?"; a multi-selection means "move these".
   const previewIcon =
@@ -289,8 +297,48 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     })),
   )
 
+  /**
+   * Show another folder inside the open drawer. Look-and-leave: no window, no
+   * taskbar button, and the drawer forgets where it was as soon as it closes.
+   */
+  const drillInto = useCallback(
+    (alcoveId: string, path: string) => {
+      if (!isTauri()) return
+      setSelectedIds([])
+      invoke<HarvestedIcon[]>("list_folder_icons", { path })
+        .then((harvested) => {
+          setDrill({
+            alcoveId,
+            path,
+            icons: harvested.map((item) => toDesktopIcon(item, alcoveId, null)),
+          })
+        })
+        .catch(() => toast(`Could not open ${folderLeaf(path)}`))
+    },
+    [],
+  )
+
+  function openInExplorer(path: string) {
+    if (!isTauri()) return
+    invoke("open_desktop_item", { path }).catch(() => {
+      toast(`Could not open ${folderLeaf(path)}`)
+    })
+  }
+
   function openIcon(icon: DesktopIcon) {
     desktop.noteOpen(icon.id)
+    // A subfolder shown inside a drawer opens in place. Ejecting to Explorer
+    // for it is the one thing that made live folders a dead end at depth one.
+    if (
+      icon.kind === "folder" &&
+      icon.path &&
+      openAlcove &&
+      isTauri() &&
+      openIcons.some((item) => item.id === icon.id)
+    ) {
+      drillInto(openAlcove.id, icon.path)
+      return
+    }
     if (icon.path && isTauri()) {
       invoke("open_desktop_item", { path: icon.path }).catch(() => {
         toast(`Could not open ${icon.name}`)
@@ -324,6 +372,11 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
       toast(err instanceof Error ? err.message : String(err))
     })
   }
+
+  // Closing a drawer resets it to its own folder — the cursor is never saved.
+  useEffect(() => {
+    setDrill(null)
+  }, [openAlcoveId])
 
   function removeIcons(icons: DesktopIcon[]) {
     desktop.deleteIcons(icons).catch((err) => {
@@ -362,21 +415,36 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         }
         return
       }
+      // Drilled icons are a view, not state, so they are not in state.icons.
+      const pool = drillIcons ? [...state.icons, ...drillIcons] : state.icons
+      if (event.key === "Backspace" && drill && openAlcove?.folderPath) {
+        event.preventDefault()
+        const up = parentWithin(openAlcove.folderPath, drill.path)
+        if (up && up.toLowerCase() !== openAlcove.folderPath.toLowerCase()) {
+          drillInto(openAlcove.id, up)
+        } else {
+          setDrill(null)
+        }
+        return
+      }
       const selected = selectedIds
-        .map((id) => state.icons.find((item) => item.id === id))
+        .map((id) => pool.find((item) => item.id === id))
         .filter((icon): icon is DesktopIcon => Boolean(icon))
       if (event.key === "Enter") {
         const host = document.activeElement instanceof Element
           ? document.activeElement.closest("[data-desktop-icon]")
           : null
         const id = host instanceof HTMLElement ? host.dataset.desktopIcon : undefined
-        const focused = id
-          ? state.icons.find((item) => item.id === id)
-          : null
-        const pack = focused
-          ? iconPack(focused, selectedIds, state.icons)
-          : selected
-        if (pack.length === 0) return
+        const focused = id ? pool.find((item) => item.id === id) : null
+        const pack = focused ? iconPack(focused, selectedIds, pool) : selected
+        if (pack.length === 0) {
+          // Nothing picked out: hand the whole folder to Explorer and get out.
+          if (drill) {
+            event.preventDefault()
+            openInExplorer(drill.path)
+          }
+          return
+        }
         event.preventDefault()
         for (const icon of pack) openIcon(icon)
         return
@@ -392,9 +460,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
           : null
         const id =
           host instanceof HTMLElement ? host.dataset.desktopIcon : undefined
-        const icon = id
-          ? state.icons.find((item) => item.id === id)
-          : null
+        const icon = id ? pool.find((item) => item.id === id) : null
         if (icon) {
           event.preventDefault()
           removeIcon(icon)
@@ -403,7 +469,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [desktop, openAlcove, selectedIds, state.icons])
+  }, [desktop, drill, drillIcons, drillInto, openAlcove, selectedIds, state.icons])
 
   const applyDrop = useCallback(
     (icons: DesktopIcon[], target: IconDropTarget) => {
@@ -732,6 +798,21 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                         onFolderView={(view) =>
                           desktop.setFolderView(openAlcove.id, view)
                         }
+                        folderPath={drill?.path ?? openAlcove.folderPath}
+                        onCrumb={(path) => {
+                          if (
+                            openAlcove.folderPath &&
+                            path.toLowerCase() === openAlcove.folderPath.toLowerCase()
+                          ) {
+                            setDrill(null)
+                            setSelectedIds([])
+                          } else {
+                            drillInto(openAlcove.id, path)
+                          }
+                        }}
+                        onOpenFolderHere={() =>
+                          openInExplorer(drill?.path ?? openAlcove.folderPath ?? "")
+                        }
                       />
                     ) : openAlcove ? (
                       <AlcovePanel
@@ -789,6 +870,21 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                         onIconPointerDown={onIconPointerDown}
                         onFolderView={(view) =>
                           desktop.setFolderView(openAlcove.id, view)
+                        }
+                        folderPath={drill?.path ?? openAlcove.folderPath}
+                        onCrumb={(path) => {
+                          if (
+                            openAlcove.folderPath &&
+                            path.toLowerCase() === openAlcove.folderPath.toLowerCase()
+                          ) {
+                            setDrill(null)
+                            setSelectedIds([])
+                          } else {
+                            drillInto(openAlcove.id, path)
+                          }
+                        }}
+                        onOpenFolderHere={() =>
+                          openInExplorer(drill?.path ?? openAlcove.folderPath ?? "")
                         }
                       />
                     ) : null}

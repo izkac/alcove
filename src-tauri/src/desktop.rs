@@ -461,10 +461,23 @@ mod win {
     fn reveal(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
         let def_view = state.inner.lock().map_err(|err| err.to_string())?.def_view;
         hide_def_view(def_view);
+        crate::persist::mark_desktop_hidden(window.app_handle(), true);
         let hwnd = window_hwnd(window)?;
         cover_work_area(window, hwnd, true)?;
         window.show().map_err(|err| err.to_string())?;
         Ok(())
+    }
+
+    /// Show Explorer's icon list again, without needing the state that recorded
+    /// hiding it. TerminateProcess cannot be intercepted, so a killed run leaves
+    /// the desktop empty with nothing running to explain it; this is the repair
+    /// the next start performs before touching anything else.
+    pub fn repair_hidden_desktop() {
+        unsafe {
+            if let Ok(shell) = find_shell() {
+                let _ = ShowWindow(shell.def_view, SW_SHOW);
+            }
+        }
     }
 
     pub fn attach(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
@@ -538,6 +551,7 @@ mod win {
                 let _ = ShowWindow(hwnd_from(def_view), SW_SHOW);
             }
         }
+        crate::persist::mark_desktop_hidden(&app, false);
         inner.desks.clear();
         let was_attached = inner.attached;
         inner.attached = false;
@@ -709,6 +723,8 @@ mod win {
     }
 
     pub fn spawn_desktop_threads(_app: AppHandle) {}
+
+    pub fn repair_hidden_desktop() {}
 }
 
 #[derive(Default)]
@@ -741,6 +757,10 @@ pub fn prepare(window: &WebviewWindow, state: &DesktopState) -> Result<(), Strin
 
 pub fn detach(window: &WebviewWindow, state: &DesktopState) -> Result<(), String> {
     win::detach(window, state)
+}
+
+pub fn repair_hidden_desktop() {
+    win::repair_hidden_desktop()
 }
 
 #[allow(dead_code)]

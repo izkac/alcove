@@ -67,6 +67,81 @@ export function liveAlcoveIds(alcoves: Alcove[]): Set<string> {
   )
 }
 
+
+type Fingerprintable = {
+  byteSize?: number | null
+  modifiedAt?: number | null
+}
+
+/**
+ * Length plus last-write time. A rename or a move changes neither, and the icon
+ * id is the file path — so without this, renaming a file in Explorer makes its
+ * old id vanish, a new one appear, and every bit of filing the user did land
+ * back in the Inbox.
+ */
+function fingerprint(item: Fingerprintable): string | null {
+  if (item.byteSize == null || item.modifiedAt == null) return null
+  return `${item.byteSize}:${item.modifiedAt}`
+}
+
+/** Fingerprints claimed by exactly one item. Ambiguity is dropped, not guessed. */
+function uniquePrints<T extends Fingerprintable>(items: T[]): Map<string, T> {
+  const seen = new Map<string, T>()
+  const collisions = new Set<string>()
+  for (const item of items) {
+    const print = fingerprint(item)
+    if (!print) continue
+    if (seen.has(print)) collisions.add(print)
+    else seen.set(print, item)
+  }
+  for (const print of collisions) seen.delete(print)
+  return seen
+}
+
+/**
+ * New path -> the icon it used to be, for files renamed or moved outside
+ * Alcove. Only one-to-one matches count: two files sharing a size and a
+ * timestamp are left alone rather than swapped by a coin flip. Folders have no
+ * size, so they are never matched.
+ */
+export function renameMap(
+  priors: DesktopIcon[],
+  harvested: HarvestedIcon[],
+): Map<string, DesktopIcon> {
+  const harvestedPaths = new Set(harvested.map((item) => item.path))
+  const priorPaths = new Set(priors.map((icon) => icon.path))
+  const gone = uniquePrints(priors.filter((icon) => !harvestedPaths.has(icon.path ?? "")))
+  const fresh = uniquePrints(harvested.filter((item) => !priorPaths.has(item.path)))
+  const out = new Map<string, DesktopIcon>()
+  for (const [print, item] of fresh) {
+    const prior = gone.get(print)
+    if (prior) out.set(item.path, prior)
+  }
+  return out
+}
+
+/**
+ * Carry every id-keyed list across a rename. Pins, frequent-strip slots and
+ * frecency history are all keyed by path too, so they die with the old id
+ * unless they are moved over with it.
+ */
+function carryIds(state: DesktopState, renamed: Map<string, DesktopIcon>): DesktopState {
+  if (renamed.size === 0) return state
+  const toNew = new Map<string, string>()
+  for (const [path, prior] of renamed) toNew.set(prior.id, path)
+  const swap = (id: string) => toNew.get(id) ?? id
+  const frecency: DesktopState["frecency"] = {}
+  for (const [id, entry] of Object.entries(state.frecency)) frecency[swap(id)] = entry
+  return {
+    ...state,
+    pinIds: state.pinIds.map(swap),
+    topSlots: state.topSlots.map((id) => (id ? swap(id) : id)),
+    topKeep: state.topKeep.map(swap),
+    topHide: state.topHide.map(swap),
+    frecency,
+  }
+}
+
 /** Re-reads Desktop files without dropping the user's Alcove / group placement. */
 export function mergeHarvest(
   current: DesktopState,
@@ -82,10 +157,18 @@ export function mergeHarvest(
     current.icons.filter((icon) => icon.path).map((icon) => [icon.path, icon]),
   )
   const alcoveIds = new Set(current.alcoves.map((alcove) => alcove.id))
+  // Live-folder icons are owned by mergeLiveFolder; a renamed Desktop file must
+  // not be able to claim one of their slots.
+  const renamed = renameMap(
+    current.icons.filter(
+      (icon) => icon.path && !(icon.alcoveId && liveIds.has(icon.alcoveId)),
+    ),
+    harvested.filter((item) => !livePaths.has(item.path)),
+  )
   const desktop = harvested
     .filter((item) => !livePaths.has(item.path))
     .map((item) => {
-      const prior = previous.get(item.path)
+      const prior = previous.get(item.path) ?? renamed.get(item.path)
       let alcoveId =
         current.phase === "onboarding"
           ? (prior?.alcoveId ?? null)
@@ -101,10 +184,11 @@ export function mergeHarvest(
     })
   const icons = [...desktop, ...liveIcons]
   const ids = new Set(icons.map((icon) => icon.id))
+  const carried = carryIds(current, renamed)
   return {
-    ...current,
+    ...carried,
     icons,
-    pinIds: current.pinIds.filter((id) => ids.has(id)),
+    pinIds: carried.pinIds.filter((id) => ids.has(id)),
   }
 }
 
@@ -121,8 +205,12 @@ export function mergeLiveFolder(
       .filter((icon) => icon.alcoveId === alcoveId && icon.path)
       .map((icon) => [icon.path, icon]),
   )
+  const renamed = renameMap(
+    current.icons.filter((icon) => icon.alcoveId === alcoveId && icon.path),
+    harvested,
+  )
   const live = harvested.map((item) => {
-    const prior = previous.get(item.path)
+    const prior = previous.get(item.path) ?? renamed.get(item.path)
     const groupId =
       prior?.groupId && groupStillThere(current.alcoves, alcoveId, prior.groupId)
         ? prior.groupId
@@ -132,9 +220,10 @@ export function mergeLiveFolder(
   const others = current.icons.filter((icon) => icon.alcoveId !== alcoveId)
   const icons = [...others, ...live]
   const ids = new Set(icons.map((icon) => icon.id))
+  const carried = carryIds(current, renamed)
   return {
-    ...current,
+    ...carried,
     icons,
-    pinIds: current.pinIds.filter((id) => ids.has(id)),
+    pinIds: carried.pinIds.filter((id) => ids.has(id)),
   }
 }

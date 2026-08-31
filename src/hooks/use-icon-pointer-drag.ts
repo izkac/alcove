@@ -127,10 +127,64 @@ function hideGhost() {
   ghost.replaceChildren()
 }
 
+
+/** Set on <html> for the length of a drag, so the rail can show it is live. */
+const DRAG_ATTR = "data-icon-drag"
+
+function markDragging(on: boolean) {
+  if (on) {
+    document.body.style.cursor = "grabbing"
+    document.documentElement.setAttribute(DRAG_ATTR, "")
+  } else {
+    document.body.style.removeProperty("cursor")
+    document.documentElement.removeAttribute(DRAG_ATTR)
+  }
+}
+
+/**
+ * The rail as one contiguous column of drop targets.
+ *
+ * Rail tiles are 52px with a 10px gap, and a miss in that gap is not a no-op --
+ * the file silently lands in the neighbouring drawer and has to be hunted down
+ * later. From the first frame of a drag every pixel between the first tile's top
+ * and the last tile's bottom belongs to the nearest row, and anything left of
+ * the rail's right edge counts, so overshooting into the screen edge is free.
+ * The tool buttons below the stack are left alone -- they are not drawers.
+ */
+function railBand(
+  x: number,
+  y: number,
+): { target: IconDropTarget; hover: Element | null } | null {
+  const rail = document.querySelector("[data-alcove-strip]")
+  if (!(rail instanceof HTMLElement)) return null
+  if (x > rail.getBoundingClientRect().right) return null
+  const rows = [...rail.querySelectorAll("[data-alcove-id]")].filter(
+    (node): node is HTMLElement => node instanceof HTMLElement,
+  )
+  const first = rows[0]?.getBoundingClientRect()
+  const last = rows[rows.length - 1]?.getBoundingClientRect()
+  if (!first || !last || y < first.top || y > last.bottom) return null
+  let best: HTMLElement | null = null
+  let bestGap = Number.POSITIVE_INFINITY
+  for (const row of rows) {
+    const rect = row.getBoundingClientRect()
+    const gap = y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0
+    if (gap < bestGap) {
+      bestGap = gap
+      best = row
+    }
+  }
+  const id = best?.dataset.alcoveId
+  return id ? { target: { kind: "alcove", id }, hover: best } : null
+}
+
 export function resolveTarget(x: number, y: number): {
   target: IconDropTarget
   hover: Element | null
 } {
+  // Rail first: it sits at the screen edge, so nothing else can be under it.
+  const band = railBand(x, y)
+  if (band) return band
   const stack = document.elementsFromPoint(x, y)
   for (const node of stack) {
     if (!(node instanceof Element)) continue
@@ -268,7 +322,7 @@ export function useIconPointerDrag(
     originRef.current = null
     hideGhost()
     hoverRef.current = setHover(null, hoverRef.current)
-    document.body.style.removeProperty("cursor")
+    markDragging(false)
     document
       .querySelectorAll(`[${SOURCE_ATTR}]`)
       .forEach((node) => node.removeAttribute(SOURCE_ATTR))
@@ -280,7 +334,7 @@ export function useIconPointerDrag(
     foreignArtRef.current = null
     hideGhost()
     hoverRef.current = setHover(null, hoverRef.current)
-    document.body.style.removeProperty("cursor")
+    markDragging(false)
   }, [])
 
   useEffect(() => () => endDrag(), [endDrag])
@@ -316,7 +370,7 @@ export function useIconPointerDrag(
           resolveTarget(data.x, data.y).hover,
           hoverRef.current,
         )
-        document.body.style.cursor = "grabbing"
+        markDragging(true)
         return
       }
       if (data.type === "icon-drag-handoff") {
@@ -346,7 +400,7 @@ export function useIconPointerDrag(
         resolveTarget(event.clientX, event.clientY).hover,
         hoverRef.current,
       )
-      document.body.style.cursor = "grabbing"
+      markDragging(true)
     }
 
     function onPointerUp(event: PointerEvent) {
@@ -465,7 +519,7 @@ export function useIconPointerDrag(
           draggingRef.current = true
           fillGhost(origin.icon, origin.icons.length)
           showGhost(moveEvent.clientX, moveEvent.clientY)
-          document.body.style.cursor = "grabbing"
+          markDragging(true)
           for (const item of origin.icons) {
             document
               .querySelector(`[data-desktop-icon="${CSS.escape(item.id)}"]`)
@@ -625,7 +679,7 @@ export function useAlcoveStripDrag(
           movedRef.current = true
           fillAlcoveGhost(origin.id)
           showGhost(moveEvent.clientX, moveEvent.clientY)
-          document.body.style.cursor = "grabbing"
+          markDragging(true)
           document
             .querySelector(
               `[data-alcove-strip] [data-alcove-id="${CSS.escape(origin.id)}"]`,
@@ -650,7 +704,7 @@ export function useAlcoveStripDrag(
         window.removeEventListener("pointermove", onMove)
         window.removeEventListener("pointerup", onUp)
         window.removeEventListener("pointercancel", onUp)
-        document.body.style.removeProperty("cursor")
+        markDragging(false)
         hideGhost()
         hoverRef.current = setHover(null, hoverRef.current)
         document

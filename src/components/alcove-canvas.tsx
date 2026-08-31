@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { PointerEvent } from "react"
 import { DesktopIconTile, IconContextItems } from "@/components/desktop-icon"
 import { FolderItems } from "@/components/folder-items"
+import { FolderCrumbs } from "@/components/folder-crumbs"
 import { FolderViewSwitch } from "@/components/folder-view-switch"
 import {
   ContextMenu,
@@ -19,7 +20,6 @@ import { AlcoveGlyphGrid, AlcoveGlyphMark, resolveAlcoveGlyph } from "@/lib/alco
 import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
 import { DENSITY_CONFIG } from "@/lib/density"
 import { folderIconSize, folderViewFor } from "@/lib/folder-view"
-import { folderLeaf } from "@/lib/harvest-merge"
 import { iconPack } from "@/lib/icon-select"
 import { ALCOVE_COLOR_IDS } from "@/types"
 import { cn } from "@/lib/utils"
@@ -54,6 +54,10 @@ type AlcoveCanvasProps = {
   onMoveGroup: (groupId: string, delta: number) => void
   onMoveIconToGroup: (iconId: string, groupId: string | null) => void
   onFolderView?: (view: FolderView) => void
+  /** Folder currently shown, when drilled below the drawer's own folder. */
+  folderPath?: string | null
+  onCrumb?: (path: string) => void
+  onOpenFolderHere?: () => void
 }
 
 const UNGROUPED = "Everything else"
@@ -94,6 +98,9 @@ export function AlcoveCanvas({
   onMoveGroup,
   onMoveIconToGroup,
   onFolderView,
+  folderPath,
+  onCrumb,
+  onOpenFolderHere,
 }: AlcoveCanvasProps) {
   const [query, setQuery] = useState("")
   const config = DENSITY_CONFIG[density]
@@ -190,14 +197,6 @@ export function AlcoveCanvas({
               <span className="ml-2 text-xs text-white/55">
                 {query.trim() ? `${filtered.length}/${icons.length}` : icons.length}
               </span>
-              {alcove.folderPath ? (
-                <span
-                  className="mt-0.5 block max-w-[28rem] truncate text-[11px] text-white/45"
-                  title={alcove.folderPath}
-                >
-                  {folderLeaf(alcove.folderPath)}
-                </span>
-              ) : null}
             </button>
           </ContextMenuTrigger>
           <ContextMenuContent>
@@ -230,6 +229,15 @@ export function AlcoveCanvas({
             ) : null}
           </ContextMenuContent>
         </ContextMenu>
+        {alcove.folderPath ? (
+          <FolderCrumbs
+            root={alcove.folderPath}
+            path={folderPath}
+            onCrumb={onCrumb}
+            onOpenHere={onOpenFolderHere}
+            className="min-w-0 max-w-[32rem] text-[11px]"
+          />
+        ) : null}
         <button
           type="button"
           title="Edit Alcove"
