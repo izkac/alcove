@@ -127,6 +127,7 @@ export function Dock({
           key={icon.id}
           type="button"
           title={icon.name}
+          data-launch-pulse={icon.id}
           onClick={() => onOpenIcon(icon)}
           className="flex size-10 shrink-0 items-center justify-center rounded-xl transition hover:bg-white/10"
         >

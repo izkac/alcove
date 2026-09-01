@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Dock } from "@/components/taskbar"
 import { hydrateDesktopState, loadDesktopState } from "@/lib/storage"
 import { invoke, isTauri } from "@/lib/tauri"
+import { pulseLaunch } from "@/lib/launch-pulse"
 import type { DesktopIcon } from "@/types"
 import { SquareStack } from "lucide-react"
 
@@ -53,6 +54,7 @@ export function BarStrip() {
 
   function openIcon(icon: DesktopIcon) {
     if (icon.path) {
+      pulseLaunch(icon.id)
       invoke("open_desktop_item", { path: icon.path }).catch(() => undefined)
     }
   }

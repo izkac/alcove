@@ -78,6 +78,7 @@ export function FrequentStrip({
                       : undefined
                   }
                   data-strip-label={icon.name}
+                  data-launch-pulse={icon.id}
                   onClick={() => onOpen(icon)}
                   className={cn(
                     "relative flex w-[64px] shrink-0 flex-col items-center gap-1 rounded-xl px-1 py-1.5 outline-none transition",
@@ -127,6 +128,7 @@ function ToolSlot({
           title={tool.label}
           data-strip-launch={tool.launch}
           data-strip-label={tool.label}
+          data-launch-pulse={tool.id}
           onClick={() => onOpen(tool)}
           className={cn(
             "relative flex w-[64px] shrink-0 flex-col items-center gap-1 rounded-xl px-1 py-1.5 outline-none transition",

@@ -35,6 +35,7 @@ import {
 import { viewFor } from "@/lib/alcove-view"
 import { TOP_SLOTS } from "@/lib/frecency"
 import { useUpdateCheck } from "@/lib/update"
+import { pulseLaunch } from "@/lib/launch-pulse"
 import { parentWithin } from "@/lib/crumbs"
 import { folderLeaf, toDesktopIcon, type HarvestedIcon } from "@/lib/harvest-merge"
 import { alcovesOnDesk, deskChannel, type DeskChannelMessage } from "@/lib/desk-strip"
@@ -347,6 +348,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
       return
     }
     if (icon.path && isTauri()) {
+      pulseLaunch(icon.id)
       invoke("open_desktop_item", { path: icon.path }).catch(() => {
         toast(`Could not open ${icon.name}`)
       })
@@ -357,6 +359,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
 
   function openTool(tool: StripTool) {
     if (isTauri()) {
+      pulseLaunch(tool.id)
       invoke("open_desktop_item", { path: tool.launch, args: tool.args }).catch(() => {
         toast(`Could not open ${tool.label}`)
       })
