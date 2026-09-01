@@ -162,13 +162,3 @@ commands.allow = ["update_available"]
 identifier = "allow-install-update"
 description = "Download and run the Alcove update installer"
 commands.allow = ["install_update"]
-
-[[permission]]
-identifier = "allow-licence-status"
-description = "Read the stored Alcove licence"
-commands.allow = ["licence_status"]
-
-[[permission]]
-identifier = "allow-activate-licence"
-description = "Verify and store an Alcove licence key"
-commands.allow = ["activate_licence"]

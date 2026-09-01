@@ -80,29 +80,17 @@ covers the desktop, so it does not appear small and then stretch.
 
 ## Licence
 
-Alcove is free and complete. Every feature, every monitor, no time limit, no
-nag at startup — it starts with Windows and *is* your desktop, and something
-that asks for money every morning is what bundled junk does.
+Alcove is open source under the [MIT licence](LICENSE). Read it, build it, change
+it, fork it, redistribute it, sell it — the licence asks only that the copyright
+notice travels with the source. Contributions come in under the same terms.
 
-A licence buys **updates**: newer versions for the period it covers. When it
-lapses the copy you have keeps working forever, in full — you just stop being
-offered newer ones. That means there is nothing to revoke, no activation server,
-and no check that can fail and lock you out. Keys are verified offline against a
-public key built into the app.
+It is built on Tauri, React, Rust and other open source components, each under
+its own licence.
 
-The source is here to read, build and modify for yourself. Redistributing builds
-is the one thing it does not allow — see [LICENCE.md](LICENCE.md).
-
-To issue a key:
-
-```bat
-node scripts/issue-licence.mjs "buyer@example.com" 12
-```
-
-Signs `<name>|<expiry>` with `%USERPROFILE%\.tauri\alcove-licence.key` and prints the key
-to send. That key is separate from the update signing key on purpose: a leaked
-licence key must not also be able to push a build to every install. Both live
-outside this repo and neither can be regenerated.
+Alcove changes how the Windows desktop is drawn and reads the files on it. It is
+designed not to move or delete anything you did not ask it to, and it never
+copies your files anywhere. It comes with no warranty of any kind; you use it at
+your own risk.
 
 ## Releasing an update
 

@@ -1,7 +1,6 @@
 mod autostart;
 mod desktop;
 mod harvest;
-mod licence;
 mod persist;
 mod search;
 mod taskbar;
@@ -218,18 +217,8 @@ fn set_autostart(enabled: bool) -> Result<bool, String> {
 /// The newer version on the release feed, or null when we are current or
 /// offline. Never errors: a failed check must not become a popup.
 #[tauri::command]
-async fn update_available(app: tauri::AppHandle) -> Option<update::Available> {
+async fn update_available(app: tauri::AppHandle) -> Option<String> {
     update::check(&app).await
-}
-
-#[tauri::command]
-fn licence_status(app: tauri::AppHandle) -> Option<licence::Licence> {
-    licence::load(&app)
-}
-
-#[tauri::command]
-fn activate_licence(app: tauri::AppHandle, key: String) -> Result<licence::Licence, String> {
-    licence::store(&app, &key)
 }
 
 #[tauri::command]
@@ -291,8 +280,6 @@ pub fn run() {
             save_desktop_state,
             update_available,
             install_update,
-            licence_status,
-            activate_licence,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

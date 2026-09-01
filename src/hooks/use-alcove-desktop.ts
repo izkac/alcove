@@ -168,16 +168,6 @@ export function useAlcoveDesktop() {
     }
   }, [])
 
-  // Stamped the first time a real desk is saved, so the licence nudge can wait
-  // for Alcove to have earned it. Missing on every layout saved before this
-  // existed, which is correct — those users start their clock now.
-  useEffect(() => {
-    if (!hydrated || isSampleMock(state) || state.firstRunAt) return
-    setState((current) =>
-      current.firstRunAt ? current : { ...current, firstRunAt: Date.now() },
-    )
-  }, [hydrated, state])
-
   useEffect(() => {
     if (!hydrated) return
     if (applyingRemote.current) {
@@ -1027,10 +1017,6 @@ export function useAlcoveDesktop() {
     [state.icons, state.topSlots],
   )
 
-  const dismissLicenceNudge = useCallback(() => {
-    setState((current) => ({ ...current, licenceNudgedAt: Date.now() }))
-  }, [])
-
   return {
     state,
     sortedAlcoves,
@@ -1062,7 +1048,6 @@ export function useAlcoveDesktop() {
     parkIcons,
     unparkIcons,
     noteOpen,
-    dismissLicenceNudge,
     toggleTopKeep,
     hideFromTop,
     clearTopStrip,

@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 dist
+dist.locked
 dist-ssr
 *.local
 /target/
@@ -30,3 +31,8 @@ dist-ssr
 *.key.pub
 .env
 .env.*
+
+# marketing listener - local state, not code
+scripts/leads.md
+scripts/listen.seen.json
+scripts/listen.feeds.txt

@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Give every icon a home."
 edition = "2021"
 rust-version = "1.77.2"
+license = "MIT"
 
 [lib]
 name = "alcove_lib"
@@ -19,7 +20,6 @@ log = "0.4"
 tauri = { version = "2.11.2", features = [] }
 tauri-plugin-log = "2.9.0"
 tauri-plugin-updater = "2.10.1"
-minisign-verify = "0.2.5"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61.3", features = [

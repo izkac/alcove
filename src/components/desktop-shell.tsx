@@ -34,7 +34,7 @@ import {
 } from "@/hooks/use-icon-pointer-drag"
 import { viewFor } from "@/lib/alcove-view"
 import { TOP_SLOTS } from "@/lib/frecency"
-import { useLicenceNudge, useUpdateCheck } from "@/lib/update"
+import { useUpdateCheck } from "@/lib/update"
 import { parentWithin } from "@/lib/crumbs"
 import { folderLeaf, toDesktopIcon, type HarvestedIcon } from "@/lib/harvest-merge"
 import { alcovesOnDesk, deskChannel, type DeskChannelMessage } from "@/lib/desk-strip"
@@ -224,12 +224,6 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
   const { state, sortedAlcoves, iconsIn } = desktop
   const { desk, desks, stripHover } = useDesk()
   useUpdateCheck(desk.primary)
-  useLicenceNudge(
-    desk.primary,
-    state.firstRunAt,
-    state.licenceNudgedAt,
-    desktop.dismissLicenceNudge,
-  )
   const deskAlcoves = alcovesOnDesk(sortedAlcoves, desk, desks)
   const [searchOpen, setSearchOpen] = useState(false)
   const [rename, setRename] = useState<

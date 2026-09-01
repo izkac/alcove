@@ -42,8 +42,6 @@
     "allow-load-desktop-state",
     "allow-save-desktop-state",
     "allow-update-available",
-    "allow-install-update",
-    "allow-licence-status",
-    "allow-activate-licence"
+    "allow-install-update"
   ]
 }

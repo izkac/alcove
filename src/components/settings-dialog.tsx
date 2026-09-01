@@ -9,7 +9,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Separator } from "@/components/ui/separator"
-import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { StripToolGlyph } from "@/components/strip-tool-glyph"
 import { Minus, Plus } from "lucide-react"
@@ -22,7 +21,7 @@ import {
   toggleStripToolId,
 } from "@/lib/strip-tools"
 import { invoke, isTauri } from "@/lib/tauri"
-import { BUY_URL, checkForUpdate, type Licence } from "@/lib/update"
+import { checkForUpdate } from "@/lib/update"
 import type { Density, LayoutId, StripEdge } from "@/types"
 
 type SettingsDialogProps = {
@@ -188,97 +187,6 @@ function StripTab(props: SettingsDialogProps) {
   )
 }
 
-/**
- * Alcove is free and complete without this. A licence buys the update stream —
- * when it lapses the installed copy keeps working, so there is nothing to
- * revoke, nothing to phone home about, and no reason to nag.
- */
-function LicenceSection() {
-  const [licence, setLicence] = useState<Licence | null>(null)
-  const [key, setKey] = useState("")
-  useEffect(() => {
-    invoke<Licence | null>("licence_status").then(setLicence).catch(() => undefined)
-  }, [])
-
-  const until = licence
-    ? new Date(licence.expires * 1000).toLocaleDateString()
-    : null
-
-  return (
-    <>
-      <section className="flex flex-col gap-3">
-        <p className="text-xs font-medium text-muted-foreground">Licence</p>
-        {licence ? (
-          <SettingRow
-            label={licence.active ? `Licensed to ${licence.name}` : "Licence expired"}
-            description={
-              licence.active
-                ? `Updates until ${until}`
-                : `Updates ended ${until}. Alcove keeps working; renew for newer versions.`
-            }
-          >
-            {licence.active ? (
-              <Badge variant="secondary">Active</Badge>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  invoke("open_desktop_item", { path: BUY_URL }).catch(() => undefined)
-                }}
-              >
-                Renew
-              </Button>
-            )}
-          </SettingRow>
-        ) : (
-          <>
-            <SettingRow
-              label="Alcove is free"
-              description="A licence keeps it updated, and keeps it worked on"
-            >
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  invoke("open_desktop_item", { path: BUY_URL }).catch(() => undefined)
-                }}
-              >
-                Get one
-              </Button>
-            </SettingRow>
-            <div className="flex items-center gap-2">
-              <Input
-                value={key}
-                placeholder="Paste a licence key"
-                spellCheck={false}
-                onChange={(event) => setKey(event.target.value)}
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!key.trim()}
-                onClick={() => {
-                  invoke<Licence>("activate_licence", { key: key.trim() })
-                    .then((next) => {
-                      setLicence(next)
-                      setKey("")
-                      toast(`Thank you — Alcove is licensed to ${next.name}`)
-                    })
-                    .catch((err) => toast(typeof err === "string" ? err : String(err)))
-                }}
-              >
-                Activate
-              </Button>
-            </div>
-          </>
-        )}
-      </section>
-      <Separator />
-    </>
-  )
-}
-
 function SystemTab(props: SettingsDialogProps) {
   const [winTaskbarHidden, setWinTaskbarHidden] = useState(false)
   const [autostartOn, setAutostartOn] = useState(false)
@@ -357,7 +265,6 @@ function SystemTab(props: SettingsDialogProps) {
         </>
       ) : null}
 
-      {isTauri() ? <LicenceSection /> : null}
 
       {isTauri() ? (
         <>

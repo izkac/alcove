@@ -1,22 +1,10 @@
 use tauri::{AppHandle, Manager};
 use tauri_plugin_updater::UpdaterExt;
 
-/// A newer build, and whether this install is entitled to it.
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Available {
-    pub version: String,
-    pub licensed: bool,
-}
-
 /// Ask the release feed whether there is a newer build. `None` means we are
 /// current, the network is down, or the feed is unreachable — all three are the
 /// same to the caller, because none of them is worth interrupting anyone over.
-///
-/// An unlicensed install is still told a version exists. Hiding it would be the
-/// dishonest half of a paywall: the software is free and stays free, and what a
-/// licence buys is being able to move to the new one.
-pub async fn check(app: &AppHandle) -> Option<Available> {
+pub async fn check(app: &AppHandle) -> Option<String> {
     let updater = match app.updater() {
         Ok(updater) => updater,
         Err(err) => {
@@ -25,10 +13,7 @@ pub async fn check(app: &AppHandle) -> Option<Available> {
         }
     };
     match updater.check().await {
-        Ok(Some(update)) => Some(Available {
-            version: update.version.clone(),
-            licensed: crate::licence::active(app),
-        }),
+        Ok(Some(update)) => Some(update.version.clone()),
         Ok(None) => None,
         Err(err) => {
             log::info!("update check: {err}");
@@ -45,9 +30,6 @@ pub async fn check(app: &AppHandle) -> Option<Available> {
 /// so the desktop has to be handed back in the gap between the two — after that
 /// point nothing of ours is guaranteed to run again.
 pub async fn install(app: &AppHandle) -> Result<(), String> {
-    if !crate::licence::active(app) {
-        return Err("A licence keeps Alcove updated. This copy keeps working as it is.".into());
-    }
     let updater = app.updater().map_err(|err| err.to_string())?;
     let update = updater
         .check()
