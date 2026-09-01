@@ -1,6 +1,6 @@
 [package]
 name = "alcove"
-version = "0.1.0"
+version = "0.2.0"
 description = "Give every icon a home."
 edition = "2021"
 rust-version = "1.77.2"
