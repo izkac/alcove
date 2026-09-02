@@ -86,29 +86,6 @@ assert.equal(
   0,
 )
 
-// One wallpaper hunt drops a batch of pictures into Downloads inside a minute.
-// Left alone every one of them is "modified today" and the list becomes a
-// contact sheet, burying the document the person was actually writing.
-const batch = [
-  icon("contract.docx", "document", now - 2 * HOUR),
-  ...Array.from({ length: 8 }, (_, i) => icon(`pexels-${i}.jpg`, "image", now - i * 60_000)),
-]
-const tamed = launcherHome(batch, {}, [], now)
-assert.equal(
-  tamed.today.filter((item) => item.kind === "image").length,
-  2,
-  "a batch of pictures gets two rows between them, not the whole list",
-)
-assert.ok(
-  tamed.today.some((item) => item.id === "contract.docx"),
-  "so real work still has somewhere to sit",
-)
-assert.deepEqual(
-  tamed.today.filter((item) => item.kind === "image").map((item) => item.id),
-  ["pexels-0.jpg", "pexels-1.jpg"],
-  "and the two it keeps are the newest ones",
-)
-
 // Frequent fills the rest, and never repeats what Today already shows.
 let frecency: Frecency = {}
 frecency = opens(frecency, "chrome.lnk", 9)

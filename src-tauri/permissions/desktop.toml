@@ -49,16 +49,6 @@ description = "Open a Desktop file with its default app"
 commands.allow = ["open_desktop_item"]
 
 [[permission]]
-identifier = "allow-search-folders"
-description = "Walk drawer folders for launcher results"
-commands.allow = ["search_folders"]
-
-[[permission]]
-identifier = "allow-reveal-desktop-item"
-description = "Show a file in Explorer"
-commands.allow = ["reveal_desktop_item"]
-
-[[permission]]
 identifier = "allow-recycle-bin"
 description = "Read the Recycle Bin name and icon"
 commands.allow = ["recycle_bin"]

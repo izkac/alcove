@@ -1,27 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { SearchOverlayCard } from "@/components/search-spotlight"
-import { deskChannel, type DeskChannelMessage } from "@/lib/desk-strip"
-import { parentPath } from "@/lib/search-hits"
+import { deskChannel } from "@/lib/desk-strip"
 import { hydrateDesktopState, loadDesktopState } from "@/lib/storage"
 import { invoke, isTauri } from "@/lib/tauri"
-import { applyText, applyTone, followDeskTheme } from "@/lib/wallpaper"
-import type { LauncherPick } from "@/components/search-spotlight"
+import { applyText, applyTone } from "@/lib/wallpaper"
 import type { Alcove, DesktopIcon, DesktopState } from "@/types"
 
 function hide() {
   invoke("hide_search_window").catch(() => undefined)
-}
-
-/**
- * Says what happened and lets the desks decide. This window holds a read-only
- * copy of the state, so it must never write it back — that would clobber
- * whatever the desks changed meanwhile — and it owns none of the dialogs.
- */
-function tellDesks(message: DeskChannelMessage) {
-  const channel = deskChannel()
-  if (!channel) return
-  channel.postMessage(message)
-  channel.close()
 }
 
 export function SearchOverlay() {
@@ -35,11 +21,7 @@ export function SearchOverlay() {
     })
     const onStorage = () => setState(loadDesktopState())
     window.addEventListener("storage", onStorage)
-    const stopTheme = followDeskTheme()
-    return () => {
-      window.removeEventListener("storage", onStorage)
-      stopTheme()
-    }
+    return () => window.removeEventListener("storage", onStorage)
   }, [])
 
   useEffect(() => {
@@ -98,35 +80,17 @@ export function SearchOverlay() {
     }))
   }, [state, iconArt])
 
-  function openIcon(icon: DesktopIcon, how: "open" | "reveal" | "folder") {
-    if (!icon.path || !isTauri()) return
-    if (how === "reveal") {
-      invoke("reveal_desktop_item", { path: icon.path }).catch(() => undefined)
-      return
+  function pick(icon: DesktopIcon) {
+    if (icon.path && isTauri()) {
+      invoke("open_desktop_item", { path: icon.path }).catch(() => undefined)
     }
-    if (how === "folder") {
-      const parent = parentPath(icon.path)
-      if (parent) invoke("open_desktop_item", { path: parent }).catch(() => undefined)
-      return
-    }
-    invoke("open_desktop_item", { path: icon.path }).catch(() => undefined)
-    // Only a real open counts as an open; revealing a file is not using it.
-    tellDesks({ type: "icon-launched", iconId: icon.id })
-  }
-
-  function pick(chosen: LauncherPick) {
-    if (chosen.kind === "icon") openIcon(chosen.icon, chosen.how)
-    if (chosen.kind === "window" && isTauri()) {
-      invoke("activate_window", { hwnd: chosen.app.hwnd }).catch(() => undefined)
-    }
-    if (chosen.kind === "alcove") {
-      tellDesks({ type: "desk-command", command: "open-alcove", alcoveId: chosen.alcove.id })
-    }
-    if (chosen.kind === "command") {
-      tellDesks({ type: "desk-command", command: chosen.command })
-    }
-    if (chosen.kind === "target" && isTauri()) {
-      invoke("open_desktop_item", { path: chosen.target }).catch(() => undefined)
+    // This window holds a read-only copy of the state, so it must not write it
+    // back — it would clobber whatever the desks changed meanwhile. Announce
+    // the launch instead and let the desk that owns the state record it.
+    const channel = deskChannel()
+    if (channel) {
+      channel.postMessage({ type: "icon-launched", iconId: icon.id })
+      channel.close()
     }
     hide()
   }
@@ -137,7 +101,6 @@ export function SearchOverlay() {
       onClick={() => hide()}
     >
       <div
-        data-slot="search-card"
         className="flex h-full flex-col overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-pop ring-1 ring-hairline"
         onClick={(event) => event.stopPropagation()}
       >
@@ -147,7 +110,7 @@ export function SearchOverlay() {
           alcoves={alcoves}
           frecency={state?.frecency}
           hide={state?.topHide}
-          onPick={pick}
+          onSelect={pick}
         />
       </div>
     </div>

@@ -1,10 +1,8 @@
 use tauri::{AppHandle, Manager, WebviewWindow};
 
 const SEARCH_HOTKEY_ID: i32 = 0xA10C;
-// Two-line rows and a hint bar: a file now says its type, size and time under
-// its name, which is the only way to tell five downloads apart at a glance.
-const SEARCH_WIDTH: f64 = 600.0;
-const SEARCH_HEIGHT: f64 = 512.0;
+const SEARCH_WIDTH: f64 = 544.0;
+const SEARCH_HEIGHT: f64 = 424.0;
 
 #[cfg(windows)]
 mod win {

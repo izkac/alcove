@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Dock } from "@/components/taskbar"
 import { hydrateDesktopState, loadDesktopState } from "@/lib/storage"
 import { invoke, isTauri } from "@/lib/tauri"
-import { applyText, applyTone, followDeskTheme } from "@/lib/wallpaper"
+import { applyText, applyTone } from "@/lib/wallpaper"
 import { pulseLaunch } from "@/lib/launch-pulse"
 import type { DesktopIcon } from "@/types"
 import { SquareStack } from "lucide-react"
@@ -21,7 +21,6 @@ export function BarStrip() {
     })
     const onStorage = () => setState(loadDesktopState())
     window.addEventListener("storage", onStorage)
-    const stopTheme = followDeskTheme()
     const timer = window.setInterval(
       () =>
         setClock(
@@ -31,7 +30,6 @@ export function BarStrip() {
     )
     return () => {
       window.removeEventListener("storage", onStorage)
-      stopTheme()
       window.clearInterval(timer)
     }
   }, [])

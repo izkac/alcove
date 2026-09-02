@@ -6,7 +6,7 @@ import { invoke, isTauri } from "./tauri.ts"
 // every click. Bounded because a 512px PNG data URL is ~200KB and a session can
 // touch thousands of files; the Rust side keeps its own disk cache, so evicting
 // here is cheap.
-export const THUMB_LIMIT = 64
+export const THUMB_LIMIT = 40
 export const THUMBS = new Map<string, string | null>()
 
 export function remember(path: string, art: string | null) {

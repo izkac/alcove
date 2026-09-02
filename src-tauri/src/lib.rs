@@ -49,22 +49,6 @@ fn shell_icon(target: String) -> Result<String, String> {
     harvest::shell_icon(&target)
 }
 
-/// Async: this walks the disk and fires on every keystroke in the launcher, so
-/// it must never sit on the main thread.
-#[tauri::command]
-async fn search_folders(
-    roots: Vec<String>,
-    query: String,
-    limit: usize,
-) -> Result<Vec<harvest::HarvestedIcon>, String> {
-    Ok(harvest::search_folder(&roots, &query, limit))
-}
-
-#[tauri::command]
-fn reveal_desktop_item(path: String) -> Result<(), String> {
-    harvest::reveal_item(&path)
-}
-
 /// Async so a cold PDF/video thumbnail extraction runs off the main thread —
 /// this fires on every selection change and must never stall the desktop.
 #[tauri::command]
@@ -78,10 +62,15 @@ fn list_known_folders() -> Vec<harvest::KnownFolder> {
 }
 
 #[tauri::command]
-async fn pick_folder(_window: WebviewWindow) -> Result<Option<String>, String> {
-    tauri::async_runtime::spawn_blocking(|| harvest::pick_folder(0))
-        .await
-        .map_err(|err| err.to_string())?
+fn pick_folder(window: WebviewWindow) -> Result<Option<String>, String> {
+    let _pause = harvest::pause_desktop_restore();
+    let (tx, rx) = std::sync::mpsc::channel();
+    window
+        .run_on_main_thread(move || {
+            let _ = tx.send(harvest::pick_folder(0));
+        })
+        .map_err(|err| err.to_string())?;
+    rx.recv().map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
@@ -159,15 +148,17 @@ fn desktop_background() -> Result<harvest::DesktopBackground, String> {
     harvest::desktop_background()
 }
 
-/// Unused by the UI: `IFileOpenDialog::Show` access-violates in comdlg32 while
-/// Explorer's desktop view is hidden. The in-app picture picker sets wallpaper
-/// through `set_wallpaper` instead. Kept for the helper CLI.
 #[tauri::command]
-async fn pick_wallpaper() -> Result<Option<String>, String> {
-    crash::breadcrumb("pick_wallpaper: helper process");
-    tauri::async_runtime::spawn_blocking(|| harvest::pick_image(0))
-        .await
-        .map_err(|err| err.to_string())?
+fn pick_wallpaper(window: WebviewWindow) -> Result<Option<String>, String> {
+    let _pause = harvest::pause_desktop_restore();
+    let (tx, rx) = std::sync::mpsc::channel();
+    window
+        .run_on_main_thread(move || {
+            crash::breadcrumb("pick_wallpaper: on UI thread");
+            let _ = tx.send(harvest::pick_image(0));
+        })
+        .map_err(|err| err.to_string())?;
+    rx.recv().map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
@@ -299,7 +290,6 @@ fn save_desktop_state(app: tauri::AppHandle, json: String) -> Result<(), String>
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     crash::install();
-    harvest::maybe_run_cli_picker();
 
     #[cfg(all(windows, not(debug_assertions)))]
     if !autostart::claim_singleton() {
@@ -335,8 +325,6 @@ pub fn run() {
             list_running_windows,
             activate_window,
             focus_desktop,
-            search_folders,
-            reveal_desktop_item,
             show_search_window,
             hide_search_window,
             autostart_enabled,

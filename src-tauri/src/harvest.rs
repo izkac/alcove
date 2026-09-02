@@ -15,43 +15,6 @@ pub fn pause_desktop_restore() -> RestorePause {
     RestorePause::enter()
 }
 
-pub const PICK_IMAGE_FLAG: &str = "--alcove-pick-image";
-pub const PICK_FOLDER_FLAG: &str = "--alcove-pick-folder";
-
-/// A file dialog inside the Alcove process access-violates in comdlg32. The
-/// helper is the same exe, started with a flag, and never creates a WebView.
-pub fn maybe_run_cli_picker() {
-    let image = std::env::args().any(|arg| arg == PICK_IMAGE_FLAG);
-    let folder = std::env::args().any(|arg| arg == PICK_FOLDER_FLAG);
-    if !image && !folder {
-        return;
-    }
-    #[cfg(windows)]
-    {
-        use std::io::Write;
-        let result = if image {
-            win::pick_image_in_process()
-        } else {
-            win::pick_folder_in_process()
-        };
-        match result {
-            Ok(Some(path)) => {
-                print!("{path}");
-                let _ = std::io::stdout().flush();
-            }
-            Ok(None) => {}
-            Err(err) => {
-                eprint!("{err}");
-                let _ = std::io::stderr().flush();
-                std::process::exit(1);
-            }
-        }
-        std::process::exit(0);
-    }
-    #[cfg(not(windows))]
-    std::process::exit(1);
-}
-
 pub struct RestorePause;
 
 impl RestorePause {
@@ -359,8 +322,8 @@ mod win {
                 ("installer", "installers")
             }
             Some("zip") | Some("7z") | Some("rar") | Some("iso") => ("installer", "installers"),
-            Some("png") | Some("jpg") | Some("jpeg") | Some("jfif") | Some("gif") | Some("webp")
-            | Some("bmp") | Some("tif") | Some("tiff") | Some("heic") => ("image", "photos"),
+            Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("webp") | Some("bmp")
+            | Some("tif") | Some("tiff") | Some("heic") => ("image", "photos"),
             _ => ("document", "documents"),
         }
     }
@@ -1737,119 +1700,6 @@ mod win {
         Ok(icons)
     }
 
-    /// Ceilings for the launcher's "search inside my drawers" walk. A folder tree
-    /// is unbounded and the user is holding a key down, so the walk stops at
-    /// whichever ceiling it reaches first and answers with what it has. A partial
-    /// answer in 600ms is worth more here than a complete one in twenty seconds.
-    const DEEP_DEPTH: usize = 5;
-    const DEEP_ENTRIES: usize = 40_000;
-    const DEEP_BUDGET_MS: u128 = 600;
-
-    /// Never worth walking from a launcher: either machine noise, or a tree so
-    /// deep it would eat the whole budget before reaching anything a person named.
-    fn deep_skip(lower_name: &str) -> bool {
-        // Only names that are unambiguously machine noise. `bin`, `obj` and
-        // `target` are tempting to add and were left out on purpose: they are
-        // also perfectly ordinary folder names, and silently refusing to search
-        // someone's folder is worse than spending a few milliseconds in it.
-        matches!(
-            lower_name,
-            "node_modules" | "$recycle.bin" | "system volume information" | "appdata" | "__pycache__"
-        )
-    }
-
-    /// Breadth-first so shallow matches — the ones a person can picture — are
-    /// found before the budget runs out, and so a single bottomless branch cannot
-    /// starve its siblings.
-    ///
-    /// Best effort by design. It answers with what it had when a ceiling was
-    /// reached, so on a large tree the same query can return slightly different
-    /// rows twice. That is the price of answering while someone is still typing.
-    pub fn search_folder(roots: &[String], query: &str, limit: usize) -> Vec<HarvestedIcon> {
-        let terms: Vec<String> = query
-            .split_whitespace()
-            .map(|term| term.to_ascii_lowercase())
-            .collect();
-        if terms.is_empty() || limit == 0 {
-            return Vec::new();
-        }
-        let started = std::time::Instant::now();
-        let mut queue: std::collections::VecDeque<(PathBuf, usize)> = std::collections::VecDeque::new();
-        let mut roots_seen = std::collections::HashSet::new();
-        for root in roots {
-            let path = PathBuf::from(root.trim());
-            if path.is_dir() && roots_seen.insert(path.clone()) {
-                queue.push_back((path, 0));
-            }
-        }
-        let mut walked = 0usize;
-        let mut hits: Vec<(usize, PathBuf)> = Vec::new();
-        // Gather more than asked for, then rank — the first matches off a
-        // breadth-first walk are the shallowest, not the most recent.
-        let gather = limit.saturating_mul(4).max(limit);
-        while let Some((dir, depth)) = queue.pop_front() {
-            if walked >= DEEP_ENTRIES
-                || hits.len() >= gather
-                || started.elapsed().as_millis() >= DEEP_BUDGET_MS
-            {
-                break;
-            }
-            let mut children = Vec::new();
-            collect_folder(&dir, &mut children);
-            for path in children {
-                walked += 1;
-                let Some(name) = path.file_name().map(|raw| raw.to_string_lossy().to_ascii_lowercase())
-                else {
-                    continue;
-                };
-                if terms.iter().all(|term| name.contains(term.as_str())) {
-                    hits.push((depth + 1, path.clone()));
-                }
-                if depth + 1 < DEEP_DEPTH && !deep_skip(&name) && path.is_dir() {
-                    queue.push_back((path, depth + 1));
-                }
-            }
-        }
-        log::info!(
-            "deep search {:?} walked {walked} found {} ({}ms)",
-            query,
-            hits.len(),
-            started.elapsed().as_millis()
-        );
-        // Shallow first, then newest: "the invoice I saved last week" is much more
-        // often wanted than a same-named file six folders down from 2019.
-        hits.sort_by_cached_key(|(depth, path)| {
-            let modified = path.metadata().and_then(|meta| meta.modified()).ok();
-            (*depth, std::cmp::Reverse(modified), path.clone())
-        });
-        hits.truncate(limit);
-        let _com = ComGuard::new();
-        hits.into_iter()
-            .filter_map(|(_, path)| {
-                // No icon extraction: it is COM per file and this list is rebuilt on
-                // every keystroke. The glyph fallback draws these rows instead.
-                harvest_one(&path, None, false).ok()
-            })
-            .collect()
-    }
-
-    /// Opens the containing folder with the item already selected. Its own command
-    /// rather than open_item_with, because that expands %VAR% in its arguments and
-    /// a file named `100% done.txt` would come out mangled.
-    pub fn reveal_item(path: &str) -> Result<(), String> {
-        let target = PathBuf::from(path.trim());
-        if target.as_os_str().is_empty() {
-            return Err("empty path".into());
-        }
-        let file = HSTRING::from("explorer.exe");
-        let args = HSTRING::from(format!("/select,\"{}\"", target.to_string_lossy()));
-        let result = unsafe { shell_open(&file, Some(&args)) };
-        if result.0 as isize <= 32 {
-            return Err(format!("could not reveal {path}"));
-        }
-        Ok(())
-    }
-
     pub fn known_folders() -> Vec<super::KnownFolder> {
         let _com = ComGuard::new();
         let mut out = Vec::new();
@@ -1898,10 +1748,6 @@ mod win {
     }
 
     pub fn pick_folder(_hwnd: isize) -> Result<Option<String>, String> {
-        pick_via_helper(super::PICK_FOLDER_FLAG)
-    }
-
-    pub fn pick_folder_in_process() -> Result<Option<String>, String> {
         pick_folder_sta()
     }
 
@@ -1913,7 +1759,7 @@ mod win {
             FileOpenDialog, IFileDialog, IFileOpenDialog, IShellItem, FOS_FORCEFILESYSTEM,
             FOS_PICKFOLDERS, SIGDN_FILESYSPATH,
         };
-        let _pause = super::pause_desktop_restore();
+        let _pause = super::RestorePause::enter();
         let ole_ok = unsafe { OleInitialize(None) }.is_ok();
         log::info!("folder picker open");
         let result = (|| -> Result<Option<String>, String> {
@@ -1953,37 +1799,10 @@ mod win {
         result
     }
 
-    /// Spawns a helper process. IFileOpenDialog::Show access-violates in
-    /// comdlg32 inside the Alcove/WebView process, on any thread.
+    /// The picture dialog. Must run on the UI thread: a worker STA still
+    /// access-violates inside comdlg32 at IFileOpenDialog::Show.
     pub fn pick_image(_hwnd: isize) -> Result<Option<String>, String> {
-        pick_via_helper(super::PICK_IMAGE_FLAG)
-    }
-
-    pub fn pick_image_in_process() -> Result<Option<String>, String> {
         pick_image_sta()
-    }
-
-    fn pick_via_helper(flag: &str) -> Result<Option<String>, String> {
-        let _pause = super::pause_desktop_restore();
-        let exe = std::env::current_exe().map_err(|err| err.to_string())?;
-        crate::crash::breadcrumb(&format!("picker: helper {exe:?} {flag}"));
-        let output = std::process::Command::new(&exe)
-            .arg(flag)
-            .output()
-            .map_err(|err| err.to_string())?;
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if !stderr.trim().is_empty() {
-            log::info!("picker helper: {}", stderr.trim());
-        }
-        if !output.status.success() {
-            return Err(if stderr.trim().is_empty() {
-                format!("picture picker failed ({})", output.status)
-            } else {
-                stderr.trim().to_string()
-            });
-        }
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        Ok(if path.is_empty() { None } else { Some(path) })
     }
 
     fn pick_image_sta() -> Result<Option<String>, String> {
@@ -1994,9 +1813,12 @@ mod win {
             FileOpenDialog, IFileDialog, IFileOpenDialog, IShellItem, FOS_FILEMUSTEXIST,
             FOS_FORCEFILESYSTEM, SIGDN_FILESYSPATH,
         };
-        let _pause = super::pause_desktop_restore();
+        let _pause = super::RestorePause::enter();
         let ole_ok = unsafe { OleInitialize(None) }.is_ok();
-        log::info!("wallpaper picker open (helper)");
+        crate::crash::breadcrumb(&format!(
+            "wallpaper picker: ole ready thread={:?}",
+            std::thread::current().name()
+        ));
         let result = (|| -> Result<Option<String>, String> {
             unsafe {
                 crate::crash::breadcrumb("wallpaper picker: CoCreateInstance");
@@ -2059,13 +1881,67 @@ mod win {
         }]
     }
 
+    /// A throwaway top-level window the shell can disable. Parenting the dialog
+    /// to Alcove, or leaving it unowned so the foreground WebView is disabled
+    /// instead, access-violates inside WebView2.
+    struct DialogOwner {
+        hwnd: windows::Win32::Foundation::HWND,
+    }
+
+    impl DialogOwner {
+        fn create() -> Option<Self> {
+            use windows::core::w;
+            use windows::Win32::UI::WindowsAndMessaging::{
+                CreateWindowExW, ShowWindow, SW_SHOWNA, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+                WS_POPUP, WS_VISIBLE,
+            };
+            let hwnd = unsafe {
+                CreateWindowExW(
+                    WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                    w!("STATIC"),
+                    w!("Alcove"),
+                    WS_POPUP | WS_VISIBLE,
+                    200,
+                    200,
+                    8,
+                    8,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+            }
+            .ok()?;
+            unsafe {
+                let _ = ShowWindow(hwnd, SW_SHOWNA);
+            }
+            Some(Self { hwnd })
+        }
+    }
+
+    impl Drop for DialogOwner {
+        fn drop(&mut self) {
+            use windows::Win32::UI::WindowsAndMessaging::DestroyWindow;
+            unsafe {
+                let _ = DestroyWindow(self.hwnd);
+            }
+        }
+    }
+
     fn show_file_dialog(
         dialog: &windows::Win32::UI::Shell::IFileOpenDialog,
     ) -> Result<bool, String> {
         use windows::core::Interface;
         use windows::Win32::UI::Shell::IModalWindow;
+        crate::crash::breadcrumb("wallpaper picker: create owner window");
+        let owner = DialogOwner::create();
+        if owner.is_none() {
+            log::warn!("could not create a shell dialog owner window");
+        }
         let modal: IModalWindow = dialog.cast().map_err(|err| err.to_string())?;
-        Ok(unsafe { modal.Show(None) }.is_ok())
+        let hwnd = owner.as_ref().map(|item| item.hwnd);
+        crate::crash::breadcrumb("wallpaper picker: IModalWindow::Show");
+        Ok(unsafe { modal.Show(hwnd) }.is_ok())
     }
 
     /// The shell's own wallpaper object. Windows 8 and later; it handles the
@@ -2079,7 +1955,7 @@ mod win {
 
     /// Put a picture on the desktop, on every monitor.
     pub fn set_wallpaper(path: &str) -> Result<(), String> {
-        let _pause = super::pause_desktop_restore();
+        let _pause = super::RestorePause::enter();
         let file = expand_env_path(path);
         if !file.is_file() {
             return Err(format!("no such picture: {path}"));
@@ -2101,7 +1977,7 @@ mod win {
     pub fn set_wallpaper_color(rgb: u32) -> Result<(), String> {
         use windows::core::w;
         use windows::Win32::Foundation::COLORREF;
-        let _pause = super::pause_desktop_restore();
+        let _pause = super::RestorePause::enter();
         let _com = ComGuard::new();
         let api = wallpaper_api()?;
         // COLORREF is 0x00BBGGRR, the other way round from CSS.
@@ -2303,18 +2179,16 @@ mod win {
 
     #[cfg(test)]
     mod picker_tests {
+        use super::*;
+
         #[test]
-        fn helper_picker_flag_is_distinct() {
-            assert_eq!(super::super::PICK_IMAGE_FLAG, "--alcove-pick-image");
-            assert_ne!(
-                super::super::PICK_IMAGE_FLAG,
-                super::super::PICK_FOLDER_FLAG
-            );
+        fn dialog_owner_window_can_be_created() {
+            let owner = DialogOwner::create();
+            assert!(owner.is_some(), "hidden owner window");
         }
 
         #[test]
         fn picture_dialog_accepts_the_filter() {
-            use super::picture_filters;
             use windows::core::Interface;
             use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
             use windows::Win32::System::Ole::{OleInitialize, OleUninitialize};
@@ -2350,14 +2224,6 @@ mod win {
 
     pub fn list_folder(_path: &str) -> Result<Vec<HarvestedIcon>, String> {
         Err("folder listing is Windows-only".into())
-    }
-
-    pub fn search_folder(_roots: &[String], _query: &str, _limit: usize) -> Vec<HarvestedIcon> {
-        Vec::new()
-    }
-
-    pub fn reveal_item(_path: &str) -> Result<(), String> {
-        Err("reveal is Windows-only".into())
     }
 
     pub fn known_folders() -> Vec<super::KnownFolder> {
@@ -2448,14 +2314,6 @@ pub fn forget_icons() {
 
 pub fn list_folder(path: &str) -> Result<Vec<HarvestedIcon>, String> {
     win::list_folder(path)
-}
-
-pub fn search_folder(roots: &[String], query: &str, limit: usize) -> Vec<HarvestedIcon> {
-    win::search_folder(roots, query, limit)
-}
-
-pub fn reveal_item(path: &str) -> Result<(), String> {
-    win::reveal_item(path)
 }
 
 pub fn known_folders() -> Vec<KnownFolder> {

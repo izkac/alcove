@@ -49,18 +49,6 @@ export type SurfaceTone = (typeof SURFACE_TONES)[number]
 export const TEXT_SIZES = ["default", "large", "larger"] as const
 export type TextSize = (typeof TEXT_SIZES)[number]
 
-/**
- * One open window, as Windows reports it. Shared by the taskbar and the
- * launcher — both answer "switch me to that thing", just from different ends.
- */
-export type RunningApp = {
-  hwnd: number
-  title: string
-  exePath: string
-  iconUrl: string | null
-  foreground: boolean
-}
-
 export type DesktopIcon = {
   id: string
   name: string

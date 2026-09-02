@@ -63,14 +63,14 @@ type AlcoveCanvasProps = {
 const UNGROUPED = "Everything else"
 
 const ICON_BTN =
-  "home-ink flex size-7 items-center justify-center rounded-md outline-none transition-colors duration-150 hover:bg-veil-hover focus-visible:outline-2 focus-visible:outline-sel"
+  "flex size-7 items-center justify-center rounded-md text-ink-muted outline-none transition-colors duration-150 hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-sel"
 
 const FILTER =
-  "home-ink h-8 border-transparent bg-veil pr-2 pl-8 placeholder:text-home-ink-faint focus-visible:border-sel focus-visible:ring-sel/25 text-ui md:text-ui"
+  "h-8 border-transparent bg-surface-2 pr-2 pl-8 text-ink placeholder:text-ink-faint focus-visible:border-sel focus-visible:ring-sel/25 text-ui md:text-ui"
 
 /** Group-row controls: hidden until the row is hovered or focused, then quiet. */
 const GROUP_BTN =
-  "home-ink-faint flex size-6 items-center justify-center rounded-md outline-none transition-colors duration-150 hover:bg-veil-hover hover:home-ink focus-visible:outline-2 focus-visible:outline-sel disabled:opacity-30 disabled:hover:bg-transparent"
+  "flex size-6 items-center justify-center rounded-md outline-none transition-colors duration-150 hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-sel disabled:opacity-30 disabled:hover:bg-transparent"
 
 /** Shared so an ungrouped Alcove keeps a stable identity across renders. */
 const NO_GROUPS: IconGroup[] = []
@@ -167,7 +167,7 @@ export function AlcoveCanvas({
         onPointerDown={onIconPointerDown}
       />
     ) : items.length === 0 ? (
-      <p className="home-ink-faint px-1 py-3 text-label">{empty}</p>
+      <p className="px-1 py-3 text-label text-ink-faint">{empty}</p>
     ) : (
       <div
         className="grid gap-x-1.5 gap-y-1"
@@ -180,7 +180,6 @@ export function AlcoveCanvas({
             size={config.icon}
             highlighted={highlightedIconId === icon.id}
             selected={selectedIds.includes(icon.id)}
-            onWallpaper
             onOpen={handleOpen}
             onPointerDown={onIconPointerDown}
           />
@@ -192,23 +191,20 @@ export function AlcoveCanvas({
     <section
       data-alcove-id={alcove.id}
       aria-label={alcove.name}
-      className="alcove-rise flex h-full w-full min-h-0 flex-col overflow-hidden rounded-[14px] border border-dock-line bg-dock"
+      className="alcove-rise flex h-full w-full min-h-0 flex-col overflow-hidden rounded-[14px] border border-hairline bg-desk text-ink shadow-sheet"
     >
       <header className="flex items-center gap-2.5 px-4 pt-3 pb-2">
         <span
           style={tintStyle(alcove.color)}
-          className="flex size-8 items-center justify-center rounded-[9px]"
+          className="flex size-8 items-center justify-center rounded-[9px] bg-surface-2"
         >
-          <AlcoveGlyphMark
-            glyph={resolveAlcoveGlyph(alcove)}
-            className="tint home-mark size-4"
-          />
+          <AlcoveGlyphMark glyph={resolveAlcoveGlyph(alcove)} className="tint size-4" />
         </span>
         <ContextMenu>
           <ContextMenuTrigger asChild>
             <button type="button" onDoubleClick={onEdit} className="rounded-md text-left outline-none focus-visible:outline-2 focus-visible:outline-sel">
-              <span className="home-ink text-title font-medium">{alcove.name}</span>
-              <span className="home-ink-faint ml-2 text-ui">
+              <span className="text-title font-medium text-ink">{alcove.name}</span>
+              <span className="ml-2 text-ui text-ink-muted">
                 {query.trim() ? `${filtered.length}/${icons.length}` : icons.length}
               </span>
             </button>
@@ -275,7 +271,7 @@ export function AlcoveCanvas({
         ) : null}
 
         <div className="relative ml-auto w-56">
-          <Search className="home-ink-faint pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-faint" />
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -291,7 +287,7 @@ export function AlcoveCanvas({
           size="sm"
           variant="ghost"
           onClick={onNewGroup}
-          className="home-ink h-8 gap-1.5 px-2 hover:bg-veil-hover"
+          className="h-8 gap-1.5 px-2 text-ink-muted hover:bg-surface-2 hover:text-ink"
         >
           <FolderPlus className="size-4" />
           <span className="text-ui">New group</span>
@@ -302,7 +298,7 @@ export function AlcoveCanvas({
           title="Show as a small panel"
           aria-label="Show as a small panel"
           onClick={onCompact}
-          className="home-ink size-8 hover:bg-veil-hover"
+          className="size-8 text-ink-muted hover:bg-surface-2 hover:text-ink"
         >
           <Minimize2 className="size-4" />
         </Button>
@@ -312,7 +308,7 @@ export function AlcoveCanvas({
           title="Close"
           aria-label="Close"
           onClick={onClose}
-          className="home-ink size-8 hover:bg-veil-hover"
+          className="size-8 text-ink-muted hover:bg-surface-2 hover:text-ink"
         >
           <X className="size-4" />
         </Button>
@@ -350,21 +346,21 @@ export function AlcoveCanvas({
           >
             <ContextMenu>
               <ContextMenuTrigger asChild>
-                <div className="group/row mb-1 flex w-full items-center gap-2 border-b border-dock-line pb-1.5">
+                <div className="group/row mb-1 flex w-full items-center gap-2 border-b border-hairline pb-1.5">
                   <button
                     type="button"
                     onDoubleClick={() => onRenameGroup(group)}
                     className="rounded text-left outline-none focus-visible:outline-2 focus-visible:outline-sel"
                   >
-                    <span className="home-ink text-label font-medium tracking-[0.08em] uppercase">
+                    <span className="text-label font-medium tracking-[0.08em] text-ink-muted uppercase">
                       {group.name}
                     </span>
-                    <span className="home-ink-faint ml-2 text-label">
+                    <span className="ml-2 text-label text-ink-faint">
                       {rows.byGroup.get(group.id)?.length ?? 0}
                     </span>
                   </button>
                   <span className="flex-1" />
-                  <span className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 focus-within:opacity-100">
+                  <span className="flex items-center gap-0.5 text-ink-faint opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 focus-within:opacity-100">
                     <button
                       type="button"
                       title="Move up"
@@ -433,11 +429,11 @@ export function AlcoveCanvas({
           className="rounded-lg px-1"
         >
           {groups.length > 0 ? (
-            <div className="mb-1 flex items-center gap-2 border-b border-dock-line pb-1.5">
-              <span className="home-ink-faint text-label font-medium tracking-[0.08em] uppercase">
+            <div className="mb-1 flex items-center gap-2 border-b border-hairline pb-1.5">
+              <span className="text-label font-medium tracking-[0.08em] text-ink-faint uppercase">
                 {UNGROUPED}
               </span>
-              <span className="home-ink-faint text-label">{rows.loose.length}</span>
+              <span className="text-label text-ink-faint">{rows.loose.length}</span>
             </div>
           ) : null}
           {grid(

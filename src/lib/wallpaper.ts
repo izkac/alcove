@@ -32,7 +32,7 @@ const LIGHT_ABOVE = 0.5
 /** Below this mean chroma the wallpaper is grey; keep the default hue. */
 const GREY_BELOW = 0.02
 
-function paintTheme(theme: WallpaperTheme) {
+export function applyTheme(theme: WallpaperTheme) {
   const root = document.documentElement
   root.dataset.wp = theme.mode
   root.style.setProperty("--wp-h", String(Math.round(theme.hue)))
@@ -43,15 +43,6 @@ function paintTheme(theme: WallpaperTheme) {
   } catch {
     // a per-viewer convenience; nothing depends on it surviving
   }
-}
-
-/** The desk sampled the wallpaper. Paint here and tell the other windows. */
-export function applyTheme(theme: WallpaperTheme) {
-  paintTheme(theme)
-  if (typeof BroadcastChannel === "undefined") return
-  const channel = new BroadcastChannel("alcove-desk")
-  channel.postMessage({ type: "theme", theme })
-  channel.close()
 }
 
 export function savedTheme(): WallpaperTheme {
@@ -82,52 +73,13 @@ export function savedTheme(): WallpaperTheme {
   return FALLBACK
 }
 
-/** Every window on every desk re-reads the wallpaper. */
-const CHANGED = "alcove:wallpaper-changed"
-
 /** First paint in every window, before the wallpaper is known. */
 export function applySavedTheme() {
-  paintTheme(savedTheme())
+  applyTheme(savedTheme())
 }
 
-/**
- * Search and the bar never load the wallpaper. Stay in step with the desk:
- * re-read the saved theme on show, and take the numbers when the desk sends them.
- */
-export function followDeskTheme(): () => void {
-  applySavedTheme()
-  const refresh = () => applySavedTheme()
-  function onVisible() {
-    if (document.visibilityState === "visible") refresh()
-  }
-  window.addEventListener("focus", refresh)
-  window.addEventListener(CHANGED, refresh)
-  document.addEventListener("visibilitychange", onVisible)
-  function onStorage(event: StorageEvent) {
-    if (event.key === null || event.key === KEY) refresh()
-  }
-  window.addEventListener("storage", onStorage)
-  const channel =
-    typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("alcove-desk")
-  function onMessage(
-    event: MessageEvent<{ type?: string; theme?: WallpaperTheme }>,
-  ) {
-    if (event.data?.type === "theme" && event.data.theme) {
-      paintTheme(event.data.theme)
-      return
-    }
-    if (event.data?.type === "wallpaper-changed") refresh()
-  }
-  channel?.addEventListener("message", onMessage)
-  return () => {
-    window.removeEventListener("focus", refresh)
-    window.removeEventListener(CHANGED, refresh)
-    document.removeEventListener("visibilitychange", onVisible)
-    window.removeEventListener("storage", onStorage)
-    channel?.removeEventListener("message", onMessage)
-    channel?.close()
-  }
-}
+/** Every window on every desk re-reads the wallpaper. */
+const CHANGED = "alcove:wallpaper-changed"
 
 /** Tell this window, and every other desk, that the wallpaper moved. */
 export function announceWallpaperChange() {
@@ -194,46 +146,35 @@ function oklab(r: number, g: number, b: number): [number, number, number] {
 /**
  * Mean lightness plus a chroma-weighted circular mean of hue, so a mostly-grey
  * photo with one red car reads as grey, and a blue sky reads as blue.
- *
- * Light vs dark uses the *median* pixel so a dark pond with bright sparkles
- * stays slate. `--wp-l` stays the mean, so surfaces still sit a step above
- * the picture as a whole.
  */
 export function themeFromPixels(rgba: Uint8ClampedArray): WallpaperTheme {
-  const lights: number[] = []
+  let n = 0
   let sumL = 0
   let sumA = 0
   let sumB = 0
   for (let i = 0; i + 3 < rgba.length; i += 4) {
     if (rgba[i + 3] < 128) continue
     const [L, a, b] = oklab(linear(rgba[i]), linear(rgba[i + 1]), linear(rgba[i + 2]))
-    lights.push(L)
+    n += 1
     sumL += L
     sumA += a
     sumB += b
   }
-  if (lights.length === 0) return FALLBACK
-  const n = lights.length
+  if (n === 0) return FALLBACK
   const meanL = sumL / n
-  const chroma = Math.hypot(sumA / n, sumB / n)
+  const meanA = sumA / n
+  const meanB = sumB / n
+  const chroma = Math.hypot(meanA, meanB)
   const grey = chroma < GREY_BELOW
   const hue = grey
     ? FALLBACK.hue
-    : ((Math.atan2(sumB / n, sumA / n) * 180) / Math.PI + 360) % 360
+    : ((Math.atan2(meanB, meanA) * 180) / Math.PI + 360) % 360
   return {
-    mode: median(lights) > LIGHT_ABOVE ? "light" : "dark",
+    mode: meanL > LIGHT_ABOVE ? "light" : "dark",
     hue,
     chroma: grey ? 0 : chroma,
     lightness: Math.min(1, Math.max(0, meanL)),
   }
-}
-
-function median(values: number[]): number {
-  const sorted = values.slice().sort((a, b) => a - b)
-  const mid = Math.floor(sorted.length / 2)
-  return sorted.length % 2 === 1
-    ? sorted[mid]
-    : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
 function parseHex(color: string): [number, number, number] | null {

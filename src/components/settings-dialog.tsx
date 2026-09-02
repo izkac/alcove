@@ -96,12 +96,12 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className="max-h-[min(40rem,85vh)] gap-0 overflow-y-auto sm:max-w-lg">
+      <DialogContent className="gap-0 p-5 sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>
 
-        <div className="-mx-4 mt-3 flex gap-1 border-b border-border px-4 pb-3">
+        <div className="-mx-5 mt-3 flex gap-1 border-b border-border px-5 pb-3">
           {TABS.map((t) => (
             <Button
               key={t.id}
@@ -114,7 +114,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
           ))}
         </div>
 
-        <div className="flex h-[440px] flex-col gap-5 pt-4">
+        <div className="-mx-5 flex h-[min(440px,60vh)] flex-col gap-5 overflow-y-auto px-5 py-4">
           {tab === "general" && <GeneralTab {...props} />}
           {tab === "strip" && <StripTab {...props} />}
           {tab === "system" && <SystemTab {...props} />}
