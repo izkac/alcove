@@ -17,14 +17,14 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ALCOVE_COLOR_IDS } from "@/types"
-import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
-import { AlcoveGlyphGrid, resolveAlcoveGlyph } from "@/lib/alcove-glyphs"
+import { ALCOVE_COLOR_STYLES, tintStyle } from "@/lib/colors"
+import { AlcoveGlyphGrid, AlcoveGlyphMark, resolveAlcoveGlyph } from "@/lib/alcove-glyphs"
 import { DENSITY_CONFIG } from "@/lib/density"
 import { folderIconSize, folderViewFor } from "@/lib/folder-view"
 import { iconPack } from "@/lib/icon-select"
 import { cn } from "@/lib/utils"
 import type { Alcove, AlcoveColor, Density, DesktopIcon, FolderView } from "@/types"
-import { Inbox, Maximize2, Pencil, Search, Trash2 } from "lucide-react"
+import { Maximize2, Pencil, Search, Trash2 } from "lucide-react"
 import type { PointerEvent } from "react"
 
 type AlcovePanelProps = {
@@ -58,6 +58,12 @@ type AlcovePanelProps = {
   onCrumb?: (path: string) => void
   onOpenFolderHere?: () => void
 }
+
+const ICON_BTN =
+  "flex size-7 items-center justify-center rounded-md text-ink-muted outline-none transition-colors duration-150 hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-sel"
+
+const FILTER =
+  "h-8 border-transparent bg-surface-2 pr-2 pl-8 text-ink placeholder:text-ink-faint focus-visible:border-sel focus-visible:ring-sel/25 text-ui md:text-ui"
 
 export function AlcovePanel(props: AlcovePanelProps) {
   const { alcove, icons, dimmed, onToggle, onFocus } = props
@@ -115,7 +121,6 @@ function ExpandedAlcove({
 }: AlcovePanelProps) {
   const config = DENSITY_CONFIG[density]
   const [query, setQuery] = useState("")
-  const styles = ALCOVE_COLOR_STYLES[alcove.color]
   const emptyInbox = alcove.isInbox && icons.length === 0
   const itemView = alcove.folderPath ? folderViewFor(alcove) : "icons"
   const itemSize = alcove.folderPath
@@ -177,22 +182,26 @@ function ExpandedAlcove({
                   ? Math.max(config.panel, 720)
                   : config.panel,
           }}
+          aria-label={alcove.name}
           className={cn(
-            "flex max-h-[min(78vh,760px)] max-w-full flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/95 shadow-2xl transition-opacity duration-200",
-            styles.glow,
+            "alcove-rise flex max-h-[min(78vh,760px)] max-w-full flex-col overflow-hidden rounded-[14px] border border-hairline bg-desk text-ink shadow-sheet transition-opacity duration-200",
             dimmed && "opacity-25",
           )}
         >
-          <header className="flex items-center gap-2 px-3 py-2">
-            <span className={cn("h-5 w-1.5 rounded-full", styles.bar)} />
+          <header className="flex items-center gap-2.5 px-3 pt-2.5 pb-2">
+            <span
+              style={tintStyle(alcove.isInbox ? "amber" : alcove.color)}
+              className="flex size-7 items-center justify-center rounded-lg bg-surface-2"
+            >
+              <AlcoveGlyphMark glyph={resolveAlcoveGlyph(alcove)} className="tint size-4" />
+            </span>
             <button
               type="button"
               onClick={onToggle}
-              className="flex min-w-0 items-center gap-2 text-left text-sm font-medium text-white"
+              className="flex min-w-0 items-center gap-2 rounded-md text-left text-title font-medium text-ink outline-none focus-visible:outline-2 focus-visible:outline-sel"
             >
-              {alcove.isInbox ? <Inbox className="size-3.5 opacity-80" /> : null}
               <span className="min-w-0 truncate">{alcove.name}</span>
-              <span className="text-xs font-normal text-white/60">
+              <span className="text-meta font-normal text-ink-muted">
                 {query.trim()
                   ? `${filtered.length}/${icons.length}`
                   : icons.length}
@@ -204,7 +213,7 @@ function ExpandedAlcove({
                 path={folderPath}
                 onCrumb={onCrumb}
                 onOpenHere={onOpenFolderHere}
-                className="min-w-0 flex-1 text-xs"
+                className="min-w-0 flex-1 text-meta"
               />
             ) : (
               <span className="flex-1" />
@@ -212,8 +221,9 @@ function ExpandedAlcove({
             <button
               type="button"
               title="Edit Alcove"
+              aria-label="Edit Alcove"
               onClick={onEdit}
-              className="flex size-7 items-center justify-center rounded-lg text-white/55 transition hover:bg-white/10 hover:text-white"
+              className={ICON_BTN}
             >
               <Pencil className="size-3.5" />
             </button>
@@ -221,8 +231,9 @@ function ExpandedAlcove({
               <button
                 type="button"
                 title="Delete Alcove"
+                aria-label="Delete Alcove"
                 onClick={onDelete}
-                className="flex size-7 items-center justify-center rounded-lg text-white/55 transition hover:bg-white/10 hover:text-red-300"
+                className={cn(ICON_BTN, "hover:text-destructive")}
               >
                 <Trash2 className="size-3.5" />
               </button>
@@ -234,8 +245,9 @@ function ExpandedAlcove({
               <button
                 type="button"
                 title="Spread across the desktop"
+                aria-label="Spread across the desktop"
                 onClick={onExpandCanvas}
-                className="flex size-7 items-center justify-center rounded-lg text-white/60 transition hover:bg-white/10 hover:text-white"
+                className={ICON_BTN}
               >
                 <Maximize2 className="size-3.5" />
               </button>
@@ -243,13 +255,13 @@ function ExpandedAlcove({
           </header>
           {emptyInbox ? null : (
             <div className="relative px-3 pb-2">
-              <Search className="pointer-events-none absolute top-1/2 left-5 size-3.5 -translate-y-1/2 text-white/45" />
+              <Search className="pointer-events-none absolute top-1/2 left-5 size-3.5 -translate-y-1/2 text-ink-faint" />
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Filter icons…"
+                placeholder="Filter"
                 aria-label={`Filter ${alcove.name}`}
-                className="h-8 border-white/15 bg-white/10 pr-2 pl-8 text-white placeholder:text-white/40 md:text-xs dark:bg-white/10"
+                className={FILTER}
               />
             </div>
           )}
@@ -275,10 +287,10 @@ function ExpandedAlcove({
             }
           >
             {emptyInbox ? (
-              <div className="col-span-full flex flex-col items-center justify-center gap-2 px-4 py-6 text-center">
-                <p className="text-sm font-medium text-white">Inbox is clear</p>
-                <p className="text-xs text-white/70">
-                  New files from the desktop land here until you place them.
+              <div className="col-span-full flex flex-col items-center justify-center gap-1.5 px-4 py-6 text-center">
+                <p className="text-ui font-medium text-ink">Inbox is clear</p>
+                <p className="max-w-[26ch] text-meta text-ink-muted">
+                  New files on the Desktop land here until you file them.
                 </p>
                 {onDropIncoming ? (
                   <Button
@@ -292,7 +304,7 @@ function ExpandedAlcove({
                 ) : null}
               </div>
             ) : filtered.length === 0 ? (
-              <div className="col-span-full px-4 py-8 text-center text-sm text-white/70">
+              <div className="col-span-full px-4 py-8 text-center text-ui text-ink-muted">
                 No icons match “{query.trim()}”.
               </div>
             ) : alcove.folderPath ? (
@@ -359,6 +371,7 @@ function ExpandedAlcove({
               <ContextMenuSubContent>
                 {ALCOVE_COLOR_IDS.map((color) => (
                   <ContextMenuItem key={color} onSelect={() => onRecolor(color)}>
+                    <span aria-hidden style={tintStyle(color)} className="tint-dot size-2.5 rounded-full" />
                     {ALCOVE_COLOR_STYLES[color].label}
                   </ContextMenuItem>
                 ))}

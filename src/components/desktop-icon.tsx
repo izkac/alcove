@@ -16,6 +16,11 @@ type DesktopIconTileProps = {
   size: number
   highlighted?: boolean
   selected?: boolean
+  /**
+   * The tile sits on bare wallpaper rather than on a surface, so its label has
+   * to bring its own contrast and the icon gets a lift off the picture.
+   */
+  onWallpaper?: boolean
   onOpen: (icon: DesktopIcon) => void
   onPointerDown?: (icon: DesktopIcon, event: PointerEvent) => void
 }
@@ -25,6 +30,7 @@ export const DesktopIconTile = memo(function DesktopIconTile({
   size,
   highlighted,
   selected,
+  onWallpaper = false,
   onOpen,
   onPointerDown,
 }: DesktopIconTileProps) {
@@ -40,15 +46,16 @@ export const DesktopIconTile = memo(function DesktopIconTile({
         onOpen(icon)
       }}
       className={cn(
-        "alcove-icon-tile flex w-full touch-none flex-col items-center gap-1 rounded-lg px-1 py-1.5 text-center text-white/95 outline-none",
-        "hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/50",
-        lit && "bg-sky-400/25 ring-2 ring-sky-300",
+        "alcove-icon-tile flex w-full touch-none flex-col items-center gap-1 rounded-lg px-1 py-1.5 text-center outline-none transition-colors duration-150",
+        onWallpaper
+          ? "on-wallpaper hover:bg-[oklch(100%_0_0/0.12)]"
+          : "text-ink hover:bg-surface-2",
+        "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sel",
+        lit && "bg-sel-soft ring-[1.5px] ring-sel",
       )}
     >
-      <IconGlyph icon={icon} size={size} />
-      <span className="line-clamp-2 w-full text-[11px] leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">
-        {icon.name}
-      </span>
+      <IconGlyph icon={icon} size={size} className={onWallpaper ? "wp-icon-shadow" : undefined} />
+      <span className="line-clamp-2 w-full text-label">{icon.name}</span>
     </button>
   )
 })

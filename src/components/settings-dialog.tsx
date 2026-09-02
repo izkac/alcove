@@ -22,7 +22,13 @@ import {
 } from "@/lib/strip-tools"
 import { invoke, isTauri } from "@/lib/tauri"
 import { checkForUpdate } from "@/lib/update"
-import type { Density, LayoutId, StripEdge } from "@/types"
+import type {
+  Density,
+  LayoutId,
+  StripEdge,
+  SurfaceTone,
+  TextSize,
+} from "@/types"
 
 type SettingsDialogProps = {
   open: boolean
@@ -31,6 +37,9 @@ type SettingsDialogProps = {
   density: Density
   focusMode: boolean
   stripEdge: StripEdge
+  surfaceTone: SurfaceTone
+  textSize: TextSize
+  strongText: boolean
   stripToolIds: string[]
   topSlotCount: number
   desktopAttached?: boolean | null
@@ -38,6 +47,9 @@ type SettingsDialogProps = {
   onDensity: (density: Density) => void
   onFocusMode: (on: boolean) => void
   onStripEdge: (edge: StripEdge) => void
+  onSurfaceTone: (tone: SurfaceTone) => void
+  onTextSize: (size: TextSize) => void
+  onStrongText: (on: boolean) => void
   onStripToolIds: (ids: string[]) => void
   onTopSlotCount: (count: number) => void
   onCollapseAll: () => void
@@ -52,6 +64,24 @@ const LAYOUTS: { id: LayoutId; label: string }[] = [
   { id: "home", label: "Home" },
   { id: "clean", label: "Clean" },
 ]
+
+const TONES: { value: SurfaceTone; label: string }[] = [
+  { value: "blend", label: "Blend" },
+  { value: "tinted", label: "Tinted" },
+  { value: "solid", label: "Solid" },
+]
+
+const TEXT_SIZES_OPTIONS: { value: TextSize; label: string }[] = [
+  { value: "default", label: "Default" },
+  { value: "large", label: "Large" },
+  { value: "larger", label: "Larger" },
+]
+
+const TONE_HINT: Record<SurfaceTone, string> = {
+  blend: "The picture shows through the rail and strip; drawers stay a step of its colour",
+  tinted: "Drawers take the wallpaper's colour; the rail and strip stay in the picture",
+  solid: "Plain paper or slate, whatever the wallpaper",
+}
 
 type SettingsTab = "general" | "strip" | "system"
 
@@ -107,6 +137,18 @@ function GeneralTab(props: SettingsDialogProps) {
       </section>
 
       <section className="flex flex-col gap-2">
+        <p className="text-xs font-medium text-muted-foreground">Surface</p>
+        <Segmented
+          value={props.surfaceTone}
+          options={TONES}
+          onChange={props.onSurfaceTone}
+        />
+        <p className="text-xs text-muted-foreground">
+          {TONE_HINT[props.surfaceTone]}
+        </p>
+      </section>
+
+      <section className="flex flex-col gap-2">
         <p className="text-xs font-medium text-muted-foreground">Icon size</p>
         <Segmented
           value={props.density}
@@ -117,6 +159,22 @@ function GeneralTab(props: SettingsDialogProps) {
           onChange={props.onDensity}
         />
       </section>
+
+      <section className="flex flex-col gap-2">
+        <p className="text-xs font-medium text-muted-foreground">Text size</p>
+        <Segmented
+          value={props.textSize}
+          options={TEXT_SIZES_OPTIONS}
+          onChange={props.onTextSize}
+        />
+      </section>
+
+      <SettingRow
+        label="Stronger text"
+        description="Darker labels and clearer separators"
+      >
+        <Switch checked={props.strongText} onCheckedChange={props.onStrongText} />
+      </SettingRow>
 
       <Separator />
 
@@ -434,7 +492,7 @@ function StripToolPicker({
               >
                 <input
                   type="checkbox"
-                  className="size-3.5 accent-sky-500"
+                  className="size-3.5 accent-[var(--sel)]"
                   checked={on}
                   onChange={() => onChange(toggleStripToolId(selected, tool.id))}
                 />

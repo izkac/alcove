@@ -82,7 +82,7 @@ function IconRow({
       <IconGlyph icon={icon} size={22} className="rounded-md" />
       <span className="flex-1 truncate">{icon.name}</span>
       {badge ? (
-        <kbd className="rounded border border-white/15 bg-white/10 px-1 text-[10px] leading-4 text-muted-foreground">
+        <kbd className="rounded border border-hairline bg-surface-3 px-1 font-sans text-micro leading-4 text-ink-muted">
           {badge}
         </kbd>
       ) : null}

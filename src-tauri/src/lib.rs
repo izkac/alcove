@@ -1,10 +1,12 @@
 mod autostart;
+mod crash;
 mod desktop;
 mod harvest;
 mod persist;
 mod search;
 mod taskbar;
 mod update;
+mod watch;
 
 use desktop::DesktopState;
 use tauri::{Manager, WebviewWindow};
@@ -60,8 +62,15 @@ fn list_known_folders() -> Vec<harvest::KnownFolder> {
 }
 
 #[tauri::command]
-fn pick_folder(_window: WebviewWindow) -> Result<Option<String>, String> {
-    harvest::pick_folder(0)
+fn pick_folder(window: WebviewWindow) -> Result<Option<String>, String> {
+    let _pause = harvest::pause_desktop_restore();
+    let (tx, rx) = std::sync::mpsc::channel();
+    window
+        .run_on_main_thread(move || {
+            let _ = tx.send(harvest::pick_folder(0));
+        })
+        .map_err(|err| err.to_string())?;
+    rx.recv().map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
@@ -80,6 +89,11 @@ fn show_recycle_bin_menu(window: WebviewWindow, x: i32, y: i32) -> Result<(), St
         .hwnd()
         .map(|handle| handle.0 as isize)
         .map_err(|err| err.to_string())?;
+    // The webview reports CSS pixels; TrackPopupMenu places in physical ones.
+    // On a 150% display the menu opened at two-thirds of the click position.
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let x = (f64::from(x) * scale).round() as i32;
+    let y = (f64::from(y) * scale).round() as i32;
     window
         .run_on_main_thread(move || {
             if let Err(err) = harvest::popup_recycle_bin_menu(hwnd, x, y) {
@@ -132,6 +146,35 @@ fn recycle_desktop_items(window: WebviewWindow, paths: Vec<String>) -> Result<()
 #[tauri::command]
 fn desktop_background() -> Result<harvest::DesktopBackground, String> {
     harvest::desktop_background()
+}
+
+#[tauri::command]
+fn pick_wallpaper(window: WebviewWindow) -> Result<Option<String>, String> {
+    let _pause = harvest::pause_desktop_restore();
+    let (tx, rx) = std::sync::mpsc::channel();
+    window
+        .run_on_main_thread(move || {
+            crash::breadcrumb("pick_wallpaper: on UI thread");
+            let _ = tx.send(harvest::pick_image(0));
+        })
+        .map_err(|err| err.to_string())?;
+    rx.recv().map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
+fn set_wallpaper(path: String) -> Result<(), String> {
+    harvest::set_wallpaper(&path)
+}
+
+/// `color` is CSS "#rrggbb"; anything else is refused rather than guessed at.
+#[tauri::command]
+fn set_wallpaper_color(color: String) -> Result<(), String> {
+    let hex = color.trim().trim_start_matches('#');
+    if hex.len() != 6 || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err(format!("not a colour: {color}"));
+    }
+    let rgb = u32::from_str_radix(hex, 16).map_err(|err| err.to_string())?;
+    harvest::set_wallpaper_color(rgb)
 }
 
 #[tauri::command]
@@ -226,6 +269,14 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     update::install(&app).await
 }
 
+/// Moves when the Desktop folder changes. The frontend re-reads the Desktop
+/// whenever this differs from what it last saw, which is how a file saved by
+/// some other program finds its way in without a restart.
+#[tauri::command]
+fn desktop_revision() -> u64 {
+    watch::revision()
+}
+
 #[tauri::command]
 fn load_desktop_state(app: tauri::AppHandle) -> Result<Option<String>, String> {
     persist::load(&app)
@@ -238,6 +289,8 @@ fn save_desktop_state(app: tauri::AppHandle, json: String) -> Result<(), String>
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    crash::install();
+
     #[cfg(all(windows, not(debug_assertions)))]
     if !autostart::claim_singleton() {
         return;
@@ -264,6 +317,9 @@ pub fn run() {
             paste_into_folder,
             recycle_desktop_items,
             desktop_background,
+            pick_wallpaper,
+            set_wallpaper,
+            set_wallpaper_color,
             set_windows_taskbar_hidden,
             windows_taskbar_hidden,
             list_running_windows,
@@ -276,6 +332,7 @@ pub fn run() {
             this_desk,
             list_desks,
             desk_hit,
+            desktop_revision,
             load_desktop_state,
             save_desktop_state,
             update_available,
@@ -304,6 +361,7 @@ pub fn run() {
                 let _ = desktop::prepare(&main, &state);
             }
 
+            watch::spawn();
             desktop::spawn_emergency_hotkey(app.handle().clone());
             taskbar::spawn_bar_peek(app.handle().clone());
             search::spawn_hotkey(app.handle().clone());

@@ -77,10 +77,7 @@ export function StripToolGlyph({ tool, size, className }: StripToolGlyphProps) {
         alt=""
         draggable={false}
         decoding="async"
-        className={cn(
-          "bg-transparent object-contain drop-shadow-[0_1px_1px_rgba(0,0,0,0.45)]",
-          className,
-        )}
+        className={cn("bg-transparent object-contain", className)}
         style={{ width: size, height: size }}
         aria-hidden
       />
@@ -91,10 +88,10 @@ export function StripToolGlyph({ tool, size, className }: StripToolGlyphProps) {
   return (
     <div
       className={cn(
-        "flex items-center justify-center rounded-xl bg-linear-to-br from-slate-500 to-slate-800 text-white shadow-md ring-1 ring-white/25",
+        "flex items-center justify-center rounded-[22%] text-white ring-1 ring-black/10",
         className,
       )}
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, background: "oklch(50% 0.02 var(--wp-h))" }}
       aria-hidden
     >
       <Icon style={{ width: inner, height: inner }} strokeWidth={1.75} />

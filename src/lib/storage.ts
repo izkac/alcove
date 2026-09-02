@@ -1,7 +1,17 @@
+import { toast } from "sonner"
+
 import { clampSlotCount, resizeSlots } from "@/lib/frecency"
 import { invoke, isTauri } from "@/lib/tauri"
 import { migrateStripToolIds } from "@/lib/strip-tools"
-import { FOLDER_VIEWS, type DesktopState, type FolderView } from "@/types"
+import {
+  FOLDER_VIEWS,
+  SURFACE_TONES,
+  TEXT_SIZES,
+  type DesktopState,
+  type FolderView,
+  type SurfaceTone,
+  type TextSize,
+} from "@/types"
 
 const STORAGE_KEY = "alcove.desktop.v1"
 
@@ -28,6 +38,13 @@ function migrate(state: DesktopState): DesktopState {
     topKeep: state.topKeep ?? [],
     topHide: state.topHide ?? [],
     stripEdge: state.stripEdge === "bottom" ? "bottom" : "top",
+    surfaceTone: SURFACE_TONES.includes(state.surfaceTone as SurfaceTone)
+      ? state.surfaceTone
+      : "tinted",
+    textSize: TEXT_SIZES.includes(state.textSize as TextSize)
+      ? state.textSize
+      : "default",
+    strongText: state.strongText === true,
     stripToolIds: migrateStripToolIds(state.stripToolIds),
   }
 }
@@ -71,14 +88,7 @@ export async function hydrateDesktopState(): Promise<DesktopState | null> {
     try {
       const raw = await invoke<string | null>("load_desktop_state")
       const parsed = raw ? parseDesktopState(raw) : null
-      if (parsed) {
-        try {
-          localStorage.setItem(STORAGE_KEY, serialize(parsed))
-        } catch {
-          // webview storage is a cache; the file is the real save
-        }
-        return parsed
-      }
+      if (parsed) return parsed
     } catch (error) {
       console.error("Could not load Alcove desktop from disk", error)
     }
@@ -96,10 +106,20 @@ export async function persistDesktopState(state: DesktopState) {
   if (!isTauri()) return
   try {
     await invoke("save_desktop_state", { json })
+    warnedAboutDisk = false
   } catch (error) {
     console.error("Could not save Alcove desktop to disk", error)
+    if (!warnedAboutDisk) {
+      warnedAboutDisk = true
+      toast("Alcove cannot save to disk; this session's changes may be lost", {
+        id: "alcove-save-failed",
+      })
+    }
   }
 }
+
+/** One complaint per outage, not one per keystroke. */
+let warnedAboutDisk = false
 
 export function subscribeDesktopState(
   onChange: (state: DesktopState) => void,

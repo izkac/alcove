@@ -3,24 +3,41 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
-@custom-variant dark (&:is(.dark *));
+/*
+ * Dark and light are not a preference here. They are read off the wallpaper:
+ * `lib/wallpaper.ts` puts `data-wp` and `--wp-h` on <html>, and everything
+ * below derives from those two values. The shadcn names are kept so the
+ * primitives in components/ui keep working without edits.
+ */
+@custom-variant dark (&:is([data-wp="dark"] *));
 
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: 'Geist Variable', sans-serif;
-    --color-sidebar-ring: var(--sidebar-ring);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar: var(--sidebar);
-    --color-chart-5: var(--chart-5);
-    --color-chart-4: var(--chart-4);
-    --color-chart-3: var(--chart-3);
-    --color-chart-2: var(--chart-2);
-    --color-chart-1: var(--chart-1);
+    --font-sans: 'Geist Variable', 'Segoe UI', system-ui, sans-serif;
+
+    /* Alcove's own vocabulary. Surfaces step up in lightness in both modes. */
+    --color-surface: var(--surface);
+    --color-surface-2: var(--surface-2);
+    --color-surface-3: var(--surface-3);
+    --color-ink: var(--ink);
+    --color-ink-muted: var(--ink-muted);
+    --color-ink-faint: var(--ink-faint);
+    --color-hairline: var(--hairline);
+    --color-sel: var(--sel);
+    --color-sel-soft: var(--sel-soft);
+    --color-on-wp: var(--on-wp);
+    /* Visitors (drawers) may let the wallpaper through in Blend. */
+    --color-desk: var(--desk);
+    /* Home chrome (rail, strip) sits in the picture, not on it. */
+    --color-home: var(--home);
+    --color-home-line: var(--home-line);
+    --color-home-drag: var(--home-drag);
+    --color-veil: var(--veil);
+    --color-veil-hover: var(--veil-hover);
+    --color-dock: var(--dock);
+    --color-dock-line: var(--dock-line);
+
+    /* shadcn mapping */
     --color-ring: var(--ring);
     --color-input: var(--input);
     --color-border: var(--border);
@@ -39,6 +56,26 @@
     --color-card: var(--card);
     --color-foreground: var(--foreground);
     --color-background: var(--background);
+    --color-sidebar: var(--surface);
+    --color-sidebar-foreground: var(--ink);
+    --color-sidebar-border: var(--hairline);
+
+    /*
+     * Fixed product scale: no fluid type. --text-scale is the user's Text size
+     * setting, so the whole scale moves together and nothing has to be resized
+     * per component.
+     */
+    --text-micro: calc(0.625rem * var(--text-scale));
+    --text-micro--line-height: 1.2;
+    --text-label: calc(0.6875rem * var(--text-scale));
+    --text-label--line-height: 1.25;
+    --text-meta: calc(0.75rem * var(--text-scale));
+    --text-meta--line-height: 1.3;
+    --text-ui: calc(0.8125rem * var(--text-scale));
+    --text-ui--line-height: 1.4;
+    --text-title: calc(0.9375rem * var(--text-scale));
+    --text-title--line-height: 1.35;
+
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -46,75 +83,239 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
+
+    --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+    --ease-in-quart: cubic-bezier(0.5, 0, 0.75, 0);
 }
 
+/*
+ * Slate: the default until the wallpaper has been read, and for dark ones.
+ *
+ * Three numbers come off the wallpaper (lib/wallpaper.ts): --wp-h its hue,
+ * --wp-c its mean chroma, --wp-l its mean lightness. The Surface setting
+ * (data-tone) decides how far the visitors lean into them: "solid" is a fixed
+ * slate or paper, "tinted" sits one step above the wallpaper in its own colour,
+ * "blend" sits closer still and lets a little of the picture through. Home
+ * chrome (the rail and the strip) is a veil in tinted and blend, not a slab.
+ */
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
+    --wp-h: 250;
+    --wp-c: 0;
+    --wp-l: 0.2;
     --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --text-scale: 1;
+
+    /* tinted, dark: one step lighter than the picture, in its colour */
+    --surf-l: clamp(20%, calc(var(--wp-l) * 100% + 9%), 32%);
+    --sc: clamp(0.01, calc(var(--wp-c) * 0.35), 0.06);
+    --ic: clamp(0.008, calc(var(--wp-c) * 0.1), 0.02);
+    --desk-a: 1;
+
+    --surface: oklch(var(--surf-l) var(--sc) var(--wp-h));
+    --surface-2: oklch(calc(var(--surf-l) + 5%) var(--sc) var(--wp-h));
+    --surface-3: oklch(calc(var(--surf-l) + 10%) var(--sc) var(--wp-h));
+    --desk: oklch(var(--surf-l) var(--sc) var(--wp-h) / var(--desk-a));
+    /* A wash, not a panel: the picture is the rail's background. */
+    --home: oklch(var(--surf-l) var(--sc) var(--wp-h) / 0);
+    --home-line: oklch(100% 0 0 / 0);
+    --home-drag: oklch(100% 0 0 / 0.07);
+    --veil: oklch(100% 0 0 / 0.12);
+    --veil-hover: oklch(100% 0 0 / 0.2);
+    --dock: oklch(96% 0.02 var(--wp-h) / 0.16);
+    --dock-line: oklch(100% 0 0 / 0.08);
+    --home-ink: var(--on-wp);
+    --home-ink-faint: oklch(99% 0 0 / 0.7);
+    --home-ink-shadow: var(--wp-text-shadow);
+    --home-mark-shadow: drop-shadow(0 1px 2px oklch(0% 0 0 / 0.7))
+      drop-shadow(0 0 1px oklch(0% 0 0 / 0.55));
+    --ink: oklch(94% var(--ic) var(--wp-h));
+    --ink-muted: oklch(68% var(--ic) var(--wp-h));
+    --ink-faint: oklch(52% var(--ic) var(--wp-h));
+    --hairline: oklch(100% 0 0 / 0.11);
+    --sel: oklch(78% 0.1 var(--wp-h));
+    --sel-soft: oklch(78% 0.1 var(--wp-h) / 0.16);
+    --tint-l: 78%;
+    --tint-c: 0.1;
+    --tint-bg-a: 0.14;
+    --on-wp: oklch(99% 0 0);
+    --wp-text-shadow: 0 1px 2px oklch(0% 0 0 / 0.6);
+    --wp-icon-shadow: drop-shadow(0 1px 1.5px oklch(0% 0 0 / 0.5));
+    --shadow-sheet: 0 16px 48px -16px oklch(0% 0 0 / 0.5), 0 1px 0 oklch(100% 0 0 / 0.04) inset;
+    --shadow-pill: 0 10px 30px -12px oklch(0% 0 0 / 0.5);
+    --shadow-dock: 0 4px 16px -8px oklch(0% 0 0 / 0.22);
+    --shadow-pop: 0 8px 24px -8px oklch(0% 0 0 / 0.45);
+
+    --background: var(--surface);
+    --foreground: var(--ink);
+    --card: var(--surface);
+    --card-foreground: var(--ink);
+    --popover: var(--surface-2);
+    --popover-foreground: var(--ink);
+    --primary: var(--ink);
+    --primary-foreground: var(--surface);
+    --secondary: var(--surface-3);
+    --secondary-foreground: var(--ink);
+    --muted: var(--surface-3);
+    --muted-foreground: var(--ink-muted);
+    --accent: var(--surface-3);
+    --accent-foreground: var(--ink);
+    --destructive: oklch(72% 0.17 25);
+    --border: var(--hairline);
+    --input: oklch(100% 0 0 / 0.14);
+    --ring: var(--sel);
 }
 
-.dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+:root[data-tone="solid"] {
+    --surf-l: 24%;
+    --sc: clamp(0.008, calc(var(--wp-c) * 0.2), 0.035);
+}
+:root[data-tone="blend"] {
+    --surf-l: clamp(17%, calc(var(--wp-l) * 100% + 5%), 30%);
+    --sc: clamp(0.012, calc(var(--wp-c) * 0.45), 0.08);
+    --desk-a: 0.86;
+    --dock: oklch(96% 0.02 var(--wp-h) / 0.12);
+}
+
+:root[data-text="large"] { --text-scale: 1.1; }
+:root[data-text="larger"] { --text-scale: 1.22; }
+
+/*
+ * Paper: light wallpapers. Never white: the surface sits a fixed step above
+ * the wallpaper's own lightness, in the wallpaper's own colour, so on a vivid
+ * blue it is a lighter blue and on a pale photo it is pale paper. The muted
+ * inks move with the surface so their contrast holds as it darkens.
+ */
+:root[data-wp="light"] {
+    --surf-l: clamp(66%, calc(var(--wp-l) * 100% + 18%), 94.5%);
+    --sc: clamp(0.01, calc(var(--wp-c) * 0.5), 0.09);
+    --ic: clamp(0.01, calc(var(--wp-c) * 0.18), 0.035);
+    --surface-2: oklch(calc(var(--surf-l) - 4.5%) var(--sc) var(--wp-h));
+    --surface-3: oklch(calc(var(--surf-l) - 9%) var(--sc) var(--wp-h));
+    --ink: oklch(24% var(--ic) var(--wp-h));
+    --ink-muted: oklch(clamp(30%, calc(var(--surf-l) - 40%), 48%) var(--ic) var(--wp-h));
+    --ink-faint: oklch(clamp(42%, calc(var(--surf-l) - 26%), 63%) var(--ic) var(--wp-h));
+    --hairline: oklch(20% 0.04 var(--wp-h) / 0.12);
+    --sel: oklch(50% 0.16 var(--wp-h));
+    --sel-soft: oklch(50% 0.16 var(--wp-h) / 0.13);
+    --tint-l: 56%;
+    --tint-c: 0.13;
+    --tint-bg-a: 0.12;
+    --shadow-sheet: 0 16px 48px -16px oklch(0% 0 0 / 0.4);
+    --shadow-pill: 0 10px 30px -12px oklch(0% 0 0 / 0.4);
+    --shadow-dock: 0 4px 14px -8px oklch(0% 0 0 / 0.14);
+    --shadow-pop: 0 8px 24px -8px oklch(0% 0 0 / 0.28);
+
+    --home-drag: oklch(18% 0.03 var(--wp-h) / 0.08);
+    --veil: oklch(18% 0.04 var(--wp-h) / 0.11);
+    --veil-hover: oklch(18% 0.04 var(--wp-h) / 0.18);
+    --dock: oklch(18% 0.04 var(--wp-h) / 0.18);
+    --dock-line: oklch(20% 0.04 var(--wp-h) / 0.08);
+
+    --popover: var(--surface);
+    --input: oklch(20% 0.03 var(--wp-h) / 0.14);
+    --destructive: oklch(55% 0.2 25);
+}
+:root[data-wp="light"][data-tone="solid"] {
+    --surf-l: 94.5%;
+    --sc: clamp(0.006, calc(var(--wp-c) * 0.32), 0.05);
+}
+:root[data-wp="light"][data-tone="blend"] {
+    --surf-l: clamp(62%, calc(var(--wp-l) * 100% + 11%), 92%);
+    --sc: clamp(0.012, calc(var(--wp-c) * 0.6), 0.11);
+    --desk-a: 0.86;
+    --dock: oklch(18% 0.04 var(--wp-h) / 0.14);
+}
+
+/*
+ * Solid restores opaque furniture, including the always-on chrome. Listed after
+ * the light block so a light+solid desk does not keep the veil recipes.
+ */
+:root[data-tone="solid"],
+:root[data-wp="light"][data-tone="solid"] {
+    --home: var(--desk);
+    --home-line: var(--hairline);
+    --home-drag: var(--surface-2);
+    --veil: var(--surface-2);
+    --veil-hover: var(--surface-3);
+    --dock: var(--desk);
+    --dock-line: var(--hairline);
+    --home-ink: var(--ink-muted);
+    --home-ink-faint: var(--ink-faint);
+    --home-ink-shadow: none;
+    --home-mark-shadow: none;
+    --shadow-dock: var(--shadow-pill);
+}
+
+/*
+ * Stronger text. Only the inks and the hairline move; surfaces, accent and
+ * everything else stay where they were, so this cannot break the palette.
+ */
+:root:not([data-wp="light"])[data-contrast="high"] {
+    --ink: oklch(98% var(--ic) var(--wp-h));
+    --ink-muted: oklch(84% var(--ic) var(--wp-h));
+    --ink-faint: oklch(70% var(--ic) var(--wp-h));
+    --hairline: oklch(100% 0 0 / 0.18);
+    --home-ink-faint: oklch(99% 0 0 / 0.86);
+    --wp-text-shadow: 0 1px 3px oklch(0% 0 0 / 0.8), 0 0 1px oklch(0% 0 0 / 0.7);
+    --home-ink-shadow: var(--wp-text-shadow);
+}
+:root[data-wp="light"][data-contrast="high"] {
+    --ink: oklch(16% var(--ic) var(--wp-h));
+    --ink-muted: oklch(clamp(20%, calc(var(--surf-l) - 52%), 34%) var(--ic) var(--wp-h));
+    --ink-faint: oklch(clamp(30%, calc(var(--surf-l) - 38%), 46%) var(--ic) var(--wp-h));
+    --hairline: oklch(20% 0.04 var(--wp-h) / 0.2);
+    --home-ink-faint: oklch(99% 0 0 / 0.86);
+    --wp-text-shadow: 0 1px 3px oklch(0% 0 0 / 0.8), 0 0 1px oklch(0% 0 0 / 0.7);
+    --home-ink-shadow: var(--wp-text-shadow);
+}
+:root[data-tone="solid"][data-contrast="high"],
+:root[data-wp="light"][data-tone="solid"][data-contrast="high"] {
+    --home-ink: var(--ink-muted);
+    --home-ink-faint: var(--ink-faint);
+    --home-ink-shadow: none;
+}
+
+/* A drawer's colour, applied to its glyph rather than its whole tile. */
+@utility tint {
+    color: oklch(var(--tint-l) var(--tint-c) var(--h, var(--wp-h)));
+}
+@utility tint-bg {
+    background-color: oklch(var(--tint-l) var(--tint-c) var(--h, var(--wp-h)) / var(--tint-bg-a));
+}
+@utility tint-dot {
+    background-color: oklch(var(--tint-l) var(--tint-c) var(--h, var(--wp-h)));
+}
+/* Text that sits directly on the wallpaper carries its own contrast. */
+@utility on-wallpaper {
+    color: var(--on-wp);
+    text-shadow: var(--wp-text-shadow);
+}
+@utility shadow-sheet {
+    box-shadow: var(--shadow-sheet);
+}
+@utility shadow-pill {
+    box-shadow: var(--shadow-pill);
+}
+@utility shadow-pop {
+    box-shadow: var(--shadow-pop);
+}
+@utility shadow-dock {
+    box-shadow: var(--shadow-dock);
+}
+/* Labels on home chrome: wallpaper contrast, unless Surface is Solid. */
+@utility home-ink {
+    color: var(--home-ink);
+    text-shadow: var(--home-ink-shadow);
+}
+@utility home-ink-faint {
+    color: var(--home-ink-faint);
+    text-shadow: var(--home-ink-shadow);
+}
+@utility home-mark {
+    filter: var(--home-mark-shadow);
+}
+@utility wp-icon-shadow {
+    filter: var(--wp-icon-shadow);
 }
 
 @layer base {
@@ -124,10 +325,12 @@
   body {
     @apply text-foreground;
     background: transparent;
+    font-variant-numeric: tabular-nums;
     }
   html {
     @apply font-sans;
     background: transparent;
+    -webkit-font-smoothing: antialiased;
     }
   html,
   body,
@@ -150,9 +353,24 @@
     opacity: 0.22;
     }
 
+  /*
+   * Rail glyphs sit on the dark dock wash, not on paper. The paper tint
+   * (56% lightness) reads as grey-on-grey there; push them bright and a
+   * little more chromatic so each drawer is recognisable at a glance.
+   * Solid + light restores the paper tint, because that rail is paper.
+   */
+  [data-alcove-strip] {
+    --tint-l: 94%;
+    --tint-c: 0.12;
+    }
+  :root[data-wp="light"][data-tone="solid"] [data-alcove-strip] {
+    --tint-l: 56%;
+    --tint-c: 0.13;
+    }
+
   [data-drop-hover] {
-    background-color: rgb(255 255 255 / 0.1);
-    box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 0.4);
+    background-color: var(--sel-soft);
+    box-shadow: inset 0 0 0 1.5px var(--sel);
     }
 
   /*
@@ -161,12 +379,12 @@
    * A drawer wide enough to cover the desktop would otherwise swallow every
    * pixel you might want to drop an icon on, leaving no way out but closing it
    * first. Its header and group rows stay live, so filing into the drawer you
-   * are looking at still works — everything else falls through to the wallpaper.
+   * are looking at still works; everything else falls through to the wallpaper.
    */
   html[data-icon-drag] section[data-alcove-id] {
     opacity: 0.4;
     pointer-events: none;
-    transition: opacity 150ms ease;
+    transition: opacity 150ms var(--ease-out-quart);
     }
 
   html[data-icon-drag] section[data-alcove-id] > header,
@@ -176,5 +394,19 @@
 
   .alcove-icon-tile {
     contain: layout style;
+    }
+
+  /* Drawers arrive; they do not slide. */
+  @keyframes alcove-rise {
+    from { opacity: 0; transform: translateY(3px); }
+    to { opacity: 1; transform: translateY(0); }
+    }
+  .alcove-rise {
+    animation: alcove-rise 180ms var(--ease-out-quart);
+    }
+  @media (prefers-reduced-motion: reduce) {
+    .alcove-rise {
+      animation-name: none;
+      }
     }
 }

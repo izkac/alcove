@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { toast } from "sonner"
 import {
   DEFAULT_PIN_IDS,
   INBOX_ID,
@@ -44,6 +45,8 @@ import type {
   FolderView,
   LayoutId,
   StripEdge,
+  SurfaceTone,
+  TextSize,
   SuggestedGroup,
 } from "@/types"
 
@@ -92,12 +95,23 @@ function onboardingState(): DesktopState {
     layoutSnapshots: snapshotsForAlcoves([buildInbox()]),
     focusMode: false,
     stripEdge: "top" as const,
+    surfaceTone: "tinted" as const,
+    textSize: "default" as const,
+    strongText: false,
     focusedAlcoveId: INBOX_ID,
     highlightedIconId: null,
     stripToolIds: [...DEFAULT_STRIP_TOOL_IDS],
     topSlotCount: TOP_SLOTS,
     ...topDefaults(),
   }
+}
+
+/**
+ * Onboarding with nothing in it. The real Desktop arrives a moment later; until
+ * it does, showing invented icons would be lying about the user's own files.
+ */
+function emptyOnboardingState(): DesktopState {
+  return { ...onboardingState(), icons: [], pinIds: [] }
 }
 
 function emptyDesktopState(): DesktopState {
@@ -112,6 +126,9 @@ function emptyDesktopState(): DesktopState {
     layoutSnapshots: snapshotsForAlcoves([inbox]),
     focusMode: false,
     stripEdge: "top" as const,
+    surfaceTone: "tinted" as const,
+    textSize: "default" as const,
+    strongText: false,
     focusedAlcoveId: INBOX_ID,
     highlightedIconId: null,
     stripToolIds: [...DEFAULT_STRIP_TOOL_IDS],
@@ -127,6 +144,9 @@ function applyHarvest(current: DesktopState, harvested: HarvestedIcon[]): Deskto
       icons: harvested.map((item) => toDesktopIcon(item, null)),
       pinIds: [],
       stripEdge: current.stripEdge,
+      surfaceTone: current.surfaceTone,
+      textSize: current.textSize,
+      strongText: current.strongText,
       stripToolIds: current.stripToolIds,
     }
   }
@@ -148,7 +168,7 @@ function applyHarvest(current: DesktopState, harvested: HarvestedIcon[]): Deskto
 
 export function useAlcoveDesktop() {
   const [state, setState] = useState<DesktopState>(
-    () => loadDesktopState() ?? onboardingState(),
+    () => loadDesktopState() ?? (isTauri() ? emptyOnboardingState() : onboardingState()),
   )
   const [hydrated, setHydrated] = useState(!isTauri())
   const applyingRemote = useRef(false)
@@ -203,12 +223,11 @@ export function useAlcoveDesktop() {
     let cancelled = false
     invoke<HarvestedIcon[]>("list_desktop_icons")
       .then((harvested) => {
-        if (!cancelled && harvested.length > 0) {
-          setState((current) => applyHarvest(current, harvested))
-        }
+        if (!cancelled) setState((current) => applyHarvest(current, harvested))
       })
       .catch((error) => {
         console.error("Could not read Desktop folder", error)
+        if (!cancelled) toast("Could not read your Desktop folder")
       })
     return () => {
       cancelled = true
@@ -227,7 +246,7 @@ export function useAlcoveDesktop() {
     const lives = state.alcoves.filter(
       (alcove): alcove is Alcove & { folderPath: string } => Boolean(alcove.folderPath),
     )
-    Promise.all(
+    Promise.allSettled(
       lives.map((alcove) =>
         invoke<HarvestedIcon[]>("list_folder_icons", { path: alcove.folderPath }).then(
           (harvested) => ({ id: alcove.id, harvested }),
@@ -236,15 +255,25 @@ export function useAlcoveDesktop() {
     )
       .then((results) => {
         if (cancelled) return
+        const missing = lives.filter(
+          (_, index) => results[index].status === "rejected",
+        )
+        if (missing.length > 0) {
+          console.error("Could not read live folder", missing)
+          toast(
+            `Could not read ${missing.map((alcove) => alcove.name).join(", ")}`,
+          )
+        }
+        const ok = results.flatMap((result) =>
+          result.status === "fulfilled" ? [result.value] : [],
+        )
+        if (ok.length === 0) return
         setState((current) =>
-          results.reduce(
+          ok.reduce(
             (next, item) => mergeLiveFolder(next, item.id, item.harvested),
             current,
           ),
         )
-      })
-      .catch((error) => {
-        console.error("Could not read live folder", error)
       })
     return () => {
       cancelled = true
@@ -311,20 +340,14 @@ export function useAlcoveDesktop() {
 
   const loadSample = useCallback(() => {
     if (isTauri()) {
-      invoke<HarvestedIcon[]>("list_desktop_icons")
-        .then((harvested) => {
-          setState({
-            ...onboardingState(),
-            icons: harvested.map((item) => toDesktopIcon(item, null)),
-            pinIds: [],
-          })
-        })
-        .catch((error) => {
-          console.error("Could not read Desktop folder", error)
-        })
+      // Re-read only. The desk is the user's work; a maintenance button does
+      // not get to delete it, least of all without asking.
+      void reloadHarvest()
       return
     }
     setState(onboardingState())
+    // reloadHarvest is a stable useCallback declared below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const toggleCollapsed = useCallback((alcoveId: string) => {
@@ -816,13 +839,22 @@ export function useAlcoveDesktop() {
     (iconIds: string[], alcoveId: string, groupId: string | null) => {
       if (iconIds.length === 0) return
       const ids = new Set(iconIds)
-      setState((current) => ({
-        ...current,
-        icons: current.icons.map((icon) =>
-          ids.has(icon.id) ? { ...icon, alcoveId, groupId } : icon,
-        ),
-        focusedAlcoveId: alcoveId,
-      }))
+      setState((current) => {
+        const target = current.alcoves.find((alcove) => alcove.id === alcoveId)
+        // A live drawer is a view of a folder. Nothing can be filed into it
+        // that is not in the folder, or the next listing silently drops it.
+        if (target?.folderPath) return current
+        let changed = false
+        const icons = current.icons.map((icon) => {
+          if (!ids.has(icon.id)) return icon
+          const from = current.alcoves.find((item) => item.id === icon.alcoveId)
+          if (from?.folderPath) return icon
+          changed = true
+          return { ...icon, alcoveId, groupId }
+        })
+        if (!changed) return current
+        return { ...current, icons, focusedAlcoveId: alcoveId }
+      })
     },
     [],
   )
@@ -882,6 +914,39 @@ export function useAlcoveDesktop() {
         console.error("Could not refresh Desktop folder", error)
       })
   }, [])
+
+  /**
+   * The Desktop is a folder other programs write to: a browser saves a download
+   * there, an installer drops a shortcut, an archive unpacks. Rust watches it
+   * and moves a counter; all we do is notice the counter moved and re-read.
+   *
+   * Polling an integer beats holding a watcher here: a dropped tick costs two
+   * seconds, where a dropped subscription would cost a file that never shows up
+   * until the next restart. The first tick only takes a baseline, so starting up
+   * never triggers a second harvest.
+   */
+  const seenRevision = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!isTauri() || !hydrated) return
+    let alive = true
+    function check() {
+      invoke<number>("desktop_revision")
+        .then((revision) => {
+          if (!alive) return
+          const seen = seenRevision.current
+          seenRevision.current = revision
+          if (seen !== null && revision !== seen) void reloadHarvest()
+        })
+        .catch(() => undefined)
+    }
+    check()
+    const timer = window.setInterval(check, 2000)
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+    }
+  }, [hydrated, reloadHarvest])
 
   const pasteFiles = useCallback(
     async (dest: string | null, assignAlcoveId: string | null) => {
@@ -967,6 +1032,18 @@ export function useAlcoveDesktop() {
 
   const setStripEdge = useCallback((stripEdge: StripEdge) => {
     setState((current) => ({ ...current, stripEdge }))
+  }, [])
+
+  const setSurfaceTone = useCallback((surfaceTone: SurfaceTone) => {
+    setState((current) => ({ ...current, surfaceTone }))
+  }, [])
+
+  const setTextSize = useCallback((textSize: TextSize) => {
+    setState((current) => ({ ...current, textSize }))
+  }, [])
+
+  const setStrongText = useCallback((strongText: boolean) => {
+    setState((current) => ({ ...current, strongText }))
   }, [])
 
   const setStripToolIds = useCallback((ids: string[]) => {
@@ -1068,6 +1145,9 @@ export function useAlcoveDesktop() {
     revealIcon,
     setFocusMode,
     setStripEdge,
+    setSurfaceTone,
+    setTextSize,
+    setStrongText,
     setStripToolIds,
     setFocusedAlcove,
     setAlcoveStrip,

@@ -4,11 +4,15 @@ import "./index.css"
 import App from "./App.tsx"
 import { BarStrip } from "./components/bar-strip.tsx"
 import { SearchOverlay } from "./components/search-overlay.tsx"
+import { applySavedTheme } from "./lib/wallpaper.ts"
 
 const params = new URLSearchParams(window.location.search)
 const isBar = params.has("bar")
 const isSearch = params.has("search")
 
+// Paint in the wallpaper's theme from the first frame; the desk refines it
+// once it has actually looked at the wallpaper.
+applySavedTheme()
 if (isSearch) document.documentElement.classList.add("search-window")
 
 createRoot(document.getElementById("root")!).render(

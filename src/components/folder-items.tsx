@@ -47,7 +47,7 @@ export function FolderItems({
   onPointerDown,
 }: FolderItemsProps) {
   if (items.length === 0) {
-    return <p className="px-1 py-3 text-xs text-white/40">{empty}</p>
+    return <p className="px-1 py-3 text-label text-ink-faint">{empty}</p>
   }
   if (view === "list") {
     return (
@@ -75,9 +75,9 @@ export function FolderItems({
   }
   return (
     <div
-      className="grid gap-x-1 gap-y-2"
+      className="grid gap-x-1.5 gap-y-1"
       style={{
-        gridTemplateColumns: `repeat(auto-fill, minmax(${iconSize + 34}px, 1fr))`,
+        gridTemplateColumns: `repeat(auto-fill, minmax(${iconSize + 40}px, 1fr))`,
       }}
     >
       {items.map((icon) => (
@@ -138,7 +138,7 @@ function DetailRows({
     <div className="min-w-0">
       <div
         className={cn(
-          "sticky top-0 z-10 mb-1 grid bg-black/70 px-2 py-1 backdrop-blur-sm",
+          "sticky top-0 z-10 mb-1 grid border-b border-hairline bg-surface px-2 py-1.5",
           DETAIL_GRID,
         )}
       >
@@ -152,9 +152,9 @@ function DetailRows({
               onClick={() => setSort((current) => toggleFolderSort(current, column.id))}
               aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
               className={cn(
-                "flex items-center gap-0.5 text-[10px] tracking-wide uppercase",
+                "flex items-center gap-0.5 rounded text-label font-medium tracking-[0.06em] uppercase outline-none focus-visible:outline-2 focus-visible:outline-sel",
                 column.align === "right" ? "justify-end" : "justify-start",
-                active ? "text-white/80" : "text-white/40 hover:text-white/70",
+                active ? "text-ink-muted" : "text-ink-faint hover:text-ink-muted",
               )}
             >
               {column.label}
@@ -175,23 +175,23 @@ function DetailRows({
             onOpen(icon)
           }}
           className={cn(
-            "grid w-full min-w-0 items-center rounded-md px-2 py-1 text-left text-white/95 outline-none",
+            "grid w-full min-w-0 items-center rounded-md px-2 py-1 text-left text-ink outline-none transition-colors duration-150",
             DETAIL_GRID,
-            "hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/50",
+            "hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-sel",
             highlightedIconId === icon.id || selectedIds.includes(icon.id)
-              ? "bg-sky-400/25 ring-2 ring-sky-300"
+              ? "bg-sel-soft ring-[1.5px] ring-sel"
               : undefined,
           )}
         >
           <span className="flex min-w-0 items-center gap-2">
             <IconGlyph icon={icon} size={iconSize} className="shrink-0 rounded-sm" />
-            <span className="truncate text-[12px] leading-tight">{icon.name}</span>
+            <span className="truncate text-meta">{icon.name}</span>
           </span>
-          <span className="truncate text-[11px] text-white/50">{fileTypeLabel(icon)}</span>
-          <span className="truncate text-right text-[11px] tabular-nums text-white/50">
-            {icon.kind === "folder" ? "—" : formatByteSize(icon.byteSize)}
+          <span className="truncate text-label text-ink-muted">{fileTypeLabel(icon)}</span>
+          <span className="truncate text-right text-label text-ink-muted">
+            {icon.kind === "folder" ? "" : formatByteSize(icon.byteSize)}
           </span>
-          <span className="truncate text-right text-[11px] tabular-nums text-white/50">
+          <span className="truncate text-right text-label text-ink-muted">
             {formatModifiedAt(icon.modifiedAt)}
           </span>
         </button>
@@ -224,13 +224,13 @@ function FolderRow({
         onOpen(icon)
       }}
       className={cn(
-        "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-white/95 outline-none",
-        "hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/50",
-        highlighted && "bg-sky-400/25 ring-2 ring-sky-300",
+        "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-ink outline-none transition-colors duration-150",
+        "hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-sel",
+        highlighted && "bg-sel-soft ring-[1.5px] ring-sel",
       )}
     >
       <IconGlyph icon={icon} size={iconSize} className="shrink-0 rounded-sm" />
-      <span className="truncate text-[12px] leading-tight">{icon.name}</span>
+      <span className="truncate text-meta">{icon.name}</span>
     </button>
   )
 }

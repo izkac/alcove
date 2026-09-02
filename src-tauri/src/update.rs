@@ -56,7 +56,17 @@ pub async fn install(app: &AppHandle) -> Result<(), String> {
         let _ = crate::desktop::detach(&main, &state);
     }
 
-    update.install(bytes).map_err(|err| err.to_string())?;
+    if let Err(err) = update.install(bytes) {
+        // The installer refused (bad signature, a lock, no disk). We already
+        // gave the desktop back, so without this the user is left staring at a
+        // 1440x900 window where their desktop used to be.
+        log::warn!("update install: {err}");
+        if let Some(main) = app.get_webview_window("main") {
+            let state = app.state::<crate::desktop::DesktopState>();
+            let _ = crate::desktop::attach(&main, &state);
+        }
+        return Err(err.to_string());
+    }
     // NSIS normally takes us down and relaunches; this covers the case it does not.
     app.restart();
 }

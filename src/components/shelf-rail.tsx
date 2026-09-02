@@ -1,4 +1,3 @@
-import { Badge } from "@/components/ui/badge"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -11,21 +10,21 @@ import {
 } from "@/components/ui/context-menu"
 import { AlcoveGlyphGrid, AlcoveGlyphMark, resolveAlcoveGlyph } from "@/lib/alcove-glyphs"
 import { ALCOVE_COLOR_IDS } from "@/types"
-import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
+import { ALCOVE_COLOR_STYLES, tintStyle } from "@/lib/colors"
 import { INBOX_ID } from "@/data/sample"
 import { formatByteSize } from "@/lib/folder-view"
 import { cn } from "@/lib/utils"
 import type { Alcove, AlcoveColor } from "@/types"
 import type { DeskInfo } from "@/lib/desk-strip"
-import { Inbox, Plus, Search, Settings } from "lucide-react"
+import { Plus, Search, Settings } from "lucide-react"
 import type { PointerEvent as ReactPointerEvent } from "react"
 
 type ShelfRailProps = {
   alcoves: Alcove[]
   countFor: (alcoveId: string) => number
-  /** Bytes held by an Alcove. Shown under the name; 0 hides the line. */
+  /** Bytes held by an Alcove. Shown in the tooltip; 0 hides it. */
   sizeFor: (alcoveId: string) => number
-  /** The one Alcove that outweighs the rest — its size is tinted. */
+  /** The one Alcove that outweighs the rest — named as such in its tooltip. */
   heavyAlcoveId?: string | null
   openAlcoveId: string | null
   onSelect: (alcoveId: string) => void
@@ -45,6 +44,20 @@ type ShelfRailProps = {
   onAlcovePointerDown?: (alcoveId: string, event: ReactPointerEvent) => void
   skipAlcoveClick?: () => boolean
   onReorder?: (dragId: string, targetId: string) => void
+}
+
+/** Same box as a strip slot: empty at rest, a wash on hover. */
+const ROUNDEL =
+  "flex size-[52px] items-center justify-center rounded-xl transition-colors duration-150"
+
+const RAIL_BUTTON =
+  "home-ink flex size-11 items-center justify-center rounded-lg outline-none transition-colors duration-150 hover:bg-veil-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sel"
+
+function tileTitle(alcove: Alcove, count: number, bytes: number, heavy: boolean) {
+  const parts = [`${alcove.name} · ${count}`]
+  if (bytes > 0) parts.push(formatByteSize(bytes))
+  if (heavy) parts.push("heaviest drawer")
+  return parts.join(" · ")
 }
 
 export function ShelfRail({
@@ -77,15 +90,16 @@ export function ShelfRail({
   const otherDesks = desks.filter((item) => item.id !== deskId)
 
   return (
-    <div
+    <nav
+      aria-label="Alcoves"
       data-alcove-strip=""
       className={cn(
-        "flex h-full w-[76px] shrink-0 flex-col items-center gap-2.5 overflow-y-auto border-r border-white/15 bg-black/55 py-3 shadow-2xl backdrop-blur-2xl transition-colors",
-        // Faint cue for the length of a drag (the hook sets data-icon-drag on
-        // <html>): the whole rail is a target, not just the tiles. It only says
-        // "aim here" — it never widens, so it cannot move what you aim at.
-        "[[data-icon-drag]_&]:border-sky-300/70 [[data-icon-drag]_&]:bg-black/75",
-        stripHover && "bg-white/15 ring-1 ring-white/40",
+        // Same layout as before: a flush column. Same paint as the strip:
+        // a see-through wash, not a paper slab. No rounding, no shadow —
+        // those belong to the strip because it floats.
+        "flex h-full w-[72px] shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-dock-line bg-dock py-3 transition-colors duration-150",
+        "[[data-icon-drag]_&]:bg-veil-hover",
+        stripHover && "bg-sel-soft",
       )}
     >
       {inbox ? (
@@ -95,18 +109,33 @@ export function ShelfRail({
               type="button"
               data-alcove-id={inbox.id}
               title={`Inbox · ${inboxCount}`}
+              aria-current={openAlcoveId === inbox.id ? "true" : undefined}
               onClick={() => onSelect(inbox.id)}
-              className={cn(
-                "relative flex size-[52px] items-center justify-center rounded-[14px] border-[1.5px] border-dashed border-amber-300/60 bg-amber-400/10 text-amber-200 transition hover:bg-amber-400/20",
-                openAlcoveId === inbox.id && "border-solid bg-amber-400/25",
-              )}
+              style={tintStyle("amber")}
+              className="group/tile flex w-[68px] flex-col items-center gap-1 rounded-lg py-1 outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sel"
             >
-              <Inbox className="size-6" strokeWidth={1.75} />
-              {inboxCount > 0 ? (
-                <Badge className="absolute -top-1.5 -right-1.5 h-[18px] min-w-[18px] px-1 bg-amber-400 text-[10px] font-bold text-amber-950">
-                  {inboxCount}
-                </Badge>
-              ) : null}
+              <span
+                className={cn(
+                  ROUNDEL,
+                  "relative group-hover/tile:bg-veil-hover",
+                  openAlcoveId === inbox.id && "bg-sel-soft ring-[1.5px] ring-sel ring-inset",
+                )}
+              >
+                <AlcoveGlyphMark
+                  glyph="inbox"
+                  strokeWidth={2.5}
+                  className="tint home-mark size-8"
+                />
+                {inboxCount > 0 ? (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-sel px-1 text-[10px] leading-none font-semibold text-surface">
+                    {inboxCount}
+                  </span>
+                ) : null}
+              </span>
+              <span className="flex flex-col items-center leading-tight">
+                <span className="home-ink text-label">Inbox</span>
+                <span className="home-ink-faint text-micro">{inboxCount}</span>
+              </span>
             </button>
           </ContextMenuTrigger>
           <ContextMenuContent className="w-56">
@@ -115,12 +144,12 @@ export function ShelfRail({
         </ContextMenu>
       ) : null}
 
-      <span className="h-px w-11 bg-white/15" />
+      <span className="my-0.5 h-px w-9 bg-dock-line" />
 
       {rest.map((alcove, index) => {
-        const styles = ALCOVE_COLOR_STYLES[alcove.color]
         const active = openAlcoveId === alcove.id
         const glyph = resolveAlcoveGlyph(alcove)
+        const count = countFor(alcove.id)
         const bytes = sizeFor(alcove.id)
         const above = rest[index - 1]
         const below = rest[index + 1]
@@ -130,38 +159,35 @@ export function ShelfRail({
               <button
                 type="button"
                 data-alcove-id={alcove.id}
-                title={alcove.name}
+                title={tileTitle(alcove, count, bytes, heavyAlcoveId === alcove.id)}
+                aria-current={active ? "true" : undefined}
                 onClick={() => {
                   if (skipAlcoveClick?.()) return
                   onSelect(alcove.id)
                 }}
                 onPointerDown={(event) => onAlcovePointerDown?.(alcove.id, event)}
-                className="flex flex-col items-center gap-0.5"
+                style={tintStyle(alcove.color)}
+                className="group/tile flex w-[68px] flex-col items-center gap-1 rounded-lg py-1 outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sel"
               >
                 <span
                   className={cn(
-                    "flex size-[52px] items-center justify-center rounded-[14px] ring-1 transition hover:brightness-125",
-                    styles.chip,
-                    active && "ring-2 bg-white/20",
+                    ROUNDEL,
+                    "group-hover/tile:bg-veil-hover",
+                    active && "bg-sel-soft ring-[1.5px] ring-sel ring-inset",
                   )}
                 >
-                  <AlcoveGlyphMark glyph={glyph} className="size-6" />
+                  <AlcoveGlyphMark
+                    glyph={glyph}
+                    strokeWidth={2.5}
+                    className="tint home-mark size-8"
+                  />
                 </span>
-                <span className="max-w-[68px] truncate text-[9px] text-white/60">
-                  {alcove.name} · {countFor(alcove.id)}
-                </span>
-                {bytes > 0 ? (
-                  <span
-                    className={cn(
-                      "max-w-[68px] truncate text-[9px]",
-                      heavyAlcoveId === alcove.id
-                        ? "text-amber-200/85"
-                        : "text-white/40",
-                    )}
-                  >
-                    {formatByteSize(bytes)}
+                <span className="flex max-w-[66px] flex-col items-center leading-tight">
+                  <span className="home-ink max-w-full truncate text-label">
+                    {alcove.name}
                   </span>
-                ) : null}
+                  <span className="home-ink-faint text-micro">{count}</span>
+                </span>
               </button>
             </ContextMenuTrigger>
             <ContextMenuContent className="w-56">
@@ -199,6 +225,11 @@ export function ShelfRail({
                       key={color}
                       onSelect={() => onRecolor(alcove.id, color)}
                     >
+                      <span
+                        aria-hidden
+                        style={tintStyle(color)}
+                        className="tint-dot size-2.5 rounded-full"
+                      />
                       {ALCOVE_COLOR_STYLES[color].label}
                     </ContextMenuItem>
                   ))}
@@ -249,27 +280,30 @@ export function ShelfRail({
       <button
         type="button"
         title="New Alcove (Ctrl+N)"
+        aria-label="New Alcove"
         onClick={onNewAlcove}
-        className="flex size-11 items-center justify-center rounded-xl text-white/75 transition hover:bg-white/10"
+        className={RAIL_BUTTON}
       >
-        <Plus className="size-[18px]" />
+        <Plus className="size-6" strokeWidth={2.5} />
       </button>
       <button
         type="button"
         title="Search (Ctrl+Space)"
+        aria-label="Search"
         onClick={onSearch}
-        className="flex size-11 items-center justify-center rounded-xl text-white/75 transition hover:bg-white/10"
+        className={RAIL_BUTTON}
       >
-        <Search className="size-[18px]" />
+        <Search className="size-6" strokeWidth={2.5} />
       </button>
       <button
         type="button"
         title="Settings"
+        aria-label="Settings"
         onClick={onSettings}
-        className="flex size-11 items-center justify-center rounded-xl text-white/75 transition hover:bg-white/10"
+        className={RAIL_BUTTON}
       >
-        <Settings className="size-[18px]" />
+        <Settings className="size-6" strokeWidth={2.5} />
       </button>
-    </div>
+    </nav>
   )
 }

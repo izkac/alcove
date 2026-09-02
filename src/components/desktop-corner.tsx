@@ -89,12 +89,12 @@ export function DesktopCorner({
     <img
       src={bin.imageUrl}
       alt=""
-      className="size-12 bg-transparent object-contain drop-shadow-[0_1px_1px_rgba(0,0,0,0.45)]"
+      className="wp-icon-shadow size-12 bg-transparent object-contain"
       draggable={false}
       onContextMenu={(event) => event.preventDefault()}
     />
   ) : (
-    <Trash2 className="size-12 bg-transparent p-1.5 drop-shadow-sm" />
+    <Trash2 className="wp-icon-shadow size-12 bg-transparent p-1.5" strokeWidth={1.5} />
   )
 
   const button = (
@@ -105,14 +105,12 @@ export function DesktopCorner({
       onClick={openBin}
       onContextMenu={isTauri() ? onNativeMenu : undefined}
       className={cn(
-        "pointer-events-auto flex w-[76px] flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-white/95",
-        "hover:bg-white/10",
+        "on-wallpaper pointer-events-auto flex w-[76px] flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 outline-none transition-colors duration-150",
+        "hover:bg-[oklch(100%_0_0/0.12)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sel",
       )}
     >
       {glyph}
-      <span className="line-clamp-2 w-full text-center text-[11px] leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">
-        {label}
-      </span>
+      <span className="line-clamp-2 w-full text-center text-label">{label}</span>
     </button>
   )
 
@@ -131,6 +129,7 @@ export function DesktopCorner({
                 icon={icon}
                 size={48}
                 selected={selectedIds.includes(icon.id)}
+                onWallpaper
                 onOpen={onOpenIcon}
                 onPointerDown={onIconPointerDown}
               />

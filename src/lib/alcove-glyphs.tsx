@@ -113,12 +113,14 @@ export function resolveAlcoveGlyph(alcove: Pick<Alcove, "id" | "name" | "isInbox
 export function AlcoveGlyphMark({
   glyph,
   className,
+  strokeWidth = 1.75,
 }: {
   glyph: AlcoveGlyphId
   className?: string
+  strokeWidth?: number
 }) {
   const Icon: LucideIcon = BY_ID[glyph]?.Icon ?? Folder
-  return <Icon className={cn("size-6", className)} strokeWidth={1.75} />
+  return <Icon className={cn("size-6", className)} strokeWidth={strokeWidth} />
 }
 
 export const AlcoveGlyphGrid = memo(function AlcoveGlyphGrid({
@@ -141,11 +143,12 @@ export const AlcoveGlyphGrid = memo(function AlcoveGlyphGrid({
               event.preventDefault()
               onChange(item.id)
             }}
+            aria-pressed={selected}
             className={cn(
-              "flex size-9 items-center justify-center rounded-lg transition",
+              "flex size-9 items-center justify-center rounded-lg outline-none transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-sel",
               selected
-                ? "bg-foreground/15 text-foreground ring-1 ring-foreground/25"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                ? "bg-sel-soft text-ink ring-1 ring-sel"
+                : "text-ink-muted hover:bg-surface-2 hover:text-ink",
             )}
           >
             <item.Icon className="size-[18px]" strokeWidth={1.75} />

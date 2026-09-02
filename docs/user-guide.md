@@ -26,8 +26,9 @@ You can accept the groups it suggests, uncheck the ones you do not want, or **st
 with an empty Inbox** and file things yourself. Nothing is moved on disk either way —
 a drawer is a view of your Desktop, not a folder.
 
-If you would rather start over later, Settings has both **Start with an empty Inbox**
-and **Reload desktop icons**.
+If you would rather start over later, Settings has **Start with an empty Inbox**.
+**Reload desktop icons** is the safe one: it picks up files that appeared on your
+Desktop without touching how you have arranged anything.
 
 ---
 
@@ -47,8 +48,9 @@ An Alcove is a named group of icons. It has a colour, an icon, and a count.
 
 ### The Inbox
 
-The Inbox is the drawer that catches everything not filed anywhere else. New files
-that appear on your Desktop land here and stay until you file them. It is always
+The Inbox is the drawer that catches everything not filed anywhere else. Alcove
+watches your Desktop folder, so a file saved there by a browser, an installer or an
+unzipped archive appears here on its own, and stays until you file it. It is always
 present and cannot be deleted. Leaving an icon on the wallpaper is not the same as
 leaving it unsorted — an icon you park keeps the drawer it belongs to.
 
@@ -56,10 +58,36 @@ leaving it unsorted — an icon you park keeps the drawer it belongs to.
 
 The strip down the left edge, and the main way you get around. It holds the Inbox at
 the top, then one tile per drawer, with New Alcove, Search and Settings at the
-bottom. Each tile shows the drawer's name, its item count, and — for drawers holding
-files with a size — how much disk space they take. The heaviest drawer is tinted when
-it clearly outweighs the rest. Drag a drawer up or down to change its place — the tile follows the pointer. Inbox
-stays at the top. Right-click for **Move up** / **Move down**.
+bottom. Each tile shows the drawer's name and its item count; hover it to see how
+much disk space it holds, and which drawer is the heaviest. Drag a drawer up or down
+to change its place; the tile follows the pointer. Inbox stays at the top. Right-click
+for **Move up** / **Move down**.
+
+Alcove takes its look from your wallpaper: a light picture gives drawers paper
+surfaces, a dark one gives them slate, and both pick up the picture's colour. The
+rail and the frequent strip stay in the picture itself, so they do not read as a
+panel on top of it. **Surface** in Settings → General sets how far the drawers lean
+in: **Blend** sits closest and lets a little of the picture through the drawers too,
+**Tinted** (the default) keeps drawers a step of the wallpaper's own colour, **Solid**
+paints the rail and strip as plain paper or slate as well.
+
+**Text size** in the same place scales every label at once, and **Stronger text**
+darkens the smaller labels if they read too softly on your screen.
+
+### The wallpaper
+
+Alcove covers the desktop, so its right-click menu is where the wallpaper lives.
+**Background** offers:
+
+- **Choose a picture…** picks an image and sets it as your Windows wallpaper, on
+  every monitor. It is the real wallpaper, so it stays when Alcove is closed.
+- **Solid colour…** clears the wallpaper and leaves a plain colour behind it,
+  with eight presets and a colour picker.
+- **Windows personalisation…** opens Windows' own background settings, for
+  slideshows, fit and everything else Alcove does not do.
+
+Either way Alcove re-reads the desktop straight after and re-tints itself, so its
+surfaces follow the new background.
 
 ### The frequent strip
 
@@ -192,7 +220,7 @@ the end only. Nothing that stays moves position.
 | Use as the desktop | Alcove covers the Windows desktop instead of floating in a window |
 | Hide the Windows taskbar | Hides the taskbar; move the mouse to the screen edge to peek at it |
 | Start when I sign in | Launches Alcove automatically at Windows sign-in |
-| Reload desktop icons | Re-reads your Desktop and returns you to the first-run sorting screen |
+| Reload desktop icons | Re-reads your Desktop now. Rarely needed; new files arrive on their own. Keeps your drawers |
 | Start with an empty Inbox | Clears every drawer back to one empty Inbox. There is no confirmation prompt |
 
 ---
@@ -255,7 +283,7 @@ match never beats a strong one however often you open it.
 | Right-click a drawer tile | Its menu — edit, move up/down, icon, colour, mirror a folder, move to another screen, delete |
 | Right-click an icon | Open, Put on the desktop, Move to, New Alcove, Delete apply to the whole selection. Rename is one at a time |
 | Right-click a frequent strip slot | Open, Show in its Alcove, Keep in this slot, Never show here |
-| Right-click the wallpaper | Paste, New Alcove, Collapse all |
+| Right-click the wallpaper | Paste, New Alcove, Collapse all, Background |
 
 ---
 
@@ -279,8 +307,9 @@ desktop and gives Explorer's icons back. Restarting Explorer also works.
 **The Windows taskbar is missing.** Turn off **Hide the Windows taskbar** in Settings
 → System, or move the mouse to the screen edge to peek at it.
 
-**A file I added on the Desktop is not showing.** Use **Reload desktop icons** in
-Settings → System.
+**A file I added on the Desktop is not showing.** New files land in the Inbox on
+their own within a couple of seconds. If one does not, use **Reload desktop icons**
+in Settings → System.
 
 **Alcove is behind my other windows.** That is intended — it sits on the desktop, so
 apps cover it. Minimise everything, or press the Show Desktop shortcut.

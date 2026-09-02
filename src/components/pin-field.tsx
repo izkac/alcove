@@ -102,6 +102,7 @@ export function PinField({
                 size={48}
                 selected={selectedIds.includes(icon.id)}
                 highlighted={highlightedIconId === icon.id}
+                onWallpaper
                 onOpen={onOpen}
                 onPointerDown={onIconPointerDown}
               />

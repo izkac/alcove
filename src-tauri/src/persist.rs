@@ -15,7 +15,9 @@ pub fn load(app: &AppHandle) -> Result<Option<String>, String> {
     if !path.is_file() {
         return Ok(None);
     }
-    std::fs::read_to_string(&path).map(Some).map_err(|err| err.to_string())
+    std::fs::read_to_string(&path)
+        .map(Some)
+        .map_err(|err| err.to_string())
 }
 
 /// Write to a sibling temp file, flush it to disk, then rename over the target.
@@ -31,7 +33,8 @@ pub fn save(app: &AppHandle, json: String) -> Result<(), String> {
     let tmp = path.with_extension("json.tmp");
     {
         let mut file = std::fs::File::create(&tmp).map_err(|err| err.to_string())?;
-        file.write_all(json.as_bytes()).map_err(|err| err.to_string())?;
+        file.write_all(json.as_bytes())
+            .map_err(|err| err.to_string())?;
         // Rename is atomic but only orders metadata; without this the rename can
         // land before the bytes do and survive a power cut pointing at nothing.
         file.sync_all().map_err(|err| err.to_string())?;
@@ -64,5 +67,7 @@ pub fn mark_desktop_hidden(app: &AppHandle, hidden: bool) {
 }
 
 pub fn desktop_left_hidden(app: &AppHandle) -> bool {
-    hidden_marker(app).map(|path| path.is_file()).unwrap_or(false)
+    hidden_marker(app)
+        .map(|path| path.is_file())
+        .unwrap_or(false)
 }

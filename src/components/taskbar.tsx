@@ -78,29 +78,29 @@ function RunningApps() {
             }
             onClick={() => activate(group)}
             className={cn(
-              "relative flex size-10 shrink-0 items-center justify-center rounded-xl transition hover:bg-white/10",
-              active && "bg-white/10",
+              "relative flex size-10 shrink-0 items-center justify-center rounded-xl outline-none transition-colors duration-150 hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-sel",
+              active && "bg-surface-2",
             )}
           >
             {group.iconUrl ? (
               <img
                 src={group.iconUrl}
                 alt=""
-                className="size-[30px] drop-shadow-sm"
+                className="size-[30px]"
                 draggable={false}
               />
             ) : (
-              <AppWindow className="size-[26px] opacity-70" />
+              <AppWindow className="size-[26px] text-ink-muted" strokeWidth={1.5} />
             )}
             <span className="absolute bottom-0.5 left-1/2 flex -translate-x-1/2 gap-0.5">
               <span
                 className={cn(
                   "h-1 rounded-full transition-all",
-                  active ? "w-4 bg-sky-300" : "w-1 bg-white/50",
+                  active ? "w-4 bg-sel" : "w-1 bg-ink-faint",
                 )}
               />
               {count > 1 ? (
-                <span className="h-1 w-1 rounded-full bg-white/50" />
+                <span className="h-1 w-1 rounded-full bg-ink-faint" />
               ) : null}
             </span>
           </button>
@@ -129,13 +129,13 @@ export function Dock({
           title={icon.name}
           data-launch-pulse={icon.id}
           onClick={() => onOpenIcon(icon)}
-          className="flex size-10 shrink-0 items-center justify-center rounded-xl transition hover:bg-white/10"
+          className="flex size-10 shrink-0 items-center justify-center rounded-xl outline-none transition-colors duration-150 hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-sel"
         >
           <IconGlyph icon={icon} size={30} />
         </button>
       ))}
       {pinnedIcons.length > 0 ? (
-        <span className="mx-1 h-6 w-px shrink-0 bg-white/15" />
+        <span className="mx-1 h-6 w-px shrink-0 bg-hairline" />
       ) : null}
       <RunningApps />
     </div>

@@ -73,6 +73,14 @@ export type DeskLaunchMessage = {
   iconId: string
 }
 
+/**
+ * The wallpaper is a Windows-wide thing, but each desk window paints and samples
+ * it separately, so whoever changes it tells the others to look again.
+ */
+export type DeskWallpaperMessage = {
+  type: "wallpaper-changed"
+}
+
 export type DeskChannelMessage =
   | DeskDropMessage
   | DeskHoverMessage
@@ -81,6 +89,7 @@ export type DeskChannelMessage =
   | DeskDragHandoffMessage
   | DeskGhostEndMessage
   | DeskLaunchMessage
+  | DeskWallpaperMessage
 
 /** The ghost lives in one webview. Paint it here only while the cursor is on this desk. */
 export function ghostStaysHere(hit: DeskHit | null, currentDeskId: string) {

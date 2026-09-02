@@ -62,18 +62,18 @@ mod win {
     use super::*;
     use windows::core::{w, BOOL, PCWSTR};
     use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MonitorFromWindow, ScreenToClient, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
-    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, VK_CONTROL, VK_F12, VK_LWIN, VK_RWIN, VK_SHIFT,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         EnumWindows, FindWindowExW, FindWindowW, GetAncestor, GetClassNameW, GetCursorPos,
         GetForegroundWindow, GetParent, GetWindowRect, IsIconic, IsWindowVisible, SetWindowPos,
-        ShowWindow, WindowFromPoint, GA_ROOT, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, SWP_NOACTIVATE,
-        SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_RESTORE, SW_SHOW,
+        ShowWindow, WindowFromPoint, GA_ROOT, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_RESTORE, SW_SHOW,
     };
 
     struct ShellWindows {
@@ -161,10 +161,7 @@ mod win {
         if !valid(found.def_view) {
             return Err("could not find the desktop icon list".into());
         }
-        log::info!(
-            "desktop icon host class={}",
-            class_name(found.host)
-        );
+        log::info!("desktop icon host class={}", class_name(found.host));
         Ok(found)
     }
 
@@ -263,8 +260,8 @@ mod win {
 
     fn win_d_pressed() -> bool {
         unsafe {
-            let win = GetAsyncKeyState(VK_LWIN.0 as i32) < 0
-                || GetAsyncKeyState(VK_RWIN.0 as i32) < 0;
+            let win =
+                GetAsyncKeyState(VK_LWIN.0 as i32) < 0 || GetAsyncKeyState(VK_RWIN.0 as i32) < 0;
             win && GetAsyncKeyState(0x44) < 0
         }
     }
@@ -280,6 +277,24 @@ mod win {
                 || desktop_is_in_front()
                 || wallpaper_is_covering(hwnd)
         }
+    }
+
+    /// Re-point at the live SHELLDLL_DefView and hide it if we own the desktop.
+    fn refresh_def_view(state: &super::DesktopState) {
+        let found = match unsafe { find_shell() } {
+            Ok(found) => hwnd_ptr(found.def_view),
+            Err(_) => return,
+        };
+        let Ok(mut inner) = state.inner.lock() else {
+            return;
+        };
+        if !inner.attached || inner.def_view == Some(found) {
+            return;
+        }
+        log::info!("desktop icon list changed; re-hiding the new one");
+        inner.def_view = Some(found);
+        drop(inner);
+        hide_def_view(Some(found));
     }
 
     fn hide_def_view(def_view: Option<isize>) {
@@ -316,8 +331,12 @@ mod win {
     }
 
     fn apply_desktop_chrome(window: &WebviewWindow) -> Result<(), String> {
-        window.set_decorations(false).map_err(|err| err.to_string())?;
-        window.set_skip_taskbar(true).map_err(|err| err.to_string())?;
+        window
+            .set_decorations(false)
+            .map_err(|err| err.to_string())?;
+        window
+            .set_skip_taskbar(true)
+            .map_err(|err| err.to_string())?;
         let _ = window.set_shadow(false);
         let _ = window.set_resizable(false);
         Ok(())
@@ -395,21 +414,22 @@ mod win {
                 continue;
             }
             // WebView2 deadlocks if we build a window inside a sync command.
-            let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
-                .title("Alcove")
-                .decorations(false)
-                .shadow(false)
-                .resizable(false)
-                .skip_taskbar(true)
-                .visible(false)
-                .focused(false)
-                .background_color(tauri::window::Color(25, 25, 25, 255))
-                .initialization_script(format!(
-                    "window.__ALCOVE_DESK_ID__='{}';",
-                    id.replace('\\', "\\\\").replace('\'', "\\'")
-                ))
-                .build()
-                .map_err(|err| err.to_string())?;
+            let built =
+                WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
+                    .title("Alcove")
+                    .decorations(false)
+                    .shadow(false)
+                    .resizable(false)
+                    .skip_taskbar(true)
+                    .visible(false)
+                    .focused(false)
+                    .background_color(tauri::window::Color(25, 25, 25, 255))
+                    .initialization_script(format!(
+                        "window.__ALCOVE_DESK_ID__='{}';",
+                        id.replace('\\', "\\\\").replace('\'', "\\'")
+                    ))
+                    .build()
+                    .map_err(|err| err.to_string())?;
             apply_desktop_chrome(&built)?;
             place_on_monitor(&built, monitor)?;
             let _ = built.show();
@@ -437,7 +457,7 @@ mod win {
     /// until `reveal` so the user never sees a blank wallpaper gap.
     pub fn prepare(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
         let inner = state.inner.lock().map_err(|err| err.to_string())?;
-        if inner.attached {
+        if inner.prepared {
             return Ok(());
         }
         drop(inner);
@@ -450,10 +470,12 @@ mod win {
         }
         cover_work_area(window, hwnd, false)?;
         let mut inner = state.inner.lock().map_err(|err| err.to_string())?;
-        inner.attached = true;
+        inner.prepared = true;
         inner.def_view = Some(hwnd_ptr(shell.def_view));
         inner.desks.clear();
-        inner.desks.push((window.label().to_string(), hwnd_ptr(hwnd)));
+        inner
+            .desks
+            .push((window.label().to_string(), hwnd_ptr(hwnd)));
         log::info!("Alcove sized to the work area (still hidden)");
         Ok(())
     }
@@ -462,6 +484,7 @@ mod win {
         let def_view = state.inner.lock().map_err(|err| err.to_string())?.def_view;
         hide_def_view(def_view);
         crate::persist::mark_desktop_hidden(window.app_handle(), true);
+        state.inner.lock().map_err(|err| err.to_string())?.attached = true;
         let hwnd = window_hwnd(window)?;
         cover_work_area(window, hwnd, true)?;
         window.show().map_err(|err| err.to_string())?;
@@ -546,7 +569,8 @@ mod win {
         let app = window.app_handle().clone();
         close_extra_desks(&app);
         let mut inner = state.inner.lock().map_err(|err| err.to_string())?;
-        if let Some(def_view) = inner.def_view.take() {
+        let shown_def_view = inner.def_view.take();
+        if let Some(def_view) = shown_def_view {
             unsafe {
                 let _ = ShowWindow(hwnd_from(def_view), SW_SHOW);
             }
@@ -555,9 +579,25 @@ mod win {
         inner.desks.clear();
         let was_attached = inner.attached;
         inner.attached = false;
+        inner.prepared = false;
         drop(inner);
+        // The poller samples (attached, def_view) and hides the icon list a few
+        // instructions later. If it sampled just before this ran, its SW_HIDE
+        // lands after ours and the desktop stays empty with nothing left to fix
+        // it. Showing once more, after that tick can only have finished, closes
+        // the window.
+        if let Some(def_view) = shown_def_view {
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(120));
+                unsafe {
+                    let _ = ShowWindow(hwnd_from(def_view), SW_SHOW);
+                }
+            });
+        }
         if was_attached {
-            let main = app.get_webview_window("main").unwrap_or_else(|| window.clone());
+            let main = app
+                .get_webview_window("main")
+                .unwrap_or_else(|| window.clone());
             decorate_as_window(&main);
         }
         log::info!("Alcove detached from the desktop");
@@ -634,11 +674,20 @@ mod win {
                         burst_left = 0;
                         continue;
                     }
+                    if crate::harvest::desktop_restore_paused() {
+                        continue;
+                    }
                     if ticks % 67 == 0 {
                         let state = app.state::<super::DesktopState>();
                         if let Err(err) = sync_desks(&app, &state) {
                             log::warn!("desk sync: {err}");
                         }
+                        // Explorer can restart under us. The old SHELLDLL_DefView
+                        // handle is then dead, and Windows reuses handles — so
+                        // every later SW_HIDE could be hiding some other
+                        // process's window while the real icon list sits visible
+                        // on top of us. Re-find it.
+                        refresh_def_view(&state);
                     }
                     let win_d = win_d_pressed();
                     let just_pressed = win_d && !win_d_was_down;
@@ -734,6 +783,11 @@ pub struct DesktopState {
 
 #[derive(Default)]
 struct Inner {
+    /// Sized and hooked up to the shell. Says nothing about who owns the screen.
+    prepared: bool,
+    /// We are covering the desktop and Explorer's icon list is hidden. Only
+    /// `reveal` sets this, so the poller and `desktop_attached` cannot mistake
+    /// "ready to cover" for "covering".
     attached: bool,
     def_view: Option<isize>,
     desks: Vec<(String, isize)>,
@@ -741,7 +795,10 @@ struct Inner {
 
 impl DesktopState {
     pub fn attached(&self) -> bool {
-        self.inner.lock().map(|inner| inner.attached).unwrap_or(false)
+        self.inner
+            .lock()
+            .map(|inner| inner.attached)
+            .unwrap_or(false)
     }
 }
 

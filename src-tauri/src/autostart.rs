@@ -17,16 +17,16 @@ fn opt_out_path() -> PathBuf {
 #[cfg(windows)]
 mod win {
     use super::*;
+    #[cfg(not(debug_assertions))]
+    use windows::core::w;
     use windows::core::PCWSTR;
+    #[cfg(not(debug_assertions))]
+    use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
     use windows::Win32::System::Registry::{
         RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW,
         RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE,
         REG_OPTION_NON_VOLATILE, REG_SZ,
     };
-    #[cfg(not(debug_assertions))]
-    use windows::core::w;
-    #[cfg(not(debug_assertions))]
-    use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
     #[cfg(not(debug_assertions))]
     use windows::Win32::System::Threading::CreateMutexW;
 
@@ -105,9 +105,8 @@ mod win {
         let key = open_run_key(true)?;
         let name = wide(VALUE_NAME);
         let data = wide(&command);
-        let bytes = unsafe {
-            std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 2)
-        };
+        let bytes =
+            unsafe { std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 2) };
         let status =
             unsafe { RegSetValueExW(key, PCWSTR(name.as_ptr()), None, REG_SZ, Some(bytes)) };
         unsafe {

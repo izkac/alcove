@@ -84,6 +84,21 @@ description = "Read the Windows desktop wallpaper and background color"
 commands.allow = ["desktop_background"]
 
 [[permission]]
+identifier = "allow-pick-wallpaper"
+description = "Open a picture picker for the desktop wallpaper"
+commands.allow = ["pick_wallpaper"]
+
+[[permission]]
+identifier = "allow-set-wallpaper"
+description = "Set the Windows desktop wallpaper to a picture"
+commands.allow = ["set_wallpaper"]
+
+[[permission]]
+identifier = "allow-set-wallpaper-color"
+description = "Clear the wallpaper and set a plain desktop background colour"
+commands.allow = ["set_wallpaper_color"]
+
+[[permission]]
 identifier = "allow-set-windows-taskbar-hidden"
 description = "Toggle Windows taskbar auto-hide"
 commands.allow = ["set_windows_taskbar_hidden"]
@@ -142,6 +157,11 @@ commands.allow = ["list_desks"]
 identifier = "allow-desk-hit"
 description = "Hit-test which Alcove desk is under the cursor"
 commands.allow = ["desk_hit"]
+
+[[permission]]
+identifier = "allow-desktop-revision"
+description = "Read the counter that moves when the Desktop folder changes"
+commands.allow = ["desktop_revision"]
 
 [[permission]]
 identifier = "allow-load-desktop-state"

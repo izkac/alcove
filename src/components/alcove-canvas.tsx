@@ -17,7 +17,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { AlcoveGlyphGrid, AlcoveGlyphMark, resolveAlcoveGlyph } from "@/lib/alcove-glyphs"
-import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
+import { ALCOVE_COLOR_STYLES, tintStyle } from "@/lib/colors"
 import { DENSITY_CONFIG } from "@/lib/density"
 import { folderIconSize, folderViewFor } from "@/lib/folder-view"
 import { iconPack } from "@/lib/icon-select"
@@ -62,6 +62,16 @@ type AlcoveCanvasProps = {
 
 const UNGROUPED = "Everything else"
 
+const ICON_BTN =
+  "flex size-7 items-center justify-center rounded-md text-ink-muted outline-none transition-colors duration-150 hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-sel"
+
+const FILTER =
+  "h-8 border-transparent bg-surface-2 pr-2 pl-8 text-ink placeholder:text-ink-faint focus-visible:border-sel focus-visible:ring-sel/25 text-ui md:text-ui"
+
+/** Group-row controls: hidden until the row is hovered or focused, then quiet. */
+const GROUP_BTN =
+  "flex size-6 items-center justify-center rounded-md outline-none transition-colors duration-150 hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-sel disabled:opacity-30 disabled:hover:bg-transparent"
+
 /** Shared so an ungrouped Alcove keeps a stable identity across renders. */
 const NO_GROUPS: IconGroup[] = []
 
@@ -104,7 +114,6 @@ export function AlcoveCanvas({
 }: AlcoveCanvasProps) {
   const [query, setQuery] = useState("")
   const config = DENSITY_CONFIG[density]
-  const styles = ALCOVE_COLOR_STYLES[alcove.color]
   const groups = alcove.groups ?? NO_GROUPS
   const ctxIconRef = useRef<DesktopIcon | null>(null)
   const [menuIcon, setMenuIcon] = useState<DesktopIcon | null>(null)
@@ -158,11 +167,11 @@ export function AlcoveCanvas({
         onPointerDown={onIconPointerDown}
       />
     ) : items.length === 0 ? (
-      <p className="px-1 py-3 text-xs text-white/40">{empty}</p>
+      <p className="px-1 py-3 text-label text-ink-faint">{empty}</p>
     ) : (
       <div
-        className="grid gap-x-1 gap-y-2"
-        style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${config.icon + 34}px, 1fr))` }}
+        className="grid gap-x-1.5 gap-y-1"
+        style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${config.icon + 40}px, 1fr))` }}
       >
         {items.map((icon) => (
           <DesktopIconTile
@@ -181,20 +190,21 @@ export function AlcoveCanvas({
   return (
     <section
       data-alcove-id={alcove.id}
-      className={cn(
-        "flex h-full w-full min-h-0 flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/95 shadow-2xl",
-        styles.glow,
-      )}
+      aria-label={alcove.name}
+      className="alcove-rise flex h-full w-full min-h-0 flex-col overflow-hidden rounded-[14px] border border-hairline bg-desk text-ink shadow-sheet"
     >
-      <header className="flex items-center gap-2 px-4 pt-3 pb-2">
-        <span className={cn("flex size-8 items-center justify-center rounded-lg ring-1", styles.chip)}>
-          <AlcoveGlyphMark glyph={resolveAlcoveGlyph(alcove)} className="size-4" />
+      <header className="flex items-center gap-2.5 px-4 pt-3 pb-2">
+        <span
+          style={tintStyle(alcove.color)}
+          className="flex size-8 items-center justify-center rounded-[9px] bg-surface-2"
+        >
+          <AlcoveGlyphMark glyph={resolveAlcoveGlyph(alcove)} className="tint size-4" />
         </span>
         <ContextMenu>
           <ContextMenuTrigger asChild>
-            <button type="button" onDoubleClick={onEdit} className="text-left">
-              <span className="text-base font-medium text-white">{alcove.name}</span>
-              <span className="ml-2 text-xs text-white/55">
+            <button type="button" onDoubleClick={onEdit} className="rounded-md text-left outline-none focus-visible:outline-2 focus-visible:outline-sel">
+              <span className="text-title font-medium text-ink">{alcove.name}</span>
+              <span className="ml-2 text-ui text-ink-muted">
                 {query.trim() ? `${filtered.length}/${icons.length}` : icons.length}
               </span>
             </button>
@@ -214,6 +224,7 @@ export function AlcoveCanvas({
               <ContextMenuSubContent>
                 {ALCOVE_COLOR_IDS.map((color) => (
                   <ContextMenuItem key={color} onSelect={() => onRecolor(color)}>
+                    <span aria-hidden style={tintStyle(color)} className="tint-dot size-2.5 rounded-full" />
                     {ALCOVE_COLOR_STYLES[color].label}
                   </ContextMenuItem>
                 ))}
@@ -235,14 +246,15 @@ export function AlcoveCanvas({
             path={folderPath}
             onCrumb={onCrumb}
             onOpenHere={onOpenFolderHere}
-            className="min-w-0 max-w-[32rem] text-[11px]"
+            className="min-w-0 max-w-[32rem] text-label"
           />
         ) : null}
         <button
           type="button"
           title="Edit Alcove"
+          aria-label="Edit Alcove"
           onClick={onEdit}
-          className="flex size-7 items-center justify-center rounded-lg text-white/55 transition hover:bg-white/10 hover:text-white"
+          className={ICON_BTN}
         >
           <Pencil className="size-3.5" />
         </button>
@@ -250,21 +262,22 @@ export function AlcoveCanvas({
           <button
             type="button"
             title="Delete Alcove"
+            aria-label="Delete Alcove"
             onClick={onDelete}
-            className="flex size-7 items-center justify-center rounded-lg text-white/55 transition hover:bg-white/10 hover:text-red-300"
+            className={cn(ICON_BTN, "hover:text-destructive")}
           >
             <Trash2 className="size-3.5" />
           </button>
         ) : null}
 
         <div className="relative ml-auto w-56">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-white/45" />
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-faint" />
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Filter…"
+            placeholder="Filter"
             aria-label={`Filter ${alcove.name}`}
-            className="h-8 border-white/15 bg-white/10 pr-2 pl-8 text-white placeholder:text-white/40 md:text-xs dark:bg-white/10"
+            className={FILTER}
           />
         </div>
         {alcove.folderPath && onFolderView ? (
@@ -274,17 +287,18 @@ export function AlcoveCanvas({
           size="sm"
           variant="ghost"
           onClick={onNewGroup}
-          className="h-8 gap-1.5 px-2 text-white/75 hover:bg-white/10 hover:text-white"
+          className="h-8 gap-1.5 px-2 text-ink-muted hover:bg-surface-2 hover:text-ink"
         >
           <FolderPlus className="size-4" />
-          <span className="text-xs">New group</span>
+          <span className="text-ui">New group</span>
         </Button>
         <Button
           size="icon"
           variant="ghost"
           title="Show as a small panel"
+          aria-label="Show as a small panel"
           onClick={onCompact}
-          className="size-8 text-white/70 hover:bg-white/10 hover:text-white"
+          className="size-8 text-ink-muted hover:bg-surface-2 hover:text-ink"
         >
           <Minimize2 className="size-4" />
         </Button>
@@ -292,8 +306,9 @@ export function AlcoveCanvas({
           size="icon"
           variant="ghost"
           title="Close"
+          aria-label="Close"
           onClick={onClose}
-          className="size-8 text-white/70 hover:bg-white/10 hover:text-white"
+          className="size-8 text-ink-muted hover:bg-surface-2 hover:text-ink"
         >
           <X className="size-4" />
         </Button>
@@ -308,7 +323,7 @@ export function AlcoveCanvas({
         <ContextMenuTrigger asChild>
           <div
             data-drawer-scroll=""
-            className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pt-1 pb-4"
+            className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pt-1 pb-4"
             onContextMenuCapture={(event) => {
               const node = event.target
               if (!(node instanceof Element)) {
@@ -327,57 +342,60 @@ export function AlcoveCanvas({
             key={group.id}
             data-group-row={group.id}
             data-group-owner={alcove.id}
-            className="rounded-xl px-1"
+            className="rounded-lg px-1"
           >
             <ContextMenu>
               <ContextMenuTrigger asChild>
-                <div className="mb-1.5 flex w-full items-center gap-2">
-                  <span className={cn("h-3.5 w-1 rounded-full", styles.bar)} />
+                <div className="group/row mb-1 flex w-full items-center gap-2 border-b border-hairline pb-1.5">
                   <button
                     type="button"
                     onDoubleClick={() => onRenameGroup(group)}
-                    className="text-left"
+                    className="rounded text-left outline-none focus-visible:outline-2 focus-visible:outline-sel"
                   >
-                    <span className="text-xs font-medium tracking-wide text-white/90 uppercase">
+                    <span className="text-label font-medium tracking-[0.08em] text-ink-muted uppercase">
                       {group.name}
                     </span>
-                    <span className="ml-2 text-[11px] text-white/45">
+                    <span className="ml-2 text-label text-ink-faint">
                       {rows.byGroup.get(group.id)?.length ?? 0}
                     </span>
                   </button>
-                  <span className="ml-2 h-px flex-1 bg-white/10" />
-                  <span className="flex items-center gap-0.5 text-white/40">
+                  <span className="flex-1" />
+                  <span className="flex items-center gap-0.5 text-ink-faint opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 focus-within:opacity-100">
                     <button
                       type="button"
                       title="Move up"
+                      aria-label="Move group up"
                       disabled={index === 0}
                       onClick={() => onMoveGroup(group.id, -1)}
-                      className="flex size-6 items-center justify-center rounded-md hover:bg-white/10 hover:text-white disabled:opacity-25"
+                      className={GROUP_BTN}
                     >
                       <ChevronUp className="size-3.5" />
                     </button>
                     <button
                       type="button"
                       title="Move down"
+                      aria-label="Move group down"
                       disabled={index === groups.length - 1}
                       onClick={() => onMoveGroup(group.id, 1)}
-                      className="flex size-6 items-center justify-center rounded-md hover:bg-white/10 hover:text-white disabled:opacity-25"
+                      className={GROUP_BTN}
                     >
                       <ChevronDown className="size-3.5" />
                     </button>
                     <button
                       type="button"
                       title="Rename group"
+                      aria-label="Rename group"
                       onClick={() => onRenameGroup(group)}
-                      className="flex size-6 items-center justify-center rounded-md hover:bg-white/10 hover:text-white"
+                      className={GROUP_BTN}
                     >
                       <Pencil className="size-3.5" />
                     </button>
                     <button
                       type="button"
                       title="Delete group"
+                      aria-label="Delete group"
                       onClick={() => onDeleteGroup(group.id)}
-                      className="flex size-6 items-center justify-center rounded-md hover:bg-white/10 hover:text-red-300"
+                      className={cn(GROUP_BTN, "hover:text-destructive")}
                     >
                       <Trash2 className="size-3.5" />
                     </button>
@@ -408,16 +426,14 @@ export function AlcoveCanvas({
         <div
           data-group-row=""
           data-group-owner={alcove.id}
-          className="rounded-xl px-1"
+          className="rounded-lg px-1"
         >
           {groups.length > 0 ? (
-            <div className="mb-1.5 flex items-center gap-2">
-              <span className="h-3.5 w-1 rounded-full bg-white/25" />
-              <span className="text-xs font-medium tracking-wide text-white/60 uppercase">
+            <div className="mb-1 flex items-center gap-2 border-b border-hairline pb-1.5">
+              <span className="text-label font-medium tracking-[0.08em] text-ink-faint uppercase">
                 {UNGROUPED}
               </span>
-              <span className="text-[11px] text-white/40">{rows.loose.length}</span>
-              <span className="ml-2 h-px flex-1 bg-white/10" />
+              <span className="text-label text-ink-faint">{rows.loose.length}</span>
             </div>
           ) : null}
           {grid(

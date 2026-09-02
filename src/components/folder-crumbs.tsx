@@ -29,20 +29,20 @@ export function FolderCrumbs({
   const trail = crumbTrail(root, path || root)
   return (
     <span
-      className={cn("flex min-w-0 items-center gap-1 text-white/45", className)}
+      className={cn("flex min-w-0 items-center gap-1 text-ink-faint", className)}
       title={path || root}
     >
       {trail.map((crumb, index) => {
         const last = index === trail.length - 1
         return (
           <span key={crumb.path} className="flex min-w-0 items-center gap-1">
-            {index > 0 ? <span className="text-white/25">/</span> : null}
+            {index > 0 ? <span aria-hidden>/</span> : null}
             {last || !onCrumb ? (
-              <span className={cn("truncate", last && "text-white/70")}>{crumb.name}</span>
+              <span className={cn("truncate", last && "text-ink-muted")}>{crumb.name}</span>
             ) : (
               <button
                 type="button"
-                className="truncate rounded hover:text-white/80 hover:underline"
+                className="truncate rounded outline-none hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-sel"
                 onClick={(event) => {
                   event.stopPropagation()
                   onCrumb(crumb.path)
@@ -55,14 +55,14 @@ export function FolderCrumbs({
         )
       })}
       {count === undefined ? null : (
-        <span className="shrink-0 text-white/35">· {count} items</span>
+        <span className="shrink-0">· {count} items</span>
       )}
       {onOpenHere ? (
         <button
           type="button"
           title="Open this folder in Explorer"
           aria-label="Open this folder in Explorer"
-          className="shrink-0 rounded p-0.5 text-white/40 hover:bg-white/10 hover:text-white/80"
+          className="shrink-0 rounded p-0.5 outline-none transition-colors duration-150 hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-sel"
           onClick={(event) => {
             event.stopPropagation()
             onOpenHere()

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Dock } from "@/components/taskbar"
 import { hydrateDesktopState, loadDesktopState } from "@/lib/storage"
 import { invoke, isTauri } from "@/lib/tauri"
+import { applyText, applyTone } from "@/lib/wallpaper"
 import { pulseLaunch } from "@/lib/launch-pulse"
 import type { DesktopIcon } from "@/types"
 import { SquareStack } from "lucide-react"
@@ -33,6 +34,11 @@ export function BarStrip() {
     }
   }, [])
 
+  useEffect(() => {
+    applyTone(state?.surfaceTone ?? "tinted")
+    applyText(state?.textSize ?? "default", state?.strongText === true)
+  }, [state?.surfaceTone, state?.textSize, state?.strongText])
+
   // Saved state drops imageUrl to stay small; fetch real icon art directly.
   const [iconArt, setIconArt] = useState<Record<string, string>>({})
   useEffect(() => {
@@ -60,19 +66,20 @@ export function BarStrip() {
   }
 
   return (
-    <div className="flex h-svh items-center gap-2 border-t border-white/10 bg-zinc-950/85 px-3 text-white backdrop-blur-xl">
+    <div className="flex h-svh items-center gap-2 border-t border-hairline bg-surface px-3 text-ink">
       <button
         type="button"
         title="Show the desktop"
+        aria-label="Show the desktop"
         onClick={() => invoke("focus_desktop").catch(() => undefined)}
-        className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/15 transition hover:bg-white/25"
+        className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-ink-muted outline-none transition-colors duration-150 hover:bg-surface-3 hover:text-ink focus-visible:outline-2 focus-visible:outline-sel"
       >
         <SquareStack className="size-5" />
       </button>
       <div className="flex min-w-0 flex-1 items-center justify-center">
         <Dock pinnedIcons={pinnedIcons} onOpenIcon={openIcon} />
       </div>
-      <span className="shrink-0 px-1.5 text-xs tabular-nums text-white/80">
+      <span className="shrink-0 px-1.5 text-meta text-ink-muted">
         {clock}
       </span>
     </div>

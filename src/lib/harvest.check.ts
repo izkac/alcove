@@ -3,7 +3,13 @@
  * has to survive that merge. Run: npm run check
  */
 import assert from "node:assert/strict"
-import { isSampleMock, mergeHarvest, mergeLiveFolder, renameMap } from "./harvest-merge.ts"
+import {
+  fileableIds,
+  isSampleMock,
+  mergeHarvest,
+  mergeLiveFolder,
+  renameMap,
+} from "./harvest-merge.ts"
 import type { Alcove, DesktopIcon, DesktopState } from "../types.ts"
 
 const apps: Alcove = {
@@ -277,6 +283,46 @@ assert.equal(
   renamedInFolder.icons.find((icon) => icon.path?.endsWith("final.zip"))?.groupId,
   "zips",
   "renaming inside a live folder keeps the group row",
+)
+
+// --- what a drop is allowed to file ---------------------------------------
+// A drawer mirroring a folder on disk is not a filing cabinet in either
+// direction, and a drilled row is not state at all.
+const rooms = [
+  { id: "apps", folderPath: null },
+  { id: "downloads", folderPath: "C:\Users\me\Downloads" },
+]
+const onDesk = new Set(["a", "b"])
+
+assert.deepEqual(
+  fileableIds(rooms, "apps", [{ id: "a", alcoveId: "inbox" }], onDesk),
+  ["a"],
+  "an ordinary drawer takes an ordinary icon",
+)
+assert.deepEqual(
+  fileableIds(rooms, "downloads", [{ id: "a", alcoveId: "inbox" }], onDesk),
+  [],
+  "nothing can be filed into a drawer that mirrors a folder",
+)
+assert.deepEqual(
+  fileableIds(rooms, "apps", [{ id: "a", alcoveId: "downloads" }], onDesk),
+  [],
+  "nothing can be filed out of a drawer that mirrors a folder",
+)
+assert.deepEqual(
+  fileableIds(rooms, "apps", [{ id: "ghost", alcoveId: null }], onDesk),
+  [],
+  "a drilled row is a view, not state, so it files nowhere",
+)
+assert.deepEqual(
+  fileableIds(
+    rooms,
+    "apps",
+    [{ id: "a", alcoveId: "inbox" }, { id: "ghost", alcoveId: null }],
+    onDesk,
+  ),
+  ["a"],
+  "a mixed drop files the real icons and drops the rest",
 )
 
 console.log("harvest merge: all checks passed")

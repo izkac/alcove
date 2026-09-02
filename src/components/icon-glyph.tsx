@@ -9,15 +9,19 @@ import {
   Image,
 } from "lucide-react"
 
-const FACE: Record<string, { bg: string; Icon: typeof AppWindow }> = {
-  app: { bg: "from-sky-500 to-blue-700", Icon: AppWindow },
-  folder: { bg: "from-amber-300 to-amber-500", Icon: Folder },
-  installer: { bg: "from-orange-500 to-red-600", Icon: FileArchive },
-  shortcut: { bg: "from-indigo-400 to-violet-700", Icon: AppWindow },
-  image: { bg: "from-fuchsia-400 to-rose-600", Icon: Image },
-  zip: { bg: "from-amber-500 to-orange-800", Icon: FileArchive },
-  exe: { bg: "from-orange-500 to-red-700", Icon: FileArchive },
-  msi: { bg: "from-orange-500 to-red-700", Icon: FileArchive },
+/**
+ * Stand-in faces for files Windows gave us no art for. One flat colour per kind,
+ * lightness fixed so a white glyph reads on it in either theme.
+ */
+const FACE: Record<string, { hue: number; Icon: typeof AppWindow }> = {
+  app: { hue: 245, Icon: AppWindow },
+  folder: { hue: 80, Icon: Folder },
+  installer: { hue: 40, Icon: FileArchive },
+  shortcut: { hue: 290, Icon: AppWindow },
+  image: { hue: 350, Icon: Image },
+  zip: { hue: 60, Icon: FileArchive },
+  exe: { hue: 30, Icon: FileArchive },
+  msi: { hue: 30, Icon: FileArchive },
 }
 
 /** Band colour for the sheet. Anything unlisted gets the neutral slate. */
@@ -55,7 +59,7 @@ function DocSheet({ ext, size, className }: { ext?: string; size: number; classN
       viewBox="0 0 32 32"
       width={size}
       height={size}
-      className={cn("drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]", className)}
+      className={className}
       style={{ width: size, height: size }}
       aria-hidden
     >
@@ -114,7 +118,7 @@ export const IconGlyph = memo(function IconGlyph({ icon, size, className }: Icon
         alt=""
         draggable={false}
         decoding="async"
-        className={cn("bg-transparent object-contain drop-shadow-[0_1px_1px_rgba(0,0,0,0.45)]", className)}
+        className={cn("bg-transparent object-contain", className)}
         style={{ width: size, height: size }}
         aria-hidden
       />
@@ -122,16 +126,15 @@ export const IconGlyph = memo(function IconGlyph({ icon, size, className }: Icon
   }
   const face = (icon.extension && FACE[icon.extension]) ?? FACE[icon.kind]
   if (!face) return <DocSheet ext={icon.extension} size={size} className={className} />
-  const { bg, Icon } = face
+  const { hue, Icon } = face
   const glyph = Math.round(size * 0.46)
   return (
     <div
       className={cn(
-        "flex items-center justify-center rounded-xl bg-linear-to-br text-white shadow-md ring-1 ring-white/25",
-        bg,
+        "flex items-center justify-center rounded-[22%] text-white ring-1 ring-black/10",
         className,
       )}
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, background: `oklch(58% 0.1 ${hue})` }}
       aria-hidden
     >
       <Icon style={{ width: glyph, height: glyph }} strokeWidth={1.75} />

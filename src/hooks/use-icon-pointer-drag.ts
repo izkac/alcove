@@ -284,6 +284,7 @@ export function useIconPointerDrag(
   const originRef = useRef<DragOrigin | null>(null)
   const draggingRef = useRef(false)
   const handedOffRef = useRef(false)
+  const handoffTimerRef = useRef<number | null>(null)
   const awayRef = useRef(false)
   const hoverRef = useRef<Element | null>(null)
   const pointRef = useRef({ x: 0, y: 0 })
@@ -331,6 +332,10 @@ export function useIconPointerDrag(
   }, [])
 
   const endDrag = useCallback(() => {
+    if (handoffTimerRef.current !== null) {
+      window.clearTimeout(handoffTimerRef.current)
+      handoffTimerRef.current = null
+    }
     stopRaf()
     draggingRef.current = false
     handedOffRef.current = false
@@ -605,6 +610,14 @@ export function useIconPointerDrag(
         channelRef.current?.postMessage({
           type: "icon-drag-handoff",
         } satisfies DeskChannelMessage)
+        // A cancelled drag hands off and waits to be told the ghost landed.
+        // On one monitor nobody answers, and the drag chrome it leaves behind
+        // makes the open drawer see-through and click-through until the next
+        // drag. Give the hand-off a deadline.
+        handoffTimerRef.current = window.setTimeout(() => {
+          handoffTimerRef.current = null
+          endDrag()
+        }, 2000)
         if (isTauri()) {
           invoke<DeskHit | null>("desk_hit")
             .then((hit) => {

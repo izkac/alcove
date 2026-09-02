@@ -3,6 +3,7 @@ import { SearchOverlayCard } from "@/components/search-spotlight"
 import { deskChannel } from "@/lib/desk-strip"
 import { hydrateDesktopState, loadDesktopState } from "@/lib/storage"
 import { invoke, isTauri } from "@/lib/tauri"
+import { applyText, applyTone } from "@/lib/wallpaper"
 import type { Alcove, DesktopIcon, DesktopState } from "@/types"
 
 function hide() {
@@ -65,6 +66,11 @@ export function SearchOverlay() {
     }
   }, [])
 
+  useEffect(() => {
+    applyTone(state?.surfaceTone ?? "tinted")
+    applyText(state?.textSize ?? "default", state?.strongText === true)
+  }, [state?.surfaceTone, state?.textSize, state?.strongText])
+
   const alcoves: Alcove[] = state?.alcoves ?? []
   const icons: DesktopIcon[] = useMemo(() => {
     if (!state) return []
@@ -95,7 +101,7 @@ export function SearchOverlay() {
       onClick={() => hide()}
     >
       <div
-        className="flex h-full flex-col overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-2xl ring-1 ring-white/15"
+        className="flex h-full flex-col overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-pop ring-1 ring-hairline"
         onClick={(event) => event.stopPropagation()}
       >
         <SearchOverlayCard

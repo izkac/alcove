@@ -52,14 +52,14 @@ export function FrequentStrip({
         edge === "bottom" ? "pt-1 pb-3" : "pt-3 pb-1",
       )}
     >
-      <div className="pointer-events-auto flex max-w-full items-start gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-black/40 px-2 py-1.5 shadow-2xl backdrop-blur-2xl">
+      <div className="pointer-events-auto flex max-w-full items-start gap-0.5 overflow-x-auto rounded-2xl border border-dock-line bg-dock px-2 py-1.5 shadow-dock">
         {tools.map((tool) => (
           <ToolSlot key={tool.id} tool={tool} onOpen={onOpenTool} />
         ))}
         {tools.length > 0 && icons.length > 0 ? (
           <div
             aria-hidden
-            className="mx-1.5 mt-1.5 h-9 w-0.5 shrink-0 self-start rounded-full bg-white/50"
+            className="mx-1.5 mt-2.5 h-8 w-px shrink-0 self-start bg-dock-line"
           />
         ) : null}
         {icons.map((icon) => {
@@ -80,15 +80,15 @@ export function FrequentStrip({
                   data-strip-label={icon.name}
                   data-launch-pulse={icon.id}
                   onClick={() => onOpen(icon)}
-                  className={cn(
-                    "relative flex w-[64px] shrink-0 flex-col items-center gap-1 rounded-xl px-1 py-1.5 outline-none transition",
-                    "hover:bg-white/12 focus-visible:ring-2 focus-visible:ring-white/50",
-                  )}
+                  className={SLOT}
                 >
-                  <IconGlyph icon={icon} size={34} />
+                  <IconGlyph icon={icon} size={34} className="home-mark" />
                   <SlotLabel>{icon.name.replace(/\.[^.]+$/, "")}</SlotLabel>
                   {kept ? (
-                    <Pin className="absolute top-0.5 right-1 size-2.5 fill-sky-300 text-sky-300" />
+                    <Pin
+                      aria-label="Kept in this slot"
+                      className="absolute top-1 right-1.5 size-2.5 fill-sel text-sel"
+                    />
                   ) : null}
                 </button>
               </ContextMenuTrigger>
@@ -130,12 +130,9 @@ function ToolSlot({
           data-strip-label={tool.label}
           data-launch-pulse={tool.id}
           onClick={() => onOpen(tool)}
-          className={cn(
-            "relative flex w-[64px] shrink-0 flex-col items-center gap-1 rounded-xl px-1 py-1.5 outline-none transition",
-            "hover:bg-white/12 focus-visible:ring-2 focus-visible:ring-white/50",
-          )}
+          className={SLOT}
         >
-          <StripToolGlyph tool={tool} size={34} />
+          <StripToolGlyph tool={tool} size={34} className="home-mark" />
           <SlotLabel>{tool.label}</SlotLabel>
         </button>
       </ContextMenuTrigger>
@@ -146,9 +143,13 @@ function ToolSlot({
   )
 }
 
+/** One slot, tool or app: the same box, so the strip reads as one row. */
+const SLOT =
+  "relative flex w-[66px] shrink-0 flex-col items-center gap-1.5 rounded-[10px] px-1 pt-1.5 pb-1 outline-none transition-colors duration-150 hover:bg-veil-hover focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sel"
+
 function SlotLabel({ children }: { children: string }) {
   return (
-    <span className="line-clamp-2 w-full text-center text-[10px] leading-tight break-words text-white/85">
+    <span className="home-ink line-clamp-2 w-full text-center text-label break-words">
       {children}
     </span>
   )

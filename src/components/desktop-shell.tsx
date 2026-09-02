@@ -4,6 +4,7 @@ import { toast } from "sonner"
 import { AlcoveCanvas } from "@/components/alcove-canvas"
 import { AlcovePanel } from "@/components/alcove-panel"
 import { PreviewCard } from "@/components/preview-card"
+import { BackgroundDialog } from "@/components/background-dialog"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import {
   CreateAlcoveDialog,
@@ -22,6 +23,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import type { AlcoveDesktopApi } from "@/hooks/use-alcove-desktop"
@@ -37,7 +41,12 @@ import { TOP_SLOTS } from "@/lib/frecency"
 import { useUpdateCheck } from "@/lib/update"
 import { pulseLaunch } from "@/lib/launch-pulse"
 import { parentWithin } from "@/lib/crumbs"
-import { folderLeaf, toDesktopIcon, type HarvestedIcon } from "@/lib/harvest-merge"
+import {
+  fileableIds,
+  folderLeaf,
+  toDesktopIcon,
+  type HarvestedIcon,
+} from "@/lib/harvest-merge"
 import { alcovesOnDesk, deskChannel, type DeskChannelMessage } from "@/lib/desk-strip"
 import {
   dragIconIds,
@@ -48,6 +57,14 @@ import {
 } from "@/lib/icon-select"
 import { DEFAULT_STRIP_TOOL_IDS, toolsForIds, type StripTool } from "@/lib/strip-tools"
 import { invoke, isTauri } from "@/lib/tauri"
+import {
+  announceWallpaperChange,
+  applyTheme,
+  applyText,
+  applyTone,
+  onWallpaperChange,
+  themeFromBackground,
+} from "@/lib/wallpaper"
 import { disproportionateId, totalByteSize } from "@/lib/weight"
 import type { Alcove, AlcoveColor, DesktopIcon } from "@/types"
 
@@ -65,6 +82,15 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
   const closeDrawerRef = useRef<() => void>(() => undefined)
 
   const onOpenSettings = useCallback(() => setSettingsOpen(true), [])
+
+  // Surface and text settings are CSS-only once they are on <html>.
+  useEffect(() => {
+    applyTone(state.surfaceTone ?? "tinted")
+  }, [state.surfaceTone])
+
+  useEffect(() => {
+    applyText(state.textSize ?? "default", state.strongText === true)
+  }, [state.textSize, state.strongText])
   const onOpenCreate = useCallback((icons: DesktopIcon[] = []) => {
     setEditAlcove(null)
     setCreateWithIcons(icons)
@@ -107,7 +133,7 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
   }, [])
 
   return (
-    <div className="relative flex h-svh min-h-0 flex-col overflow-hidden text-white">
+    <div className="relative flex h-svh min-h-0 flex-col overflow-hidden text-ink">
       <DesktopWorkspace
         desktop={desktop}
         closeDrawerRef={closeDrawerRef}
@@ -172,12 +198,18 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
         density={state.density}
         focusMode={state.focusMode}
         stripEdge={state.stripEdge}
+        surfaceTone={state.surfaceTone ?? "tinted"}
+        textSize={state.textSize ?? "default"}
+        strongText={state.strongText === true}
         stripToolIds={state.stripToolIds ?? DEFAULT_STRIP_TOOL_IDS}
         desktopAttached={desktopAttached}
         onLayout={desktop.setLayout}
         onDensity={desktop.setDensity}
         onFocusMode={desktop.setFocusMode}
         onStripEdge={desktop.setStripEdge}
+        onSurfaceTone={desktop.setSurfaceTone}
+        onTextSize={desktop.setTextSize}
+        onStrongText={desktop.setStrongText}
         onStripToolIds={desktop.setStripToolIds}
         topSlotCount={state.topSlotCount ?? TOP_SLOTS}
         onTopSlotCount={desktop.setTopSlotCount}
@@ -224,6 +256,9 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
 }: DesktopWorkspaceProps) {
   const { state, sortedAlcoves, iconsIn } = desktop
   const { desk, desks, stripHover } = useDesk()
+  const [backgroundOpen, setBackgroundOpen] = useState(false)
+  // The desktop's current colour, so the picker opens where the user already is.
+  const [deskColor, setDeskColor] = useState("#1B2027")
   useUpdateCheck(desk.primary)
   const deskAlcoves = alcovesOnDesk(sortedAlcoves, desk, desks)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -255,6 +290,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      if (inOverlay(event)) return
       const meta = event.ctrlKey || event.metaKey
       if (meta && event.key.toLowerCase() === "f") {
         event.preventDefault()
@@ -368,6 +404,37 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     toast(`Opened ${tool.label}`)
   }
 
+  /** Swap the Windows wallpaper for a picture the user picks. */
+  function chooseWallpaper() {
+    if (!isTauri()) {
+      toast("Changing the wallpaper is only on Windows")
+      return
+    }
+    invoke<string | null>("pick_wallpaper")
+      .then((path) => {
+        if (!path) return
+        return invoke("set_wallpaper", { path }).then(() => {
+          announceWallpaperChange()
+          toast("Wallpaper changed")
+        })
+      })
+      .catch((err) => toast(err instanceof Error ? err.message : String(err)))
+  }
+
+  /** Clear the wallpaper and leave a plain colour. */
+  function applyBackgroundColor(color: string) {
+    if (!isTauri()) {
+      toast("Changing the background is only on Windows")
+      return
+    }
+    invoke("set_wallpaper_color", { color })
+      .then(() => {
+        announceWallpaperChange()
+        toast("Background set")
+      })
+      .catch((err) => toast(err instanceof Error ? err.message : String(err)))
+  }
+
   function typingInField() {
     const el = document.activeElement
     if (!(el instanceof HTMLElement)) return false
@@ -375,12 +442,31 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable
   }
 
+  /**
+   * A dialog or menu owns the keyboard while it is open. Without this, Enter on
+   * the delete confirmation cancels it *and* opens the files, and Ctrl+V behind
+   * Settings pastes onto the desktop.
+   */
+  function inOverlay(event: KeyboardEvent) {
+    if (event.defaultPrevented) return true
+    const el = document.activeElement
+    return (
+      el instanceof Element &&
+      el.closest('[role="dialog"],[role="menu"],[role="alertdialog"]') !== null
+    )
+  }
+
   function pasteHere() {
-    const dest = openAlcove?.folderPath ?? null
+    const dest = drill?.path ?? openAlcove?.folderPath ?? null
     const assign = openAlcove && !openAlcove.isInbox ? openAlcove.id : null
-    desktop.pasteFiles(dest, assign).catch((err) => {
-      toast(err instanceof Error ? err.message : String(err))
-    })
+    desktop
+      .pasteFiles(dest, assign)
+      .then(() => {
+        if (drill) drillInto(drill.alcoveId, drill.path)
+      })
+      .catch((err) => {
+        toast(err instanceof Error ? err.message : String(err))
+      })
   }
 
   // Closing a drawer resets it to its own folder — the cursor is never saved.
@@ -395,9 +481,15 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
   }
 
   function confirmedRemove(icons: DesktopIcon[]) {
-    desktop.deleteIcons(icons).catch((err) => {
-      toast(err instanceof Error ? err.message : String(err))
-    })
+    desktop
+      .deleteIcons(icons)
+      .then(() => {
+        // The drilled listing is a view, not state, so nothing else refreshes it.
+        if (drill) drillInto(drill.alcoveId, drill.path)
+      })
+      .catch((err) => {
+        toast(err instanceof Error ? err.message : String(err))
+      })
     setSelectedIds([])
   }
 
@@ -411,7 +503,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (typingInField()) return
+      if (typingInField() || inOverlay(event)) return
       const meta = event.ctrlKey || event.metaKey
       if (meta && event.key.toLowerCase() === "v") {
         event.preventDefault()
@@ -489,34 +581,45 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
 
   const applyDrop = useCallback(
     (icons: DesktopIcon[], target: IconDropTarget) => {
-      const ids = icons.map((icon) => icon.id)
-      if (target.kind === "group") {
-        desktop.moveIconsToGroup(ids, target.alcoveId, target.groupId)
-        desktop.unparkIcons(ids)
-        setSelectedIds([])
-        return
-      }
-      if (target.kind === "alcove") {
-        const moving = icons.filter((icon) => icon.alcoveId !== target.id)
-        if (moving.length > 0) {
-          desktop.moveIcons(
-            moving.map((icon) => icon.id),
-            target.id,
-          )
+      const known = new Set(state.icons.map((icon) => icon.id))
+      // Drilled rows are a view, not state, and a drawer that mirrors a folder
+      // refuses filing in both directions. See fileableIds for why.
+      const mirrors = (alcoveId: string) =>
+        Boolean(state.alcoves.find((item) => item.id === alcoveId)?.folderPath)
+      if (target.kind === "group" || target.kind === "alcove") {
+        const into = target.kind === "group" ? target.alcoveId : target.id
+        const canFile = fileableIds(state.alcoves, into, icons, known)
+        if (canFile.length === 0) {
+          if (mirrors(into)) toast("That drawer mirrors a folder on disk")
+          return
         }
-        desktop.unparkIcons(ids)
+        if (target.kind === "group") {
+          desktop.moveIconsToGroup(canFile, into, target.groupId)
+        } else {
+          desktop.moveIcons(canFile, into)
+        }
+        desktop.unparkIcons(canFile)
         setSelectedIds([])
         return
       }
       if (target.kind === "pin") {
-        desktop.pinIcons(ids)
+        const pinnable = icons.filter((icon) => known.has(icon.id))
+        if (pinnable.length === 0) return
+        desktop.pinIcons(pinnable.map((icon) => icon.id))
         return
       }
       if (target.kind === "wallpaper") {
         // Parking shows an icon on the desktop; it does not move it. Whatever
         // drawer it was sorted into keeps it, so the desktop is a second view
         // of the same file rather than a place things fall out of.
-        desktop.parkIcons(ids, target.x, target.y, desk.id)
+        const parkable = icons.filter((icon) => known.has(icon.id))
+        if (parkable.length === 0) return
+        desktop.parkIcons(
+          parkable.map((icon) => icon.id),
+          target.x,
+          target.y,
+          desk.id,
+        )
         setOpenAlcoveId(null)
         setSelectedIds([])
         return
@@ -537,7 +640,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         return
       }
     },
-    [desktop, desk.id],
+    [desktop, desk.id, state.icons, state.alcoves],
   )
 
   const dropIconsAt = useCallback(
@@ -685,7 +788,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <Wallpaper />
+      <Wallpaper onColor={setDeskColor} />
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <main
@@ -978,6 +1081,30 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
           >
             Collapse all
           </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>Background</ContextMenuSubTrigger>
+            <ContextMenuSubContent>
+              <ContextMenuItem onSelect={chooseWallpaper}>
+                Choose a picture…
+              </ContextMenuItem>
+              <ContextMenuItem onSelect={() => setBackgroundOpen(true)}>
+                Solid colour…
+              </ContextMenuItem>
+              {isTauri() ? (
+                <>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    onSelect={() =>
+                      openInExplorer("ms-settings:personalization-background")
+                    }
+                  >
+                    Windows personalisation…
+                  </ContextMenuItem>
+                </>
+              ) : null}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
           {isTauri() ? null : (
             <>
               <ContextMenuSeparator />
@@ -993,6 +1120,12 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         selectedIds={selectedIds}
         onOpenIcon={openIcon}
         onIconPointerDown={onIconPointerDown}
+      />
+      <BackgroundDialog
+        open={backgroundOpen}
+        current={deskColor}
+        onOpenChange={setBackgroundOpen}
+        onApply={applyBackgroundColor}
       />
       <OnboardingDialog
         open={state.phase === "onboarding"}
@@ -1057,23 +1190,56 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
   )
 })
 
-function Wallpaper() {
+/**
+ * The browser mock has no Windows wallpaper, so it paints one of two stand-ins.
+ * `?dark` picks the dark one, which is how the slate theme gets exercised in
+ * development without a second machine.
+ */
+const MOCK_WALLPAPER = {
+  light: "linear-gradient(115deg, oklch(45% 0.19 255) 0%, oklch(62% 0.17 240) 48%, oklch(78% 0.13 225) 100%)",
+  dark: "radial-gradient(120% 90% at 22% 28%, oklch(30% 0.03 300) 0%, oklch(20% 0.02 290) 45%, oklch(12% 0.012 280) 100%)",
+}
+
+function Wallpaper({ onColor }: { onColor?: (hex: string) => void }) {
   const [background, setBackground] = useState<{
     color: string
     imageUrl: string | null
   }>({ color: "#191919", imageUrl: null })
-
+  const colorRef = useRef(onColor)
   useEffect(() => {
-    if (!isTauri()) return
+    colorRef.current = onColor
+  }, [onColor])
+
+  const load = useCallback(() => {
+    if (!isTauri()) {
+      const dark = new URLSearchParams(window.location.search).has("dark")
+      // The light stand-in mimics the Windows 10 wallpaper's numbers.
+      applyTheme(
+        dark
+          ? { mode: "dark", hue: 290, chroma: 0.03, lightness: 0.2 }
+          : { mode: "light", hue: 250, chroma: 0.16, lightness: 0.57 },
+      )
+      return
+    }
     invoke<{ color: string; imageUrl: string | null }>("desktop_background")
       .then((next) => {
-        setBackground({
-          color: next.color || "#191919",
-          imageUrl: next.imageUrl,
-        })
+        const color = next.color || "#191919"
+        setBackground({ color, imageUrl: next.imageUrl })
+        colorRef.current?.(color)
+        // Read the wallpaper before deciding whether we are paper or slate.
+        return themeFromBackground(color, next.imageUrl).then(applyTheme)
       })
       .catch(() => undefined)
   }, [])
+
+  // Re-read when the wallpaper is replaced, from this desk or another.
+  useEffect(() => {
+    load()
+    return onWallpaperChange(load)
+  }, [load])
+
+  const mockDark =
+    !isTauri() && new URLSearchParams(window.location.search).has("dark")
 
   return (
     <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden>
@@ -1083,7 +1249,9 @@ function Wallpaper() {
           backgroundColor: background.color,
           backgroundImage: background.imageUrl
             ? `url("${background.imageUrl}")`
-            : undefined,
+            : isTauri()
+              ? undefined
+              : MOCK_WALLPAPER[mockDark ? "dark" : "light"],
           backgroundSize: background.imageUrl ? "cover" : undefined,
         }}
       />
@@ -1094,16 +1262,16 @@ function Wallpaper() {
 function EmptyDesktopHint({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center p-6">
-      <div className="pointer-events-auto max-w-sm rounded-2xl border border-white/15 bg-black/30 p-5 text-center backdrop-blur-xl">
-        <p className="text-lg font-medium">A clear desktop</p>
-        <p className="mt-1 text-sm text-white/70">
-          Double-click the wallpaper to make an Alcove, or drop a sample file
-          into Inbox.
+      <div className="alcove-rise pointer-events-auto max-w-xs rounded-2xl border border-hairline bg-surface px-6 py-5 text-center text-ink shadow-pop">
+        <p className="text-title font-medium">A clear desktop</p>
+        <p className="mt-1 text-ui text-ink-muted">
+          Double-click the wallpaper to make an Alcove. New files on the Desktop
+          will land in the Inbox on their own.
         </p>
         <button
           type="button"
           onClick={onCreate}
-          className="mt-3 text-sm text-sky-200 underline-offset-4 hover:underline"
+          className="mt-3 rounded text-ui font-medium text-sel underline-offset-4 outline-none hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sel"
         >
           Create your first Alcove
         </button>
@@ -1114,11 +1282,11 @@ function EmptyDesktopHint({ onCreate }: { onCreate: () => void }) {
 
 function ScatteredPreview({ icons }: { icons: DesktopIcon[] }) {
   return (
-    <div className="grid w-full grid-cols-3 gap-4 opacity-40 sm:grid-cols-6 md:grid-cols-8">
+    <div className="grid w-full grid-cols-3 gap-4 opacity-50 sm:grid-cols-6 md:grid-cols-8">
       {icons.slice(0, 24).map((icon) => (
-        <div key={icon.id} className="flex flex-col items-center gap-1">
-          <div className="size-12 rounded-xl bg-white/15" />
-          <span className="line-clamp-1 w-full text-center text-[10px]">
+        <div key={icon.id} className="on-wallpaper flex flex-col items-center gap-1">
+          <div className="size-12 rounded-xl bg-[oklch(100%_0_0/0.18)]" />
+          <span className="line-clamp-1 w-full text-center text-label">
             {icon.name}
           </span>
         </div>

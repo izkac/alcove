@@ -13,7 +13,7 @@ browser it runs as a clickable mock with sample data, which is how you develop i
 
 ## Install
 
-Download `Alcove_0.1.0_x64-setup.exe` and run it. It installs for the current user,
+Download `Alcove_0.2.0_x64-setup.exe` and run it. It installs for the current user,
 adds Alcove to the Start menu, and registers it to start at sign-in. You can turn
 sign-in start off in Settings; uninstalling removes it.
 
@@ -31,6 +31,12 @@ To build the installer yourself, see [Building](#building) below.
   you can make named rows and drag icons between them.
 - **Mirrors real folders.** Point a drawer at a folder on disk and it shows that
   folder's live contents, with icon, list and details views and sortable columns.
+- **Notices new files.** Alcove watches your Desktop folder, so anything another
+  program saves there turns up in the Inbox without a restart.
+- **Takes its colour from your wallpaper.** Surfaces sit one step above the
+  picture in its own hue, so Alcove looks like part of the desk rather than an
+  app on top of it. Right-click the wallpaper to change the picture or swap it
+  for a plain colour.
 - **Learns what you open.** The frequent strip along the top or bottom edge fills
   itself with what you actually use. Slots hold their position as ranks shift, so
   nothing moves under your cursor mid-click.

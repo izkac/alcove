@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
+import { tintStyle } from "@/lib/colors"
 import type { SuggestedGroup } from "@/types"
 
 type OnboardingDialogProps = {
@@ -88,7 +88,9 @@ export function OnboardingDialog({
               >
                 <div className="flex items-center gap-2">
                   <span
-                    className={`size-2.5 rounded-full ${ALCOVE_COLOR_STYLES[group.color].bar}`}
+                    aria-hidden
+                    style={tintStyle(group.color)}
+                    className="tint-dot size-2.5 shrink-0 rounded-full"
                   />
                   <Input
                     value={group.name}

@@ -61,6 +61,34 @@ export function isSampleMock(state: {
   )
 }
 
+/**
+ * Which of the dropped icons may actually be filed into `alcoveId`.
+ *
+ * Two rules, both of which used to be missing on the group-row drop path and
+ * cost the user the file:
+ *
+ * - A drawer that mirrors a folder shows that folder's contents. Anything filed
+ *   into it looks placed, then disappears at the next listing; anything filed
+ *   *out* of it comes straight back. Neither direction is allowed.
+ * - A drilled-into folder's rows are a view, not state. Filing one leaves an id
+ *   that renders nothing and, for a pin, eats one of the eight corner slots.
+ */
+export function fileableIds(
+  alcoves: Pick<Alcove, "id" | "folderPath">[],
+  alcoveId: string,
+  dropped: Pick<DesktopIcon, "id" | "alcoveId">[],
+  known: ReadonlySet<string>,
+): string[] {
+  const live = new Set(
+    alcoves.filter((alcove) => alcove.folderPath).map((alcove) => alcove.id),
+  )
+  if (live.has(alcoveId)) return []
+  return dropped
+    .filter((icon) => known.has(icon.id))
+    .filter((icon) => !icon.alcoveId || !live.has(icon.alcoveId))
+    .map((icon) => icon.id)
+}
+
 export function liveAlcoveIds(alcoves: Alcove[]): Set<string> {
   return new Set(
     alcoves.filter((alcove) => alcove.folderPath).map((alcove) => alcove.id),

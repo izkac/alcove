@@ -31,8 +31,8 @@ mod win {
         EnumWindows, FindWindowW, GetClassNameW, GetCursorPos, GetForegroundWindow,
         GetSystemMetrics, GetWindow, GetWindowLongW, GetWindowTextW, GetWindowThreadProcessId,
         IsIconic, IsWindowVisible, SetForegroundWindow, SetWindowPos, ShowWindow, GWL_EXSTYLE,
-        GW_OWNER, HWND_TOPMOST, SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE, SWP_SHOWWINDOW,
-        SW_HIDE, SW_RESTORE, SW_SHOWNOACTIVATE, WS_EX_TOOLWINDOW,
+        GW_OWNER, HWND_TOPMOST, SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE,
+        SW_RESTORE, SW_SHOWNOACTIVATE, WS_EX_TOOLWINDOW,
     };
 
     fn appbar_data() -> APPBARDATA {
@@ -201,9 +201,11 @@ mod win {
         std::thread::spawn(move || {
             let mut visible = false;
             loop {
-                std::thread::sleep(std::time::Duration::from_millis(
-                    if visible { 120 } else { 60 },
-                ));
+                std::thread::sleep(std::time::Duration::from_millis(if visible {
+                    120
+                } else {
+                    60
+                }));
                 let Some(bar) = app.get_webview_window("bar") else {
                     std::thread::sleep(std::time::Duration::from_secs(1));
                     continue;
@@ -225,12 +227,8 @@ mod win {
                 let scale = bar.scale_factor().unwrap_or(1.0);
                 let bar_px = (52.0 * scale).round() as i32;
                 if !visible && point.y >= screen_h - 2 {
-                    let _ = bar.set_size(tauri::PhysicalSize::new(
-                        screen_w as u32,
-                        bar_px as u32,
-                    ));
-                    let _ = bar
-                        .set_position(tauri::PhysicalPosition::new(0, screen_h - bar_px));
+                    let _ = bar.set_size(tauri::PhysicalSize::new(screen_w as u32, bar_px as u32));
+                    let _ = bar.set_position(tauri::PhysicalPosition::new(0, screen_h - bar_px));
                     if let Ok(handle) = bar.hwnd() {
                         let hwnd = HWND(handle.0 as *mut core::ffi::c_void);
                         unsafe {

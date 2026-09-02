@@ -11,7 +11,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ALCOVE_COLOR_IDS } from "@/types"
-import { ALCOVE_COLOR_STYLES } from "@/lib/colors"
+import { ALCOVE_COLOR_STYLES, tintStyle } from "@/lib/colors"
 import {
   AlcoveGlyphGrid,
   defaultAlcoveGlyph,
@@ -238,10 +238,11 @@ export function CreateAlcoveDialog({
                   key={id}
                   type="button"
                   onClick={() => setColor(id)}
+                  style={tintStyle(id)}
+                  aria-pressed={color === id}
                   className={cn(
-                    "size-7 rounded-full ring-2 ring-offset-2 ring-offset-background",
-                    ALCOVE_COLOR_STYLES[id].bar,
-                    color === id ? "ring-foreground" : "ring-transparent",
+                    "tint-dot size-7 rounded-full ring-2 ring-offset-2 ring-offset-popover outline-none transition-[box-shadow] duration-150 focus-visible:ring-sel",
+                    color === id ? "ring-foreground" : "ring-transparent hover:ring-hairline",
                   )}
                   aria-label={ALCOVE_COLOR_STYLES[id].label}
                 />

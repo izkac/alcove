@@ -1,4 +1,47 @@
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use serde::Serialize;
+
+/// While this is above zero the desktop poller must not raise Alcove. A shell
+/// file dialog AVs if it disables the WebView, and a TOPMOST pulse over that
+/// dialog does the same.
+static RESTORE_PAUSE: AtomicU32 = AtomicU32::new(0);
+
+pub fn desktop_restore_paused() -> bool {
+    RESTORE_PAUSE.load(Ordering::Relaxed) > 0
+}
+
+pub fn pause_desktop_restore() -> RestorePause {
+    RestorePause::enter()
+}
+
+pub struct RestorePause;
+
+impl RestorePause {
+    fn enter() -> Self {
+        RESTORE_PAUSE.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+
+impl Drop for RestorePause {
+    fn drop(&mut self) {
+        RESTORE_PAUSE.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+#[cfg(test)]
+mod restore_pause_tests {
+    #[test]
+    fn pause_guard_is_visible_then_clears() {
+        assert!(!super::desktop_restore_paused());
+        {
+            let _guard = super::RestorePause::enter();
+            assert!(super::desktop_restore_paused());
+        }
+        assert!(!super::desktop_restore_paused());
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,22 +90,22 @@ mod win {
     use windows::core::{HSTRING, PCWSTR, PWSTR};
     use windows::Win32::Foundation::{HINSTANCE, SIZE};
     use windows::Win32::Graphics::Gdi::{
-        CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, GetDIBits,
-        GetObjectW, ReleaseDC, SelectObject, BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB,
-        DIB_RGB_COLORS, HBITMAP, HGDIOBJ,
+        CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, GetDIBits, GetObjectW,
+        ReleaseDC, SelectObject, BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+        HBITMAP, HGDIOBJ,
     };
     use windows::Win32::System::Com::{
         CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_APARTMENTTHREADED,
     };
     use windows::Win32::UI::Controls::IImageList;
     use windows::Win32::UI::Shell::{
-        SHCreateItemFromParsingName, SHGetFileInfoW, SHGetKnownFolderPath, SHGetStockIconInfo,
-        ExtractIconExW, SHDefExtractIconW, ShellExecuteW, FOLDERID_Desktop, FOLDERID_Documents,
-        FOLDERID_Downloads, FOLDERID_Pictures, FOLDERID_PublicDesktop, FOLDERID_Screenshots,
-        IShellItem2, IShellItemImageFactory, KF_FLAG_DEFAULT, SHFILEINFOW, SHGFI_DISPLAYNAME,
-        SHGFI_SYSICONINDEX, SHGSI_SYSICONINDEX, SHSTOCKICONINFO, SIID_RECYCLER, SIID_RECYCLERFULL,
-        SIIGBF, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY, SIIGBF_THUMBNAILONLY, SHIL_EXTRALARGE,
-        SHIL_JUMBO,
+        DesktopWallpaper, ExtractIconExW, FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Downloads,
+        FOLDERID_Pictures, FOLDERID_PublicDesktop, FOLDERID_Screenshots, IDesktopWallpaper,
+        IShellItem2, IShellItemImageFactory, SHCreateItemFromParsingName, SHDefExtractIconW,
+        SHGetFileInfoW, SHGetKnownFolderPath, SHGetStockIconInfo, ShellExecuteW, KF_FLAG_DEFAULT,
+        SHFILEINFOW, SHGFI_DISPLAYNAME, SHGFI_SYSICONINDEX, SHGSI_SYSICONINDEX, SHIL_EXTRALARGE,
+        SHIL_JUMBO, SHSTOCKICONINFO, SIID_RECYCLER, SIID_RECYCLERFULL, SIIGBF, SIIGBF_BIGGERSIZEOK,
+        SIIGBF_ICONONLY, SIIGBF_THUMBNAILONLY,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         CreatePopupMenu, DestroyIcon, DestroyMenu, DrawIconEx, GetIconInfo, TrackPopupMenu,
@@ -92,11 +135,11 @@ mod win {
     }
 
     pub fn list_icons() -> Result<Vec<HarvestedIcon>, String> {
-        let mut cache = harvest_memo()
-            .lock()
-            .map_err(|err| err.to_string())?;
-        if let Some(icons) = cache.as_ref() {
-            return Ok(icons.clone());
+        let mut cache = harvest_memo().lock().map_err(|err| err.to_string())?;
+        if let Some((at, icons)) = cache.as_ref() {
+            if at.elapsed() < HARVEST_MEMO_TTL {
+                return Ok(icons.clone());
+            }
         }
         let _com = ComGuard::new();
         let started = std::time::Instant::now();
@@ -107,7 +150,7 @@ mod win {
                 icons.len(),
                 started.elapsed().as_millis()
             );
-            *cache = Some(icons.clone());
+            *cache = Some((std::time::Instant::now(), icons.clone()));
         }
         result
     }
@@ -137,8 +180,8 @@ mod win {
 
     fn known_folder(id: &windows::core::GUID) -> Result<PathBuf, String> {
         unsafe {
-            let pwstr: PWSTR = SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, None)
-                    .map_err(|err| err.to_string())?;
+            let pwstr: PWSTR =
+                SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, None).map_err(|err| err.to_string())?;
             let os = pwstr.to_string().map_err(|err| err.to_string())?;
             CoTaskMemFree(Some(pwstr.0 as *const _ as *const std::ffi::c_void));
             Ok(PathBuf::from(os))
@@ -160,11 +203,23 @@ mod win {
             if name.eq_ignore_ascii_case("desktop.ini")
                 || name.eq_ignore_ascii_case("thumbs.db")
                 || name.starts_with('.')
+                || is_hidden(&entry)
             {
                 continue;
             }
             out.push(path);
         }
+    }
+
+    /// Explorer hides these; so should we. Office lock files (`~$report.docx`)
+    /// are the ones users actually notice.
+    fn is_hidden(entry: &std::fs::DirEntry) -> bool {
+        use std::os::windows::fs::MetadataExt;
+        const HIDDEN_OR_SYSTEM: u32 = 0x2 | 0x4;
+        entry
+            .metadata()
+            .map(|meta| meta.file_attributes() & HIDDEN_OR_SYSTEM != 0)
+            .unwrap_or(false)
     }
 
     fn unix_ms(time: std::time::SystemTime) -> Option<i64> {
@@ -224,7 +279,11 @@ mod win {
     }
 
     fn display_name(path: &Path) -> String {
-        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+        let wide: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
         let mut info = SHFILEINFOW::default();
         let ok = unsafe {
             SHGetFileInfoW(
@@ -283,8 +342,15 @@ mod win {
             pid: 5,
         };
 
-    fn harvest_memo() -> &'static std::sync::Mutex<Option<Vec<HarvestedIcon>>> {
-        static CACHE: std::sync::OnceLock<std::sync::Mutex<Option<Vec<HarvestedIcon>>>> =
+    /// Long enough to absorb the startup stampede - every desk window harvests
+    /// at once - and short enough that any later call sees the real folder. A
+    /// permanent memo means a file added in Explorer never appears at all.
+    const HARVEST_MEMO_TTL: std::time::Duration = std::time::Duration::from_secs(2);
+
+    type HarvestMemo = Option<(std::time::Instant, Vec<HarvestedIcon>)>;
+
+    fn harvest_memo() -> &'static std::sync::Mutex<HarvestMemo> {
+        static CACHE: std::sync::OnceLock<std::sync::Mutex<HarvestMemo>> =
             std::sync::OnceLock::new();
         CACHE.get_or_init(|| std::sync::Mutex::new(None))
     }
@@ -305,7 +371,12 @@ mod win {
         let (raw, index) = split_icon_index(target);
         let path = expand_env_path(raw);
         let png = if !path.exists() {
-            shell_item_png(raw, EXTRACT_PX, MIN_ICON_EDGE, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK)?
+            shell_item_png(
+                raw,
+                EXTRACT_PX,
+                MIN_ICON_EDGE,
+                SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK,
+            )?
         } else if index > 0 {
             // Cache is keyed by path alone, so non-zero indices skip it.
             private_extract_png(&path, index, EXTRACT_PX, MIN_ICON_EDGE)?
@@ -344,11 +415,12 @@ mod win {
         // THUMBNAILONLY means "no icon fallback" — a miss is the answer, not an
         // error, so we can tell "here is the document" from "there is nothing
         // to show" instead of caching a blown-up 48px icon as a preview.
-        let Ok(png) = shell_item_png(
+        let Ok(png) = shell_item_png_raw(
             &path.to_string_lossy(),
             THUMB_PX,
             0,
             SIIGBF_THUMBNAILONLY | SIIGBF_BIGGERSIZEOK,
+            true,
         ) else {
             return Ok(None);
         };
@@ -391,12 +463,22 @@ mod win {
         if let Ok(png) = imagelist_png(path, None, SHIL_EXTRALARGE as i32, MIN_ICON_EDGE) {
             return Ok(png);
         }
-        if let Ok(png) = shell_item_png(&path.to_string_lossy(), EXTRACT_PX, MIN_ICON_EDGE, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK) {
+        if let Ok(png) = shell_item_png(
+            &path.to_string_lossy(),
+            EXTRACT_PX,
+            MIN_ICON_EDGE,
+            SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK,
+        ) {
             return Ok(png);
         }
         if let Some(aumid) = app_user_model_id(path) {
             let parsing = format!("shell:AppsFolder\\{aumid}");
-            if let Ok(png) = shell_item_png(&parsing, EXTRACT_PX, MIN_ICON_EDGE, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK) {
+            if let Ok(png) = shell_item_png(
+                &parsing,
+                EXTRACT_PX,
+                MIN_ICON_EDGE,
+                SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK,
+            ) {
                 return Ok(png);
             }
         }
@@ -410,7 +492,9 @@ mod win {
 
     fn icon_cache_dir() -> Option<std::path::PathBuf> {
         let base = std::env::var_os("LOCALAPPDATA")?;
-        let dir = std::path::PathBuf::from(base).join("alcove").join("icon-cache");
+        let dir = std::path::PathBuf::from(base)
+            .join("alcove")
+            .join("icon-cache");
         std::fs::create_dir_all(&dir).ok()?;
         Some(dir)
     }
@@ -449,7 +533,10 @@ mod win {
     }
 
     fn wide_path(path: &Path) -> Vec<u16> {
-        path.as_os_str().encode_wide().chain(std::iter::once(0)).collect()
+        path.as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
     }
 
     fn extract_targets(path: &Path) -> Vec<(PathBuf, i32)> {
@@ -471,7 +558,10 @@ mod win {
         if !file.exists() {
             return;
         }
-        if out.iter().any(|(existing, i)| existing == &file && *i == index) {
+        if out
+            .iter()
+            .any(|(existing, i)| existing == &file && *i == index)
+        {
             return;
         }
         out.push((file, index));
@@ -483,12 +573,11 @@ mod win {
             CoCreateInstance, IPersistFile, CLSCTX_INPROC_SERVER, STGM_READ,
         };
         use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
-        let link: IShellLinkW = match unsafe {
-            CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)
-        } {
-            Ok(link) => link,
-            Err(_) => return Vec::new(),
-        };
+        let link: IShellLinkW =
+            match unsafe { CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER) } {
+                Ok(link) => link,
+                Err(_) => return Vec::new(),
+            };
         let persist: IPersistFile = match link.cast() {
             Ok(persist) => persist,
             Err(_) => return Vec::new(),
@@ -523,7 +612,21 @@ mod win {
             .or_else(|| aumid_from_lnk_file(path))
     }
 
+    /// Scan a shortcut's own bytes for the AppUserModelID the shell would not
+    /// give us. Only ever a `.lnk`, and only a small one: this is reached for
+    /// every file whose icon needs extracting, so without the guard a 4 GB ISO
+    /// on the Desktop is read into memory - twice - on the main thread.
     fn aumid_from_lnk_file(path: &Path) -> Option<String> {
+        const LNK_MAX: u64 = 1 << 20;
+        if !path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("lnk"))
+        {
+            return None;
+        }
+        if std::fs::metadata(path).ok()?.len() > LNK_MAX {
+            return None;
+        }
         let bytes = std::fs::read(path).ok()?;
         find_aumid_utf16(&bytes).or_else(|| find_aumid_utf16(bytes.get(1..)?))
     }
@@ -589,8 +692,7 @@ mod win {
         let link: IShellLinkW =
             unsafe { CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER) }.ok()?;
         let persist: IPersistFile = link.cast().ok()?;
-        unsafe { persist.Load(&HSTRING::from(path.to_string_lossy().as_ref()), STGM_READ) }
-            .ok()?;
+        unsafe { persist.Load(&HSTRING::from(path.to_string_lossy().as_ref()), STGM_READ) }.ok()?;
         Some(link)
     }
 
@@ -788,9 +890,8 @@ mod win {
     fn extract_icon_at(path: &Path, index: i32, min_edge: u32) -> Result<Vec<u8>, String> {
         let wide = wide_path(path);
         let mut large = windows::Win32::UI::WindowsAndMessaging::HICON::default();
-        let count = unsafe {
-            ExtractIconExW(PCWSTR(wide.as_ptr()), index, Some(&mut large), None, 1)
-        };
+        let count =
+            unsafe { ExtractIconExW(PCWSTR(wide.as_ptr()), index, Some(&mut large), None, 1) };
         if count == 0 || large.0.is_null() {
             return Err("ExtractIconEx found nothing".into());
         }
@@ -801,11 +902,25 @@ mod win {
         png
     }
 
+    /// `raw` keeps the bitmap exactly as the shell drew it. The icon path runs
+    /// heuristics that reject blank or washed-out results, which is right for a
+    /// placeholder icon and wrong for a document thumbnail: page one of most
+    /// documents is a white page with a little ink, i.e. exactly "washed out".
     fn shell_item_png(
         parsing: &str,
         size: i32,
         min_edge: u32,
         flags: SIIGBF,
+    ) -> Result<Vec<u8>, String> {
+        shell_item_png_raw(parsing, size, min_edge, flags, false)
+    }
+
+    fn shell_item_png_raw(
+        parsing: &str,
+        size: i32,
+        min_edge: u32,
+        flags: SIIGBF,
+        raw: bool,
     ) -> Result<Vec<u8>, String> {
         let hstring = HSTRING::from(parsing);
         let factory: IShellItemImageFactory =
@@ -813,7 +928,7 @@ mod win {
                 .map_err(|err| err.to_string())?;
         let hbmp = unsafe { factory.GetImage(SIZE { cx: size, cy: size }, flags) }
             .map_err(|err| err.to_string())?;
-        let png = unsafe { hbitmap_to_png(hbmp, min_edge) };
+        let png = unsafe { hbitmap_to_png(hbmp, min_edge, raw) };
         unsafe {
             let _ = DeleteObject(HGDIOBJ(hbmp.0));
         }
@@ -823,8 +938,7 @@ mod win {
     fn shell_display_name(parsing: &str) -> Option<String> {
         use windows::Win32::UI::Shell::{IShellItem, SIGDN_NORMALDISPLAY};
         let hstring = HSTRING::from(parsing);
-        let item: IShellItem =
-            unsafe { SHCreateItemFromParsingName(&hstring, None) }.ok()?;
+        let item: IShellItem = unsafe { SHCreateItemFromParsingName(&hstring, None) }.ok()?;
         let pwstr = unsafe { item.GetDisplayName(SIGDN_NORMALDISPLAY) }.ok()?;
         let name = unsafe { pwstr.to_string() }.ok();
         unsafe {
@@ -840,7 +954,14 @@ mod win {
 
     fn recycle_bin_inner() -> Result<super::RecycleBin, String> {
         const PARSING: &str = "shell:RecycleBinFolder";
-        let png = recycle_bin_png().or_else(|_| shell_item_png(PARSING, EXTRACT_PX, 0, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK))?;
+        let png = recycle_bin_png().or_else(|_| {
+            shell_item_png(
+                PARSING,
+                EXTRACT_PX,
+                0,
+                SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK,
+            )
+        })?;
         let image_url = format!(
             "data:image/png;base64,{}",
             base64::engine::general_purpose::STANDARD.encode(png)
@@ -855,15 +976,13 @@ mod win {
     fn recycle_bin_png() -> Result<Vec<u8>, String> {
         use windows::Win32::UI::Controls::{IImageList, ILD_TRANSPARENT};
         use windows::Win32::UI::Shell::{
-            SHGetImageList, SHQUERYRBINFO, SHQueryRecycleBinW, SHIL_JUMBO,
+            SHGetImageList, SHQueryRecycleBinW, SHIL_JUMBO, SHQUERYRBINFO,
         };
         let mut query = SHQUERYRBINFO {
             cbSize: std::mem::size_of::<SHQUERYRBINFO>() as u32,
             ..Default::default()
         };
-        let full = unsafe { SHQueryRecycleBinW(None, &mut query) }
-            .is_ok()
-            && query.i64NumItems > 0;
+        let full = unsafe { SHQueryRecycleBinW(None, &mut query) }.is_ok() && query.i64NumItems > 0;
         let mut info = SHSTOCKICONINFO {
             cbSize: std::mem::size_of::<SHSTOCKICONINFO>() as u32,
             ..Default::default()
@@ -964,7 +1083,7 @@ mod win {
         use windows::core::PCSTR;
         use windows::Win32::Foundation::HWND;
         use windows::Win32::UI::Shell::{
-            IContextMenu, IShellItem, BHID_SFUIObject, CMF_NORMAL, CMINVOKECOMMANDINFO,
+            BHID_SFUIObject, IContextMenu, IShellItem, CMF_NORMAL, CMINVOKECOMMANDINFO,
         };
         let _com = ComGuard::new();
         let result = (|| {
@@ -975,36 +1094,46 @@ mod win {
             let ctx: IContextMenu = unsafe { item.BindToHandler(None, &BHID_SFUIObject) }
                 .map_err(|err| err.to_string())?;
             let menu = unsafe { CreatePopupMenu() }.map_err(|err| err.to_string())?;
-            unsafe { ctx.QueryContextMenu(menu, 0, 1, 0x7FFF, CMF_NORMAL) }
-                .ok()
-                .map_err(|err| err.to_string())?;
             let owner = HWND(hwnd as *mut core::ffi::c_void);
-            let cmd = unsafe {
-                TrackPopupMenu(
-                    menu,
-                    TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN,
-                    x,
-                    y,
-                    Some(0),
-                    owner,
-                    None,
-                )
-            };
-            let code = cmd.0 as u32;
-            if code > 0 {
-                let mut invoke = CMINVOKECOMMANDINFO {
-                    cbSize: std::mem::size_of::<CMINVOKECOMMANDINFO>() as u32,
-                    hwnd: owner,
-                    lpVerb: PCSTR((code as usize - 1) as *const u8),
-                    nShow: SW_SHOWNORMAL.0 as i32,
-                    ..Default::default()
+            // Every early return past this point has to free the menu, so the
+            // body is its own closure and DestroyMenu runs on the way out.
+            let picked = (|| {
+                unsafe { ctx.QueryContextMenu(menu, 0, 1, 0x7FFF, CMF_NORMAL) }
+                    .ok()
+                    .map_err(|err| err.to_string())?;
+                // Without this the menu does not close when the user clicks
+                // away from it - it just sits there until something is picked.
+                unsafe {
+                    let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(owner);
+                }
+                let cmd = unsafe {
+                    TrackPopupMenu(
+                        menu,
+                        TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN,
+                        x,
+                        y,
+                        Some(0),
+                        owner,
+                        None,
+                    )
                 };
-                unsafe { ctx.InvokeCommand(&mut invoke) }.map_err(|err| err.to_string())?;
-            }
+                let code = cmd.0 as u32;
+                if code > 0 {
+                    let invoke = CMINVOKECOMMANDINFO {
+                        cbSize: std::mem::size_of::<CMINVOKECOMMANDINFO>() as u32,
+                        hwnd: owner,
+                        lpVerb: PCSTR((code as usize - 1) as *const u8),
+                        nShow: SW_SHOWNORMAL.0,
+                        ..Default::default()
+                    };
+                    unsafe { ctx.InvokeCommand(&invoke) }.map_err(|err| err.to_string())?;
+                }
+                Ok(())
+            })();
             unsafe {
                 let _ = DestroyMenu(menu);
             }
-            Ok(())
+            picked
         })();
         result
     }
@@ -1033,6 +1162,26 @@ mod win {
         Ok(())
     }
 
+    /// The folders that make up "the Desktop". Public Desktop is where
+    /// installers drop shortcuts for every user, so it is the one that changes
+    /// behind the user's back most often.
+    pub fn desktop_dirs() -> Vec<PathBuf> {
+        let _com = ComGuard::new();
+        let mut dirs = Vec::new();
+        if let Ok(dir) = known_folder(&FOLDERID_Desktop) {
+            dirs.push(dir);
+        }
+        if let Ok(dir) = known_folder(&FOLDERID_PublicDesktop) {
+            dirs.push(dir);
+        }
+        dirs
+    }
+
+    /// Drop the harvest memo so the very next listing re-reads the folder.
+    pub fn forget_icons() {
+        invalidate_icon_cache();
+    }
+
     fn invalidate_icon_cache() {
         if let Ok(mut cache) = harvest_memo().lock() {
             *cache = None;
@@ -1053,8 +1202,8 @@ mod win {
     pub fn paste_into(hwnd: isize, dest: Option<&str>) -> Result<(), String> {
         use windows::Win32::System::Ole::OleGetClipboard;
         use windows::Win32::UI::Shell::{
-            FILEOPERATION_FLAGS, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOCONFIRMMKDIR,
-            FOF_RENAMEONCOLLISION, IFileOperation, IShellItem,
+            IFileOperation, IShellItem, FILEOPERATION_FLAGS, FOF_ALLOWUNDO, FOF_NOCONFIRMATION,
+            FOF_NOCONFIRMMKDIR, FOF_RENAMEONCOLLISION,
         };
         let dest_path = match dest {
             Some(path) if !path.trim().is_empty() => PathBuf::from(path.trim()),
@@ -1095,8 +1244,8 @@ mod win {
 
     pub fn recycle_paths(hwnd: isize, paths: &[String]) -> Result<(), String> {
         use windows::Win32::UI::Shell::{
-            FO_DELETE, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_SILENT, SHFILEOPSTRUCTW,
-            SHFileOperationW,
+            SHFileOperationW, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_SILENT, FOF_WANTNUKEWARNING,
+            FO_DELETE, SHFILEOPSTRUCTW,
         };
         if paths.is_empty() {
             return Ok(());
@@ -1122,7 +1271,13 @@ mod win {
             // Alcove asks before calling this, and Windows' own prompt is off
             // by default anyway, so asking here would be a second dialog most
             // people never see. ALLOWUNDO keeps the Recycle Bin as the net.
-            fFlags: (FOF_ALLOWUNDO.0 | FOF_NOCONFIRMATION.0 | FOF_SILENT.0) as u16,
+            // WANTNUKEWARNING deliberately overrides NOCONFIRMATION for the one
+            // case that is not a recycle at all: a network share, a stick with
+            // no bin, or a file over the bin's size limit deletes for good.
+            // Alcove's menu says "Delete" and its docs promise the Recycle Bin,
+            // so that prompt is the user's only warning.
+            fFlags: (FOF_ALLOWUNDO.0 | FOF_NOCONFIRMATION.0 | FOF_WANTNUKEWARNING.0 | FOF_SILENT.0)
+                as u16,
             fAnyOperationsAborted: windows::core::BOOL(0),
             hNameMappings: std::ptr::null_mut(),
             lpszProgressTitle: PCWSTR::null(),
@@ -1210,7 +1365,7 @@ mod win {
         transcoded.is_file().then_some(transcoded)
     }
 
-    unsafe fn hbitmap_to_png(hbmp: HBITMAP, min_edge: u32) -> Result<Vec<u8>, String> {
+    unsafe fn hbitmap_to_png(hbmp: HBITMAP, min_edge: u32, raw: bool) -> Result<Vec<u8>, String> {
         let mut bm = BITMAP::default();
         if GetObjectW(
             HGDIOBJ(hbmp.0),
@@ -1253,7 +1408,20 @@ mod win {
             return Err("could not copy icon pixels".into());
         }
         let mut rgba = bgra_to_rgba(&bgra);
-        encode_icon_rgba(std::mem::take(&mut rgba), width as u32, height as u32, min_edge)
+        if raw {
+            // A thumbnail is opaque; GetDIBits often hands back an all-zero
+            // alpha channel for one, which would read as fully transparent.
+            for pixel in rgba.chunks_exact_mut(4) {
+                pixel[3] = 255;
+            }
+            return encode_png(width as u32, height as u32, &rgba);
+        }
+        encode_icon_rgba(
+            std::mem::take(&mut rgba),
+            width as u32,
+            height as u32,
+            min_edge,
+        )
     }
 
     fn bgra_to_rgba(bgra: &[u8]) -> Vec<u8> {
@@ -1413,8 +1581,8 @@ mod win {
         if width == 0 || height == 0 || rgba.len() < 4 {
             return (width, height, rgba.to_vec());
         }
-        let pad = dominant_plate(rgba, width, height)
-            .or_else(|| padding_swatch(rgba, width, height));
+        let pad =
+            dominant_plate(rgba, width, height).or_else(|| padding_swatch(rgba, width, height));
         let mut min_x = width;
         let mut min_y = height;
         let mut max_x = 0u32;
@@ -1491,10 +1659,14 @@ mod win {
     fn list_folder_inner(root: &Path) -> Result<Vec<HarvestedIcon>, String> {
         let mut paths = Vec::new();
         collect_folder(root, &mut paths);
-        paths.sort_by(|a, b| {
-            let ma = a.metadata().and_then(|meta| meta.modified()).ok();
-            let mb = b.metadata().and_then(|meta| meta.modified()).ok();
-            mb.cmp(&ma).then_with(|| a.file_name().cmp(&b.file_name()))
+        // Cache the stat: a comparator that calls metadata() runs it O(n log n)
+        // times, which is ~60k syscalls for a 5,000-file Downloads folder.
+        paths.sort_by_cached_key(|path| {
+            let modified = path.metadata().and_then(|meta| meta.modified()).ok();
+            (
+                std::cmp::Reverse(modified),
+                path.file_name().map(|name| name.to_owned()),
+            )
         });
         if paths.len() > FOLDER_LIST_CAP {
             log::warn!(
@@ -1576,16 +1748,7 @@ mod win {
     }
 
     pub fn pick_folder(_hwnd: isize) -> Result<Option<String>, String> {
-        let (tx, rx) = std::sync::mpsc::channel();
-        let worker = std::thread::Builder::new()
-            .name("alcove-folder-picker".into())
-            .spawn(move || {
-                let _ = tx.send(pick_folder_sta());
-            })
-            .map_err(|err| err.to_string())?;
-        let picked = rx.recv().map_err(|err| err.to_string())?;
-        let _ = worker.join();
-        picked
+        pick_folder_sta()
     }
 
     fn pick_folder_sta() -> Result<Option<String>, String> {
@@ -1593,11 +1756,10 @@ mod win {
         use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
         use windows::Win32::System::Ole::{OleInitialize, OleUninitialize};
         use windows::Win32::UI::Shell::{
-            FileOpenDialog, IFileDialog, IFileOpenDialog, IModalWindow, IShellItem,
-            FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS, SIGDN_FILESYSPATH,
+            FileOpenDialog, IFileDialog, IFileOpenDialog, IShellItem, FOS_FORCEFILESYSTEM,
+            FOS_PICKFOLDERS, SIGDN_FILESYSPATH,
         };
-        // Fresh STA thread: do not parent the dialog to the WorkerW-hosted
-        // Alcove hwnd — that AVs when the shell disables the owner.
+        let _pause = super::RestorePause::enter();
         let ole_ok = unsafe { OleInitialize(None) }.is_ok();
         log::info!("folder picker open");
         let result = (|| -> Result<Option<String>, String> {
@@ -1611,8 +1773,7 @@ mod win {
                 file_dialog
                     .SetOptions(options)
                     .map_err(|err| err.to_string())?;
-                let modal: IModalWindow = dialog.cast().map_err(|err| err.to_string())?;
-                if modal.Show(None).is_err() {
+                if !show_file_dialog(&dialog)? {
                     return Ok(None);
                 }
                 let item: IShellItem = file_dialog.GetResult().map_err(|err| err.to_string())?;
@@ -1638,6 +1799,201 @@ mod win {
         result
     }
 
+    /// The picture dialog. Must run on the UI thread: a worker STA still
+    /// access-violates inside comdlg32 at IFileOpenDialog::Show.
+    pub fn pick_image(_hwnd: isize) -> Result<Option<String>, String> {
+        pick_image_sta()
+    }
+
+    fn pick_image_sta() -> Result<Option<String>, String> {
+        use windows::core::Interface;
+        use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+        use windows::Win32::System::Ole::{OleInitialize, OleUninitialize};
+        use windows::Win32::UI::Shell::{
+            FileOpenDialog, IFileDialog, IFileOpenDialog, IShellItem, FOS_FILEMUSTEXIST,
+            FOS_FORCEFILESYSTEM, SIGDN_FILESYSPATH,
+        };
+        let _pause = super::RestorePause::enter();
+        let ole_ok = unsafe { OleInitialize(None) }.is_ok();
+        crate::crash::breadcrumb(&format!(
+            "wallpaper picker: ole ready thread={:?}",
+            std::thread::current().name()
+        ));
+        let result = (|| -> Result<Option<String>, String> {
+            unsafe {
+                crate::crash::breadcrumb("wallpaper picker: CoCreateInstance");
+                let dialog: IFileOpenDialog =
+                    CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)
+                        .map_err(|err| err.to_string())?;
+                crate::crash::breadcrumb("wallpaper picker: SetFileTypes");
+                let file_dialog: IFileDialog = dialog.cast().map_err(|err| err.to_string())?;
+                file_dialog
+                    .SetFileTypes(&picture_filters())
+                    .map_err(|err| err.to_string())?;
+                crate::crash::breadcrumb("wallpaper picker: SetOptions");
+                let mut options = file_dialog.GetOptions().map_err(|err| err.to_string())?;
+                options |= FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST;
+                file_dialog
+                    .SetOptions(options)
+                    .map_err(|err| err.to_string())?;
+                crate::crash::breadcrumb("wallpaper picker: SetDefaultFolder");
+                if let Ok(dir) = known_folder(&FOLDERID_Pictures) {
+                    let hstring = HSTRING::from(dir.as_os_str());
+                    if let Ok(item) =
+                        SHCreateItemFromParsingName::<_, _, IShellItem>(&hstring, None)
+                    {
+                        let _ = file_dialog.SetDefaultFolder(&item);
+                    }
+                }
+                crate::crash::breadcrumb("wallpaper picker: Show");
+                if !show_file_dialog(&dialog)? {
+                    return Ok(None);
+                }
+                crate::crash::breadcrumb("wallpaper picker: GetResult");
+                let item: IShellItem = file_dialog.GetResult().map_err(|err| err.to_string())?;
+                let pwstr = item
+                    .GetDisplayName(SIGDN_FILESYSPATH)
+                    .map_err(|err| err.to_string())?;
+                let path = pwstr.to_string().map_err(|err| err.to_string())?;
+                CoTaskMemFree(Some(pwstr.0 as *const _ as *const std::ffi::c_void));
+                Ok(Some(path))
+            }
+        })();
+        if ole_ok {
+            unsafe { OleUninitialize() };
+        }
+        log::info!(
+            "wallpaper picker closed: {}",
+            match &result {
+                Ok(Some(path)) => path.as_str(),
+                Ok(None) => "cancelled",
+                Err(_) => "error",
+            }
+        );
+        result
+    }
+
+    fn picture_filters() -> [windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC; 1] {
+        use windows::core::w;
+        [windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC {
+            pszName: w!("Pictures"),
+            pszSpec: w!("*.jpg;*.jpeg;*.jfif;*.png;*.bmp;*.gif;*.tif;*.tiff;*.webp"),
+        }]
+    }
+
+    /// A throwaway top-level window the shell can disable. Parenting the dialog
+    /// to Alcove, or leaving it unowned so the foreground WebView is disabled
+    /// instead, access-violates inside WebView2.
+    struct DialogOwner {
+        hwnd: windows::Win32::Foundation::HWND,
+    }
+
+    impl DialogOwner {
+        fn create() -> Option<Self> {
+            use windows::core::w;
+            use windows::Win32::UI::WindowsAndMessaging::{
+                CreateWindowExW, ShowWindow, SW_SHOWNA, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+                WS_POPUP, WS_VISIBLE,
+            };
+            let hwnd = unsafe {
+                CreateWindowExW(
+                    WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                    w!("STATIC"),
+                    w!("Alcove"),
+                    WS_POPUP | WS_VISIBLE,
+                    200,
+                    200,
+                    8,
+                    8,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+            }
+            .ok()?;
+            unsafe {
+                let _ = ShowWindow(hwnd, SW_SHOWNA);
+            }
+            Some(Self { hwnd })
+        }
+    }
+
+    impl Drop for DialogOwner {
+        fn drop(&mut self) {
+            use windows::Win32::UI::WindowsAndMessaging::DestroyWindow;
+            unsafe {
+                let _ = DestroyWindow(self.hwnd);
+            }
+        }
+    }
+
+    fn show_file_dialog(
+        dialog: &windows::Win32::UI::Shell::IFileOpenDialog,
+    ) -> Result<bool, String> {
+        use windows::core::Interface;
+        use windows::Win32::UI::Shell::IModalWindow;
+        crate::crash::breadcrumb("wallpaper picker: create owner window");
+        let owner = DialogOwner::create();
+        if owner.is_none() {
+            log::warn!("could not create a shell dialog owner window");
+        }
+        let modal: IModalWindow = dialog.cast().map_err(|err| err.to_string())?;
+        let hwnd = owner.as_ref().map(|item| item.hwnd);
+        crate::crash::breadcrumb("wallpaper picker: IModalWindow::Show");
+        Ok(unsafe { modal.Show(hwnd) }.is_ok())
+    }
+
+    /// The shell's own wallpaper object. Windows 8 and later; it handles the
+    /// registry, the per-monitor cases and the refresh, which is why this does
+    /// not touch SystemParametersInfo.
+    fn wallpaper_api() -> Result<IDesktopWallpaper, String> {
+        use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
+        unsafe { CoCreateInstance(&DesktopWallpaper, None, CLSCTX_ALL) }
+            .map_err(|err| err.to_string())
+    }
+
+    /// Put a picture on the desktop, on every monitor.
+    pub fn set_wallpaper(path: &str) -> Result<(), String> {
+        let _pause = super::RestorePause::enter();
+        let file = expand_env_path(path);
+        if !file.is_file() {
+            return Err(format!("no such picture: {path}"));
+        }
+        let _com = ComGuard::new();
+        let api = wallpaper_api()?;
+        unsafe {
+            // Enable first: a desktop showing a solid colour has the wallpaper
+            // switched off, and setting a path alone would not bring it back.
+            let _ = api.Enable(true);
+            api.SetWallpaper(PCWSTR::null(), &HSTRING::from(file.as_os_str()))
+                .map_err(|err| err.to_string())?;
+        }
+        log::info!("wallpaper set to {}", file.display());
+        Ok(())
+    }
+
+    /// Clear the picture and leave a plain colour behind it. `rgb` is 0xRRGGBB.
+    pub fn set_wallpaper_color(rgb: u32) -> Result<(), String> {
+        use windows::core::w;
+        use windows::Win32::Foundation::COLORREF;
+        let _pause = super::RestorePause::enter();
+        let _com = ComGuard::new();
+        let api = wallpaper_api()?;
+        // COLORREF is 0x00BBGGRR, the other way round from CSS.
+        let bgr = ((rgb & 0xFF) << 16) | (rgb & 0xFF00) | ((rgb >> 16) & 0xFF);
+        unsafe {
+            api.SetBackgroundColor(COLORREF(bgr))
+                .map_err(|err| err.to_string())?;
+            // Clear the path as well as disabling, or Windows puts the old
+            // picture back the next time anything enables the wallpaper.
+            let _ = api.SetWallpaper(PCWSTR::null(), w!(""));
+            let _ = api.Enable(false);
+        }
+        log::info!("wallpaper cleared to #{rgb:06X}");
+        Ok(())
+    }
+
     pub fn open_item_with(path: &str, args: Option<&str>) -> Result<(), String> {
         let file = expand_env_path(path);
         let file_text = file.to_string_lossy();
@@ -1648,7 +2004,9 @@ mod win {
         let args_text = args
             .filter(|value| !value.is_empty())
             .map(|value| expand_env_path(value).to_string_lossy().into_owned());
-        let args_h = args_text.as_ref().map(|value| HSTRING::from(value.as_str()));
+        let args_h = args_text
+            .as_ref()
+            .map(|value| HSTRING::from(value.as_str()));
         let result = unsafe { shell_open(&file_h, args_h.as_ref()) };
         if result.0 as isize <= 32 {
             return Err(format!("could not open {path}"));
@@ -1801,15 +2159,57 @@ mod win {
                     frame.height
                 );
                 let rgba = &buf[..frame.buffer_size()];
-                assert!(!is_washed_out(rgba), "Claude decoded to a washed-out bitmap");
-                let whites = rgba.chunks_exact(4).filter(|pixel| {
-                    pixel[3] > 40 && pixel[0] > 200 && pixel[1] > 200 && pixel[2] > 200
-                }).count();
+                assert!(
+                    !is_washed_out(rgba),
+                    "Claude decoded to a washed-out bitmap"
+                );
+                let whites = rgba
+                    .chunks_exact(4)
+                    .filter(|pixel| {
+                        pixel[3] > 40 && pixel[0] > 200 && pixel[1] > 200 && pixel[2] > 200
+                    })
+                    .count();
                 assert!(whites > 50, "Claude glyph has no light pixels ({whites})");
             }
             unsafe {
                 CoUninitialize();
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod picker_tests {
+        use super::*;
+
+        #[test]
+        fn dialog_owner_window_can_be_created() {
+            let owner = DialogOwner::create();
+            assert!(owner.is_some(), "hidden owner window");
+        }
+
+        #[test]
+        fn picture_dialog_accepts_the_filter() {
+            use windows::core::Interface;
+            use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+            use windows::Win32::System::Ole::{OleInitialize, OleUninitialize};
+            use windows::Win32::UI::Shell::{FileOpenDialog, IFileDialog, IFileOpenDialog};
+            let ole_ok = unsafe { OleInitialize(None) }.is_ok();
+            let result = (|| -> Result<(), String> {
+                unsafe {
+                    let dialog: IFileOpenDialog =
+                        CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)
+                            .map_err(|err| err.to_string())?;
+                    let file_dialog: IFileDialog = dialog.cast().map_err(|err| err.to_string())?;
+                    file_dialog
+                        .SetFileTypes(&picture_filters())
+                        .map_err(|err| err.to_string())?;
+                }
+                Ok(())
+            })();
+            if ole_ok {
+                unsafe { OleUninitialize() };
+            }
+            result.expect("file dialog should accept the picture filter");
         }
     }
 }
@@ -1880,10 +2280,36 @@ mod win {
     pub fn recycle_paths(_hwnd: isize, _paths: &[String]) -> Result<(), String> {
         Err("delete is Windows-only".into())
     }
+
+    pub fn desktop_dirs() -> Vec<std::path::PathBuf> {
+        Vec::new()
+    }
+
+    pub fn pick_image(_hwnd: isize) -> Result<Option<String>, String> {
+        Err("picture picker is Windows-only".into())
+    }
+
+    pub fn set_wallpaper(_path: &str) -> Result<(), String> {
+        Err("wallpaper is Windows-only".into())
+    }
+
+    pub fn set_wallpaper_color(_rgb: u32) -> Result<(), String> {
+        Err("wallpaper is Windows-only".into())
+    }
+
+    pub fn forget_icons() {}
 }
 
 pub fn list_icons() -> Result<Vec<HarvestedIcon>, String> {
     win::list_icons()
+}
+
+pub fn desktop_dirs() -> Vec<std::path::PathBuf> {
+    win::desktop_dirs()
+}
+
+pub fn forget_icons() {
+    win::forget_icons()
 }
 
 pub fn list_folder(path: &str) -> Result<Vec<HarvestedIcon>, String> {
@@ -1896,6 +2322,18 @@ pub fn known_folders() -> Vec<KnownFolder> {
 
 pub fn pick_folder(hwnd: isize) -> Result<Option<String>, String> {
     win::pick_folder(hwnd)
+}
+
+pub fn pick_image(hwnd: isize) -> Result<Option<String>, String> {
+    win::pick_image(hwnd)
+}
+
+pub fn set_wallpaper(path: &str) -> Result<(), String> {
+    win::set_wallpaper(path)
+}
+
+pub fn set_wallpaper_color(rgb: u32) -> Result<(), String> {
+    win::set_wallpaper_color(rgb)
 }
 
 pub fn open_item_with(path: &str, args: Option<&str>) -> Result<(), String> {

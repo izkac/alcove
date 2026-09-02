@@ -35,6 +35,20 @@ export type FolderView = (typeof FOLDER_VIEWS)[number]
 export const STRIP_EDGES = ["top", "bottom"] as const
 export type StripEdge = (typeof STRIP_EDGES)[number]
 
+/**
+ * How far the surfaces lean into the wallpaper. Blend sits closest to the
+ * picture and lets a little of it through; Solid is a fixed paper or slate.
+ */
+export const SURFACE_TONES = ["blend", "tinted", "solid"] as const
+export type SurfaceTone = (typeof SURFACE_TONES)[number]
+
+/**
+ * Scales the whole type scale together. Only ever up: 11px is the floor for a
+ * label read at a glance, so there is no smaller stop.
+ */
+export const TEXT_SIZES = ["default", "large", "larger"] as const
+export type TextSize = (typeof TEXT_SIZES)[number]
+
 export type DesktopIcon = {
   id: string
   name: string
@@ -121,6 +135,12 @@ export type DesktopState = {
   focusMode: boolean
   /** Frequent strip sits on this screen edge. */
   stripEdge: StripEdge
+  /** How far the surfaces lean into the wallpaper. */
+  surfaceTone?: SurfaceTone
+  /** Scales every text size together. */
+  textSize?: TextSize
+  /** Pushes label and supporting text further from the surface behind it. */
+  strongText?: boolean
   focusedAlcoveId: string | null
   highlightedIconId: string | null
   /** Open history behind the frequent strip, keyed by icon id. */

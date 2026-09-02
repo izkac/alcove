@@ -8,7 +8,7 @@ function App() {
   return (
     <TooltipProvider>
       <DesktopShell desktop={desktop} />
-      <Toaster theme="dark" position="top-right" />
+      <Toaster position="top-right" />
     </TooltipProvider>
   )
 }

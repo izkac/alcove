@@ -16,22 +16,20 @@ export function PreviewCard({ icon }: { icon: DesktopIcon | null }) {
   const thumb = useThumbnail(icon?.path)
   if (!icon) return null
   return (
-    <aside className="pointer-events-none absolute bottom-4 left-4 z-30 w-56 rounded-xl border border-white/15 bg-black/50 p-3 text-white/95 shadow-2xl backdrop-blur-xl md:bottom-6 md:left-6">
-      <div className="flex h-40 items-center justify-center overflow-hidden rounded-lg bg-black/30">
+    <aside className="alcove-rise pointer-events-none absolute bottom-4 left-4 z-30 w-56 rounded-xl border border-hairline bg-desk p-3 text-ink shadow-pop md:bottom-6 md:left-6">
+      <div className="flex h-40 items-center justify-center overflow-hidden rounded-lg bg-surface-2">
         {thumb ? (
           <img src={thumb} alt="" className="max-h-full max-w-full object-contain" />
         ) : (
           <IconGlyph icon={icon} size={72} />
         )}
       </div>
-      <p className="mt-2 line-clamp-2 text-[12px] font-medium leading-tight">
-        {icon.name}
-      </p>
-      <p className="mt-0.5 text-[11px] text-white/60">
+      <p className="mt-2.5 line-clamp-2 text-meta font-medium">{icon.name}</p>
+      <p className="mt-0.5 text-label text-ink-muted">
         {fileTypeLabel(icon)}
         {icon.kind === "folder" ? "" : ` · ${formatByteSize(icon.byteSize)}`}
       </p>
-      <p className="text-[11px] text-white/60">{formatModifiedAt(icon.modifiedAt)}</p>
+      <p className="text-label text-ink-muted">{formatModifiedAt(icon.modifiedAt)}</p>
     </aside>
   )
 }
