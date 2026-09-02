@@ -130,18 +130,17 @@ menu, and every desk re-samples and re-tints when it is.
 
 Home chrome is the exception to "one step lighter." The rail stays on screen all
 day, so a 72px column of paper or slate, even one tinted to the wallpaper, reads
-as a window pasted on the picture. Tinted and Blend paint it with the same
-see-through wash as the frequent strip: the picture shows through, labels use On
-Wallpaper contrast, and the shape stays a flush column. The strip is the same
-paint in a floating pill. Drawers stay surfaces, because they cover the work.
-**Solid** is the opt-in that paints the rail and strip opaque too.
+as a window pasted on the picture. Tinted and Blend paint the rail, the strip
+and the open drawer with the same see-through wash: the picture shows through,
+labels use On Wallpaper contrast, and the rail stays a flush column. The strip
+is that paint in a floating pill; the drawer is that paint in a 14px-radius
+sheet. **Solid** is the opt-in that paints all three opaque too.
 
-One setting, Surface, decides how far the visitors lean in. **Tinted** (default) is the rule above for drawers: one
-step lighter than a light wallpaper, one step lighter than a dark one, in the
-wallpaper's own colour. **Blend** sits closer still and lets the picture through
-at 86% opacity on drawers only; the rail and strip are already in the picture.
-**Solid** is a fixed paper (94.5%) or slate (24%) on every surface, including
-home chrome. It lives on `<html>` as `data-tone`.
+One setting, Surface, decides how far the remaining visitors lean in. **Tinted**
+(default) and **Blend** keep rail, strip and drawers in the picture. Blend also
+lets the picture through chips and the preview card at 86% opacity. **Solid** is
+a fixed paper (94.5%) or slate (24%) on every surface, including home chrome.
+It lives on `<html>` as `data-tone`.
 
 Two more settings cover text, and they are the only appearance settings besides
 Surface. **Text size** scales the whole type scale through `--text-scale`
@@ -152,8 +151,8 @@ contrast the moment the wallpaper changes.
 
 The second idea is that icons are the interface. The user's real Windows icons
 are the only saturated, high-contrast objects on screen. Everything Alcove draws
-around them is quiet: drawers are matte surfaces with hairline edges; the rail
-and strip are veils on the picture; one selection accent; text in three muted
+around them is quiet: the rail, strip and drawers are veils on the picture;
+dialogs and menus stay matte surfaces; one selection accent; text in three muted
 steps on surfaces, and On Wallpaper on home chrome. A drawer's chosen colour
 survives, but on its glyph rather than its whole tile, so a rail of eight drawers
 is a column of small tinted marks, not eight coloured blocks.
@@ -167,7 +166,7 @@ accents, and any motion that does not confirm something the user just did.
 **Key Characteristics:**
 
 - Two palettes, paper and slate, chosen by wallpaper luminance, both tinted by wallpaper hue
-- Home chrome (rail, strip) is a veil on the picture; drawers are opaque surfaces with hairline edges
+- Home chrome (rail, strip, drawers) is a veil on the picture; dialogs and menus stay opaque surfaces
 - No backdrop blur anywhere
 - One selection accent derived from the wallpaper hue; drawer colours live on glyphs only
 - A four-step fixed type scale in one family, with tabular numerals throughout
@@ -182,29 +181,29 @@ A monochrome system in two lightness registers, warmed or cooled by the wallpape
 - **Wallpaper Selection** (`oklch(50% 0.16 var(--wp-h))` on paper, `oklch(78% 0.1 var(--wp-h))` on slate): the only accent. Used for the open drawer's roundel ring, selected icon tiles, focus rings, the Inbox count badge, the kept-slot pin, switches, and checkboxes. Its soft form at 13 to 16 percent alpha fills selected tiles. It is never decoration.
 
 ### Neutral
-- **Paper** (`oklch(var(--surf-l) var(--sc) var(--wp-h))`; Tinted: `--surf-l` is the wallpaper lightness plus 18 points, clamped 66% to 94.5%, and `--sc` is half the wallpaper chroma capped at 0.09; Solid: 94.5% and 0.32 of the chroma capped at 0.05): every surface on a light wallpaper. Rail, drawers, strip pill, dialogs, menus, search.
+- **Paper** (`oklch(var(--surf-l) var(--sc) var(--wp-h))`; Tinted: `--surf-l` is the wallpaper lightness plus 18 points, clamped 66% to 94.5%, and `--sc` is half the wallpaper chroma capped at 0.09; Solid: 94.5% and 0.32 of the chroma capped at 0.05): dialogs, menus, search, chips and the preview card on a light wallpaper. Rail, drawers and the strip use Dock instead.
 - **Paper Raised** (`--surf-l` minus 4.5 points): roundels at rest, filter fields, hover fills, the details-view header.
 - **Paper Field** (`--surf-l` minus 9 points): segmented controls, count pills, the deepest recess.
 - **Slate** (`oklch(var(--surf-l) var(--sc) var(--wp-h))`; Tinted: wallpaper lightness plus 9 points, clamped 20% to 32%, chroma 0.35 of the wallpaper's capped at 0.06; Solid: 24% and 0.2 of the chroma capped at 0.035): every surface on a dark wallpaper, and the default before the wallpaper has been read.
 - **Slate Raised** (`--surf-l` plus 5) and **Slate Field** (plus 10): the same two steps up. In slate, elevation is lightness, not shadow.
-- **Desk** (`--desk`, the surface colour at `--desk-a` opacity, 1 except 0.86 in Blend): drawers, chips and the preview card use this instead of Surface so that Blend can let the wallpaper through without touching dialogs. The rail and strip do not.
+- **Desk** (`--desk`, the surface colour at `--desk-a` opacity, 1 except 0.86 in Blend): chips and the preview card use this instead of Surface so that Blend can let the wallpaper through without touching dialogs. Drawers use Dock, with the rail and strip.
 - **Home** (transparent in Tinted and Blend; equal to Desk in Solid): the rail column. It has no right-edge hairline unless Solid is on.
 - **Veil** (`oklch(100% 0 0 / 0.12)` on slate, `oklch(18% 0.04 var(--wp-h) / 0.11)` on paper; Raised on Solid): roundels at rest. Hover bumps the alpha. This is a wash of the picture, not a chip of paper.
-- **Dock** (`oklch(96% 0.02 var(--wp-h) / 0.16)` on slate, `oklch(18% 0.04 var(--wp-h) / 0.18)` on paper; Desk on Solid): the frequent strip's pill. Darker than the wallpaper on paper, lighter on slate, always see-through.
+- **Dock** (`oklch(96% 0.02 var(--wp-h) / 0.16)` on slate, `oklch(18% 0.04 var(--wp-h) / 0.18)` on paper; Desk on Solid): the rail, the frequent strip, and open drawers. Darker than the wallpaper on paper, lighter on slate, always see-through.
 - **Ink** (`oklch(24% var(--ic) var(--wp-h))` on paper, `oklch(94% var(--ic) var(--wp-h))` on slate; `--ic` is a smaller share of the wallpaper chroma, capped at 0.035): titles, icon labels, body copy.
-- **Ink Muted** (on paper `--surf-l` minus 40 points, clamped 30% to 48%; on slate 68%): counts, rail labels, group headings, supporting copy, icon buttons at rest. It moves with the surface so its contrast holds as Tinted darkens the paper.
+- **Ink Muted** (on paper `--surf-l` minus 40 points, clamped 30% to 48%; on slate 68%): supporting copy on surfaces, icon buttons at rest in dialogs. It moves with the surface so its contrast holds as Tinted darkens the paper.
 - **Ink Faint** (on paper `--surf-l` minus 26 points, clamped 42% to 63%; on slate 52%): placeholders, empty-state copy, crumb separators, group-row controls before hover.
-- **Hairline** (`oklch(20% 0.04 var(--wp-h) / 0.12)` on paper, `oklch(100% 0 0 / 0.11)` on slate): the one border. Sheet edges, group heading rules, Solid's rail edge. Not the default rail.
-- **On Wallpaper** (`oklch(99% 0 0)` with `0 1px 2px oklch(0% 0 0 / 0.6)` shadow): labels for parked icons, the Recycle Bin, and home chrome (rail tiles, strip slots) whenever Surface is not Solid.
+- **Hairline** (`oklch(20% 0.04 var(--wp-h) / 0.12)` on paper, `oklch(100% 0 0 / 0.11)` on slate): the one border on visitors. Dialogs, menus, chips. Home chrome uses Dock Line instead.
+- **On Wallpaper** (`oklch(99% 0 0)` with `0 1px 2px oklch(0% 0 0 / 0.6)` shadow): labels for parked icons, the Recycle Bin, and home chrome (rail tiles, strip slots, drawer titles and counts) whenever Surface is not Solid.
 
 ### Named Rules
 **The Borrowed Hue Rule.** No colour in this system has a hue or a saturation of its own. Every neutral, every surface and the accent read `--wp-h` and `--wp-c`. A screenshot of Alcove on two different wallpapers should show two different tints of the same design, and on a grey wallpaper no tint at all.
 
 **The Never White Rule.** Paper tops out at 94.5% lightness, and in the default Tinted tone it sits only 18 points above the wallpaper. Pure white on a saturated wallpaper reads as glare; if a surface looks white, its chroma or lightness is wrong.
 
-**The One Step Rule.** A visitor (a drawer, a dialog, a menu) is the wallpaper one step lighter, in the wallpaper's own colour. Home chrome is not a visitor: it does not take that step, or it reads as a card on top of the picture.
+**The One Step Rule.** A visitor (a dialog, a menu, a chip) is the wallpaper one step lighter, in the wallpaper's own colour. Home chrome is not a visitor: it does not take that step, or it reads as a card on top of the picture.
 
-**The Home Chrome Rule.** The rail and the strip are marks on the picture. Their fill is a veil, their edge is optional, and their labels carry their own contrast the way parked icons do. Drawers stay surfaces because they cover the work.
+**The Home Chrome Rule.** The rail, the strip and the open drawer are marks on the picture. Their fill is the Dock wash, their edge is a Dock Line, and their labels carry their own contrast the way parked icons do. Dialogs stay surfaces because they cover a choice.
 
 **The Glyph Rule.** A drawer's colour goes on its glyph and its menu dot, at `oklch(56% 0.13 h)` on paper and `oklch(78% 0.1 h)` on slate. It never fills a tile, a ring, a header bar, or a stripe.
 
@@ -226,7 +225,7 @@ Every size below is `calc(base * var(--text-scale))`, where `--text-scale` is th
 - **Meta** (400, 12px / 0.75rem, 1.3): list-view file names, the preview card's name, chip counts, the bar clock.
 - **Label** (400, 11px / 0.6875rem, 1.25): every icon label in every grid, rail labels, strip labels, details-view cells, empty copy. Two lines maximum, clamped.
 - **Micro** (400, 10px / 0.625rem, 1.2): the count under a rail tile and the number key in search. The only two places below label size, both of them a bare numeral beside its own label.
-- **Eyebrow** (500, 11px, 0.08em tracking, uppercase, Ink Muted): group headings inside a canvas drawer only.
+- **Eyebrow** (500, 11px, 0.08em tracking, uppercase, On Wallpaper): group headings inside a canvas drawer only.
 
 ### Named Rules
 **The Eleven Rule.** No text is smaller than 11px, and the only exception is Micro, a bare numeral that always sits beside a full-size label. The old build ran to 9px in the rail; those labels are now 11px and truncate instead of shrinking. There is no smaller stop on the Text size setting for the same reason.
@@ -235,15 +234,15 @@ Every size below is `calc(base * var(--text-scale))`, where `--text-scale` is th
 
 ## 4. Elevation
 
-Alcove is flat by default. Drawers are opaque. Home chrome is a veil, so the
-picture shows through the rail and the strip without blur. On paper, depth is one
-soft, large-radius shadow under the open drawer; the strip's shadow is a whisper,
-not a lift. On slate, drawer depth is lightness, with raised surfaces one step
+Alcove is flat by default. Home chrome is a veil, so the picture shows through
+the rail, the strip and the open drawer without blur. The strip's shadow is a
+whisper, not a lift; the drawer has none, so it does not sit as a card on the
+picture. On slate, dialog depth is lightness, with raised surfaces one step
 lighter. Backdrop blur is not used anywhere; a previous system used it on every
 panel and it read as generic.
 
 ### Shadow Vocabulary
-- **Sheet** (`0 16px 48px -16px oklch(0% 0 0 / 0.4)` on paper, `/ 0.5` on slate): the open drawer, panel or canvas.
+- **Sheet** (`0 16px 48px -16px oklch(0% 0 0 / 0.4)` on paper, `/ 0.5` on slate): unused on drawers now; kept for any future opaque sheet.
 - **Pill** (`0 10px 30px -12px oklch(0% 0 0 / 0.4)` / `/ 0.5`): collapsed chips. Not the frequent strip.
 - **Dock** (`0 4px 14px -8px oklch(0% 0 0 / 0.14)` on paper, `0 4px 16px -8px / 0.22` on slate; Pill on Solid): the frequent strip. Soft enough that the pill does not float off the picture.
 - **Pop** (`0 8px 24px -8px oklch(0% 0 0 / 0.28)` / `/ 0.45`): preview card, popovers, the empty-desktop hint, search.
@@ -252,7 +251,7 @@ panel and it read as generic.
 ### Named Rules
 **The Hairline First Rule.** Every floating *visitor* has a 1px Hairline border. The shadow is secondary and may be missing at small sizes; the hairline may not. Home chrome is not a visitor: its edge is a Dock Line at low alpha, or nothing.
 
-**The No Glass Rule.** `backdrop-filter` is forbidden. Home chrome lets the wallpaper through with plain alpha. Blend does the same for drawers. Never blur, and never on dialogs or menus.
+**The No Glass Rule.** `backdrop-filter` is forbidden. Home chrome lets the wallpaper through with plain alpha. Blend does the same for chips and the preview card. Never blur, and never on dialogs or menus.
 
 ## 5. Components
 
@@ -266,9 +265,9 @@ panel and it read as generic.
 
 ### Drawers (panel and canvas)
 - **Corner Style:** 14px sheet radius.
-- **Background:** Surface, with a hairline border and the Sheet shadow. The canvas is inset 24px from the desk on all sides rather than covering it.
-- **Header:** a 28 to 32px glyph roundel, the name in Title, the count in Body Ink Muted, then a Raised filter field and ghost icon buttons for edit, delete, compact, and close.
-- **Groups (canvas):** an Eyebrow heading with a faint count, a hairline rule beneath, and the row's controls hidden until the row is hovered or focused.
+- **Background:** Dock, with a Dock Line border and no Sheet shadow. The canvas is inset 24px from the desk on all sides rather than covering it.
+- **Header:** a 28 to 32px glyph roundel, the name in Title On Wallpaper, the count in Body On Wallpaper at 70%, then a Veil filter field and ghost icon buttons for edit, delete, compact, and close.
+- **Groups (canvas):** an Eyebrow heading in On Wallpaper, a faint count, a Dock Line beneath, and the row's controls hidden until the row is hovered or focused.
 - **Internal Padding:** 16px sides, 12px top, 16px bottom; groups are spaced 20px apart.
 
 ### Icon tiles
@@ -300,7 +299,7 @@ panel and it read as generic.
 ### Do:
 - **Do** derive every colour from `--wp-h`; add a new token by editing `index.css`, never by writing a literal hue in a component.
 - **Do** put a drawer's colour on its glyph with `tintStyle(color)` and the `tint` utility, and nowhere else.
-- **Do** use the `on-wallpaper` utility, or `home-ink` on rail and strip, for any text that sits on the picture, and `wp-icon-shadow` / `home-mark` for its icon.
+- **Do** use the `on-wallpaper` utility, or `home-ink` on rail, strip and drawers, for any text that sits on the picture, and `wp-icon-shadow` / `home-mark` for its icon.
 - **Do** keep icon labels at 11px and let them truncate or clamp to two lines.
 - **Do** mark the selected or open thing with Selection Soft plus a 1.5px Selection ring, and nothing else.
 - **Do** keep transitions to 150 ms colour changes and the 180 ms `alcove-rise` arrival, with `prefers-reduced-motion` dropping the rise.
@@ -308,7 +307,7 @@ panel and it read as generic.
 
 ### Don't:
 - **Don't** use `backdrop-blur`, `bg-black/…`, `bg-white/…` or any of the old glass classes. Home chrome uses the `home` / `veil` / `dock` tokens, never a literal alpha.
-- **Don't** paint the rail as a Surface or Desk column. That slab is what makes Alcove look like an app on the wallpaper.
+- **Don't** paint the rail or an open drawer as a Surface or Desk slab. That is what makes Alcove look like an app on the wallpaper.
 - **Don't** fill a tile, a ring or a header with a drawer's colour, and never add a `border-left` accent stripe.
 - **Don't** introduce a second accent; semantic red is for delete only and is not an accent.
 - **Don't** build Rainmeter-style widgets, clocks, or meters on the wallpaper, and don't leave titled zones on it.

@@ -63,13 +63,12 @@ much disk space it holds, and which drawer is the heaviest. Drag a drawer up or 
 to change its place; the tile follows the pointer. Inbox stays at the top. Right-click
 for **Move up** / **Move down**.
 
-Alcove takes its look from your wallpaper: a light picture gives drawers paper
-surfaces, a dark one gives them slate, and both pick up the picture's colour. The
-rail and the frequent strip stay in the picture itself, so they do not read as a
-panel on top of it. **Surface** in Settings → General sets how far the drawers lean
-in: **Blend** sits closest and lets a little of the picture through the drawers too,
-**Tinted** (the default) keeps drawers a step of the wallpaper's own colour, **Solid**
-paints the rail and strip as plain paper or slate as well.
+Alcove takes its look from your wallpaper. The rail, the frequent strip and the
+open drawers use the same see-through wash, so they sit in the picture rather
+than as a panel on top of it. Dialogs and menus stay paper on a light picture
+and slate on a dark one. **Surface** in Settings → General sets how opaque that
+wash is: **Tinted** (the default) and **Blend** keep the wash see-through,
+**Solid** paints the rail, strip and drawers as plain paper or slate.
 
 **Text size** in the same place scales every label at once, and **Stronger text**
 darkens the smaller labels if they read too softly on your screen.
@@ -79,8 +78,9 @@ darkens the smaller labels if they read too softly on your screen.
 Alcove covers the desktop, so its right-click menu is where the wallpaper lives.
 **Background** offers:
 
-- **Choose a picture…** picks an image and sets it as your Windows wallpaper, on
-  every monitor. It is the real wallpaper, so it stays when Alcove is closed.
+- **Choose a picture…** lists pictures from Pictures and a few other folders and
+  sets the one you click as your Windows wallpaper, on every monitor. It is the
+  real wallpaper, so it stays when Alcove is closed.
 - **Solid colour…** clears the wallpaper and leaves a plain colour behind it,
   with eight presets and a colour picker.
 - **Windows personalisation…** opens Windows' own background settings, for

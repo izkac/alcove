@@ -62,15 +62,10 @@ fn list_known_folders() -> Vec<harvest::KnownFolder> {
 }
 
 #[tauri::command]
-fn pick_folder(window: WebviewWindow) -> Result<Option<String>, String> {
-    let _pause = harvest::pause_desktop_restore();
-    let (tx, rx) = std::sync::mpsc::channel();
-    window
-        .run_on_main_thread(move || {
-            let _ = tx.send(harvest::pick_folder(0));
-        })
-        .map_err(|err| err.to_string())?;
-    rx.recv().map_err(|err| err.to_string())?
+async fn pick_folder(_window: WebviewWindow) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(|| harvest::pick_folder(0))
+        .await
+        .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
@@ -148,17 +143,15 @@ fn desktop_background() -> Result<harvest::DesktopBackground, String> {
     harvest::desktop_background()
 }
 
+/// Unused by the UI: `IFileOpenDialog::Show` access-violates in comdlg32 while
+/// Explorer's desktop view is hidden. The in-app picture picker sets wallpaper
+/// through `set_wallpaper` instead. Kept for the helper CLI.
 #[tauri::command]
-fn pick_wallpaper(window: WebviewWindow) -> Result<Option<String>, String> {
-    let _pause = harvest::pause_desktop_restore();
-    let (tx, rx) = std::sync::mpsc::channel();
-    window
-        .run_on_main_thread(move || {
-            crash::breadcrumb("pick_wallpaper: on UI thread");
-            let _ = tx.send(harvest::pick_image(0));
-        })
-        .map_err(|err| err.to_string())?;
-    rx.recv().map_err(|err| err.to_string())?
+async fn pick_wallpaper() -> Result<Option<String>, String> {
+    crash::breadcrumb("pick_wallpaper: helper process");
+    tauri::async_runtime::spawn_blocking(|| harvest::pick_image(0))
+        .await
+        .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
@@ -290,6 +283,7 @@ fn save_desktop_state(app: tauri::AppHandle, json: String) -> Result<(), String>
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     crash::install();
+    harvest::maybe_run_cli_picker();
 
     #[cfg(all(windows, not(debug_assertions)))]
     if !autostart::claim_singleton() {

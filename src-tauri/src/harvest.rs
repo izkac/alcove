@@ -15,6 +15,43 @@ pub fn pause_desktop_restore() -> RestorePause {
     RestorePause::enter()
 }
 
+pub const PICK_IMAGE_FLAG: &str = "--alcove-pick-image";
+pub const PICK_FOLDER_FLAG: &str = "--alcove-pick-folder";
+
+/// A file dialog inside the Alcove process access-violates in comdlg32. The
+/// helper is the same exe, started with a flag, and never creates a WebView.
+pub fn maybe_run_cli_picker() {
+    let image = std::env::args().any(|arg| arg == PICK_IMAGE_FLAG);
+    let folder = std::env::args().any(|arg| arg == PICK_FOLDER_FLAG);
+    if !image && !folder {
+        return;
+    }
+    #[cfg(windows)]
+    {
+        use std::io::Write;
+        let result = if image {
+            win::pick_image_in_process()
+        } else {
+            win::pick_folder_in_process()
+        };
+        match result {
+            Ok(Some(path)) => {
+                print!("{path}");
+                let _ = std::io::stdout().flush();
+            }
+            Ok(None) => {}
+            Err(err) => {
+                eprint!("{err}");
+                let _ = std::io::stderr().flush();
+                std::process::exit(1);
+            }
+        }
+        std::process::exit(0);
+    }
+    #[cfg(not(windows))]
+    std::process::exit(1);
+}
+
 pub struct RestorePause;
 
 impl RestorePause {
@@ -322,8 +359,8 @@ mod win {
                 ("installer", "installers")
             }
             Some("zip") | Some("7z") | Some("rar") | Some("iso") => ("installer", "installers"),
-            Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("webp") | Some("bmp")
-            | Some("tif") | Some("tiff") | Some("heic") => ("image", "photos"),
+            Some("png") | Some("jpg") | Some("jpeg") | Some("jfif") | Some("gif") | Some("webp")
+            | Some("bmp") | Some("tif") | Some("tiff") | Some("heic") => ("image", "photos"),
             _ => ("document", "documents"),
         }
     }
@@ -1748,6 +1785,10 @@ mod win {
     }
 
     pub fn pick_folder(_hwnd: isize) -> Result<Option<String>, String> {
+        pick_via_helper(super::PICK_FOLDER_FLAG)
+    }
+
+    pub fn pick_folder_in_process() -> Result<Option<String>, String> {
         pick_folder_sta()
     }
 
@@ -1759,7 +1800,7 @@ mod win {
             FileOpenDialog, IFileDialog, IFileOpenDialog, IShellItem, FOS_FORCEFILESYSTEM,
             FOS_PICKFOLDERS, SIGDN_FILESYSPATH,
         };
-        let _pause = super::RestorePause::enter();
+        let _pause = super::pause_desktop_restore();
         let ole_ok = unsafe { OleInitialize(None) }.is_ok();
         log::info!("folder picker open");
         let result = (|| -> Result<Option<String>, String> {
@@ -1799,10 +1840,37 @@ mod win {
         result
     }
 
-    /// The picture dialog. Must run on the UI thread: a worker STA still
-    /// access-violates inside comdlg32 at IFileOpenDialog::Show.
+    /// Spawns a helper process. IFileOpenDialog::Show access-violates in
+    /// comdlg32 inside the Alcove/WebView process, on any thread.
     pub fn pick_image(_hwnd: isize) -> Result<Option<String>, String> {
+        pick_via_helper(super::PICK_IMAGE_FLAG)
+    }
+
+    pub fn pick_image_in_process() -> Result<Option<String>, String> {
         pick_image_sta()
+    }
+
+    fn pick_via_helper(flag: &str) -> Result<Option<String>, String> {
+        let _pause = super::pause_desktop_restore();
+        let exe = std::env::current_exe().map_err(|err| err.to_string())?;
+        crate::crash::breadcrumb(&format!("picker: helper {exe:?} {flag}"));
+        let output = std::process::Command::new(&exe)
+            .arg(flag)
+            .output()
+            .map_err(|err| err.to_string())?;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.trim().is_empty() {
+            log::info!("picker helper: {}", stderr.trim());
+        }
+        if !output.status.success() {
+            return Err(if stderr.trim().is_empty() {
+                format!("picture picker failed ({})", output.status)
+            } else {
+                stderr.trim().to_string()
+            });
+        }
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(if path.is_empty() { None } else { Some(path) })
     }
 
     fn pick_image_sta() -> Result<Option<String>, String> {
@@ -1813,12 +1881,9 @@ mod win {
             FileOpenDialog, IFileDialog, IFileOpenDialog, IShellItem, FOS_FILEMUSTEXIST,
             FOS_FORCEFILESYSTEM, SIGDN_FILESYSPATH,
         };
-        let _pause = super::RestorePause::enter();
+        let _pause = super::pause_desktop_restore();
         let ole_ok = unsafe { OleInitialize(None) }.is_ok();
-        crate::crash::breadcrumb(&format!(
-            "wallpaper picker: ole ready thread={:?}",
-            std::thread::current().name()
-        ));
+        log::info!("wallpaper picker open (helper)");
         let result = (|| -> Result<Option<String>, String> {
             unsafe {
                 crate::crash::breadcrumb("wallpaper picker: CoCreateInstance");
@@ -1881,67 +1946,13 @@ mod win {
         }]
     }
 
-    /// A throwaway top-level window the shell can disable. Parenting the dialog
-    /// to Alcove, or leaving it unowned so the foreground WebView is disabled
-    /// instead, access-violates inside WebView2.
-    struct DialogOwner {
-        hwnd: windows::Win32::Foundation::HWND,
-    }
-
-    impl DialogOwner {
-        fn create() -> Option<Self> {
-            use windows::core::w;
-            use windows::Win32::UI::WindowsAndMessaging::{
-                CreateWindowExW, ShowWindow, SW_SHOWNA, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-                WS_POPUP, WS_VISIBLE,
-            };
-            let hwnd = unsafe {
-                CreateWindowExW(
-                    WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
-                    w!("STATIC"),
-                    w!("Alcove"),
-                    WS_POPUP | WS_VISIBLE,
-                    200,
-                    200,
-                    8,
-                    8,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-            }
-            .ok()?;
-            unsafe {
-                let _ = ShowWindow(hwnd, SW_SHOWNA);
-            }
-            Some(Self { hwnd })
-        }
-    }
-
-    impl Drop for DialogOwner {
-        fn drop(&mut self) {
-            use windows::Win32::UI::WindowsAndMessaging::DestroyWindow;
-            unsafe {
-                let _ = DestroyWindow(self.hwnd);
-            }
-        }
-    }
-
     fn show_file_dialog(
         dialog: &windows::Win32::UI::Shell::IFileOpenDialog,
     ) -> Result<bool, String> {
         use windows::core::Interface;
         use windows::Win32::UI::Shell::IModalWindow;
-        crate::crash::breadcrumb("wallpaper picker: create owner window");
-        let owner = DialogOwner::create();
-        if owner.is_none() {
-            log::warn!("could not create a shell dialog owner window");
-        }
         let modal: IModalWindow = dialog.cast().map_err(|err| err.to_string())?;
-        let hwnd = owner.as_ref().map(|item| item.hwnd);
-        crate::crash::breadcrumb("wallpaper picker: IModalWindow::Show");
-        Ok(unsafe { modal.Show(hwnd) }.is_ok())
+        Ok(unsafe { modal.Show(None) }.is_ok())
     }
 
     /// The shell's own wallpaper object. Windows 8 and later; it handles the
@@ -1955,7 +1966,7 @@ mod win {
 
     /// Put a picture on the desktop, on every monitor.
     pub fn set_wallpaper(path: &str) -> Result<(), String> {
-        let _pause = super::RestorePause::enter();
+        let _pause = super::pause_desktop_restore();
         let file = expand_env_path(path);
         if !file.is_file() {
             return Err(format!("no such picture: {path}"));
@@ -1977,7 +1988,7 @@ mod win {
     pub fn set_wallpaper_color(rgb: u32) -> Result<(), String> {
         use windows::core::w;
         use windows::Win32::Foundation::COLORREF;
-        let _pause = super::RestorePause::enter();
+        let _pause = super::pause_desktop_restore();
         let _com = ComGuard::new();
         let api = wallpaper_api()?;
         // COLORREF is 0x00BBGGRR, the other way round from CSS.
@@ -2179,16 +2190,18 @@ mod win {
 
     #[cfg(test)]
     mod picker_tests {
-        use super::*;
-
         #[test]
-        fn dialog_owner_window_can_be_created() {
-            let owner = DialogOwner::create();
-            assert!(owner.is_some(), "hidden owner window");
+        fn helper_picker_flag_is_distinct() {
+            assert_eq!(super::super::PICK_IMAGE_FLAG, "--alcove-pick-image");
+            assert_ne!(
+                super::super::PICK_IMAGE_FLAG,
+                super::super::PICK_FOLDER_FLAG
+            );
         }
 
         #[test]
         fn picture_dialog_accepts_the_filter() {
+            use super::picture_filters;
             use windows::core::Interface;
             use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
             use windows::Win32::System::Ole::{OleInitialize, OleUninitialize};

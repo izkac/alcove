@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "check": "node src/lib/frecency.check.ts && node src/lib/harvest.check.ts && node src/lib/folder-view.check.ts && node src/lib/strip-tools.check.ts && node src/lib/desk-strip.check.ts && node src/lib/weight.check.ts && node src/lib/alcove-order.check.ts && node src/lib/icon-select.check.ts && node src/lib/thumbnail.check.ts && node src/lib/crumbs.check.ts && node src/lib/launcher.check.ts && node src/lib/pin-grid.check.ts",
+    "check": "node src/lib/frecency.check.ts && node src/lib/harvest.check.ts && node src/lib/folder-view.check.ts && node src/lib/strip-tools.check.ts && node src/lib/desk-strip.check.ts && node src/lib/weight.check.ts && node src/lib/alcove-order.check.ts && node src/lib/icon-select.check.ts && node src/lib/thumbnail.check.ts && node src/lib/crumbs.check.ts && node src/lib/launcher.check.ts && node src/lib/pin-grid.check.ts && node src/lib/wallpaper-pictures.check.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "desktop": "tauri dev",

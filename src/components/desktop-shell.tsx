@@ -5,6 +5,7 @@ import { AlcoveCanvas } from "@/components/alcove-canvas"
 import { AlcovePanel } from "@/components/alcove-panel"
 import { PreviewCard } from "@/components/preview-card"
 import { BackgroundDialog } from "@/components/background-dialog"
+import { WallpaperDialog } from "@/components/wallpaper-dialog"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import {
   CreateAlcoveDialog,
@@ -257,6 +258,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
   const { state, sortedAlcoves, iconsIn } = desktop
   const { desk, desks, stripHover } = useDesk()
   const [backgroundOpen, setBackgroundOpen] = useState(false)
+  const [wallpaperOpen, setWallpaperOpen] = useState(false)
   // The desktop's current colour, so the picker opens where the user already is.
   const [deskColor, setDeskColor] = useState("#1B2027")
   useUpdateCheck(desk.primary)
@@ -406,19 +408,18 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
 
   /** Swap the Windows wallpaper for a picture the user picks. */
   function chooseWallpaper() {
+    setWallpaperOpen(true)
+  }
+
+  function applyWallpaper(path: string) {
     if (!isTauri()) {
       toast("Changing the wallpaper is only on Windows")
       return
     }
-    invoke<string | null>("pick_wallpaper")
-      .then((path) => {
-        if (!path) return
-        return invoke("set_wallpaper", { path }).then(() => {
-          announceWallpaperChange()
-          toast("Wallpaper changed")
-        })
-      })
-      .catch((err) => toast(err instanceof Error ? err.message : String(err)))
+    return invoke("set_wallpaper", { path }).then(() => {
+      announceWallpaperChange()
+      toast("Wallpaper changed")
+    })
   }
 
   /** Clear the wallpaper and leave a plain colour. */
@@ -1126,6 +1127,11 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         current={deskColor}
         onOpenChange={setBackgroundOpen}
         onApply={applyBackgroundColor}
+      />
+      <WallpaperDialog
+        open={wallpaperOpen}
+        onOpenChange={setWallpaperOpen}
+        onApply={applyWallpaper}
       />
       <OnboardingDialog
         open={state.phase === "onboarding"}

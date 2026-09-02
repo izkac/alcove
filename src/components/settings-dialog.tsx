@@ -78,8 +78,8 @@ const TEXT_SIZES_OPTIONS: { value: TextSize; label: string }[] = [
 ]
 
 const TONE_HINT: Record<SurfaceTone, string> = {
-  blend: "The picture shows through the rail and strip; drawers stay a step of its colour",
-  tinted: "Drawers take the wallpaper's colour; the rail and strip stay in the picture",
+  blend: "The picture shows through the rail, strip and drawers",
+  tinted: "The rail, strip and drawers sit in the picture",
   solid: "Plain paper or slate, whatever the wallpaper",
 }
 
