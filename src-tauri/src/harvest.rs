@@ -1737,6 +1737,119 @@ mod win {
         Ok(icons)
     }
 
+    /// Ceilings for the launcher's "search inside my drawers" walk. A folder tree
+    /// is unbounded and the user is holding a key down, so the walk stops at
+    /// whichever ceiling it reaches first and answers with what it has. A partial
+    /// answer in 600ms is worth more here than a complete one in twenty seconds.
+    const DEEP_DEPTH: usize = 5;
+    const DEEP_ENTRIES: usize = 40_000;
+    const DEEP_BUDGET_MS: u128 = 600;
+
+    /// Never worth walking from a launcher: either machine noise, or a tree so
+    /// deep it would eat the whole budget before reaching anything a person named.
+    fn deep_skip(lower_name: &str) -> bool {
+        // Only names that are unambiguously machine noise. `bin`, `obj` and
+        // `target` are tempting to add and were left out on purpose: they are
+        // also perfectly ordinary folder names, and silently refusing to search
+        // someone's folder is worse than spending a few milliseconds in it.
+        matches!(
+            lower_name,
+            "node_modules" | "$recycle.bin" | "system volume information" | "appdata" | "__pycache__"
+        )
+    }
+
+    /// Breadth-first so shallow matches — the ones a person can picture — are
+    /// found before the budget runs out, and so a single bottomless branch cannot
+    /// starve its siblings.
+    ///
+    /// Best effort by design. It answers with what it had when a ceiling was
+    /// reached, so on a large tree the same query can return slightly different
+    /// rows twice. That is the price of answering while someone is still typing.
+    pub fn search_folder(roots: &[String], query: &str, limit: usize) -> Vec<HarvestedIcon> {
+        let terms: Vec<String> = query
+            .split_whitespace()
+            .map(|term| term.to_ascii_lowercase())
+            .collect();
+        if terms.is_empty() || limit == 0 {
+            return Vec::new();
+        }
+        let started = std::time::Instant::now();
+        let mut queue: std::collections::VecDeque<(PathBuf, usize)> = std::collections::VecDeque::new();
+        let mut roots_seen = std::collections::HashSet::new();
+        for root in roots {
+            let path = PathBuf::from(root.trim());
+            if path.is_dir() && roots_seen.insert(path.clone()) {
+                queue.push_back((path, 0));
+            }
+        }
+        let mut walked = 0usize;
+        let mut hits: Vec<(usize, PathBuf)> = Vec::new();
+        // Gather more than asked for, then rank — the first matches off a
+        // breadth-first walk are the shallowest, not the most recent.
+        let gather = limit.saturating_mul(4).max(limit);
+        while let Some((dir, depth)) = queue.pop_front() {
+            if walked >= DEEP_ENTRIES
+                || hits.len() >= gather
+                || started.elapsed().as_millis() >= DEEP_BUDGET_MS
+            {
+                break;
+            }
+            let mut children = Vec::new();
+            collect_folder(&dir, &mut children);
+            for path in children {
+                walked += 1;
+                let Some(name) = path.file_name().map(|raw| raw.to_string_lossy().to_ascii_lowercase())
+                else {
+                    continue;
+                };
+                if terms.iter().all(|term| name.contains(term.as_str())) {
+                    hits.push((depth + 1, path.clone()));
+                }
+                if depth + 1 < DEEP_DEPTH && !deep_skip(&name) && path.is_dir() {
+                    queue.push_back((path, depth + 1));
+                }
+            }
+        }
+        log::info!(
+            "deep search {:?} walked {walked} found {} ({}ms)",
+            query,
+            hits.len(),
+            started.elapsed().as_millis()
+        );
+        // Shallow first, then newest: "the invoice I saved last week" is much more
+        // often wanted than a same-named file six folders down from 2019.
+        hits.sort_by_cached_key(|(depth, path)| {
+            let modified = path.metadata().and_then(|meta| meta.modified()).ok();
+            (*depth, std::cmp::Reverse(modified), path.clone())
+        });
+        hits.truncate(limit);
+        let _com = ComGuard::new();
+        hits.into_iter()
+            .filter_map(|(_, path)| {
+                // No icon extraction: it is COM per file and this list is rebuilt on
+                // every keystroke. The glyph fallback draws these rows instead.
+                harvest_one(&path, None, false).ok()
+            })
+            .collect()
+    }
+
+    /// Opens the containing folder with the item already selected. Its own command
+    /// rather than open_item_with, because that expands %VAR% in its arguments and
+    /// a file named `100% done.txt` would come out mangled.
+    pub fn reveal_item(path: &str) -> Result<(), String> {
+        let target = PathBuf::from(path.trim());
+        if target.as_os_str().is_empty() {
+            return Err("empty path".into());
+        }
+        let file = HSTRING::from("explorer.exe");
+        let args = HSTRING::from(format!("/select,\"{}\"", target.to_string_lossy()));
+        let result = unsafe { shell_open(&file, Some(&args)) };
+        if result.0 as isize <= 32 {
+            return Err(format!("could not reveal {path}"));
+        }
+        Ok(())
+    }
+
     pub fn known_folders() -> Vec<super::KnownFolder> {
         let _com = ComGuard::new();
         let mut out = Vec::new();
@@ -2239,6 +2352,14 @@ mod win {
         Err("folder listing is Windows-only".into())
     }
 
+    pub fn search_folder(_roots: &[String], _query: &str, _limit: usize) -> Vec<HarvestedIcon> {
+        Vec::new()
+    }
+
+    pub fn reveal_item(_path: &str) -> Result<(), String> {
+        Err("reveal is Windows-only".into())
+    }
+
     pub fn known_folders() -> Vec<super::KnownFolder> {
         Vec::new()
     }
@@ -2327,6 +2448,14 @@ pub fn forget_icons() {
 
 pub fn list_folder(path: &str) -> Result<Vec<HarvestedIcon>, String> {
     win::list_folder(path)
+}
+
+pub fn search_folder(roots: &[String], query: &str, limit: usize) -> Vec<HarvestedIcon> {
+    win::search_folder(roots, query, limit)
+}
+
+pub fn reveal_item(path: &str) -> Result<(), String> {
+    win::reveal_item(path)
 }
 
 pub fn known_folders() -> Vec<KnownFolder> {

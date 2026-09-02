@@ -230,7 +230,7 @@ the end only. Nothing that stays moves position.
 | Keys | Does |
 | --- | --- |
 | **Ctrl+Space** | Open search — works anywhere in Windows, even when Alcove is behind other apps |
-| **Ctrl+F** | Search within Alcove |
+| **Ctrl+F** | Search within Alcove — Enter shows the file on the desktop rather than opening it |
 | **Ctrl+N** | New Alcove |
 | **Ctrl+Shift+H** | Collapse every drawer |
 | **Ctrl+V** | Paste clipboard files into the open drawer's folder, or onto the Desktop |
@@ -240,6 +240,9 @@ the end only. Nothing that stays moves position.
 | **Enter** | Open the selected icons |
 | **Delete** | Send the selected icons — or the focused icon — to the Recycle Bin |
 | **1**–**9** in search | Open that numbered result, before you type anything |
+| **Ctrl+Enter** in search | Show the highlighted file in Explorer |
+| **Shift+Enter** in search | Open the folder that holds it |
+| **>** in search | Turn the list into commands |
 | **Backspace** | Go up a level in a drilled-into folder |
 | **Esc** | Clear the selection, or close search |
 | **Ctrl+Shift+F12** | Emergency release — hands the desktop back to Explorer |
@@ -253,13 +256,49 @@ reads your last saved arrangement, so a drawer you created seconds ago may take 
 moment to appear there.
 
 Before you type it shows two short lists: **Today**, the files you have changed since
-midnight, and **Frequent**, what you open most. Press **1** to **9** to open one
-without touching the mouse. Today is the half the frequent strip cannot cover — the
+midnight, and **Frequent**, what you open most. Pictures get at most two rows in
+Today between them, so an afternoon of downloading wallpapers cannot bury the
+document you were writing. Press **1** to **9** to open one without touching the
+mouse. Today is the half the frequent strip cannot cover — the
 document you were editing twenty minutes ago and will never open again after Friday.
 
 Once you type, results are ranked by how often you actually open them, not just by
 how well the name matches. Something you use daily wins a close call, but a weak
 match never beats a strong one however often you open it.
+
+Each row says what it is under its name — the type, the size and when it changed —
+which is the difference between five files called `pexels-70588695` and five files
+you can tell apart.
+
+### What search can find
+
+Typing searches four things at once, each in its own group.
+
+- **Icons** on the desktop and in every drawer.
+- **Running windows.** Choosing one switches to it, so Ctrl+Space is Alt+Tab you
+  can type into.
+- **Drawers**, by name. Enter opens the drawer on the screen it lives on.
+- **Deeper in your folders.** A drawer pointed at a folder lists the 400 newest
+  files in it and nothing below that, so search also walks the folders underneath.
+  The walk stops after about half a second and shows what it found by then, nearest
+  folders first. It skips the places nobody means — `node_modules`, `AppData`, the
+  Recycle Bin.
+
+Hold **Ctrl** with Enter to show the highlighted file in Explorer instead of opening
+it, or **Shift** to open the folder around it.
+
+### Commands
+
+Type **>** and the list becomes verbs: new drawer, collapse every drawer, change
+wallpaper, settings, hide or show the Windows taskbar, empty the Recycle Bin.
+Emptying the bin still goes through Windows' own confirmation. Each command shows
+the shortcut that already does it, so the palette teaches its way out of itself.
+
+### When nothing matches
+
+Search never answers with a dead end. Whatever you typed, it offers something that
+runs: a path you typed opens, a web address opens in your browser, a single word
+runs the way **Win+R** would, and there is always a web search at the bottom.
 
 ---
 

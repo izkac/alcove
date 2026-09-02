@@ -49,6 +49,22 @@ fn shell_icon(target: String) -> Result<String, String> {
     harvest::shell_icon(&target)
 }
 
+/// Async: this walks the disk and fires on every keystroke in the launcher, so
+/// it must never sit on the main thread.
+#[tauri::command]
+async fn search_folders(
+    roots: Vec<String>,
+    query: String,
+    limit: usize,
+) -> Result<Vec<harvest::HarvestedIcon>, String> {
+    Ok(harvest::search_folder(&roots, &query, limit))
+}
+
+#[tauri::command]
+fn reveal_desktop_item(path: String) -> Result<(), String> {
+    harvest::reveal_item(&path)
+}
+
 /// Async so a cold PDF/video thumbnail extraction runs off the main thread —
 /// this fires on every selection change and must never stall the desktop.
 #[tauri::command]
@@ -319,6 +335,8 @@ pub fn run() {
             list_running_windows,
             activate_window,
             focus_desktop,
+            search_folders,
+            reveal_desktop_item,
             show_search_window,
             hide_search_window,
             autostart_enabled,

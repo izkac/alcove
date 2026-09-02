@@ -32,6 +32,8 @@
     --color-home: var(--home);
     --color-home-line: var(--home-line);
     --color-home-drag: var(--home-drag);
+    --color-home-ink: var(--home-ink);
+    --color-home-ink-faint: var(--home-ink-faint);
     --color-veil: var(--veil);
     --color-veil-hover: var(--veil-hover);
     --color-dock: var(--dock);
@@ -111,6 +113,10 @@
     --sc: clamp(0.01, calc(var(--wp-c) * 0.35), 0.06);
     --ic: clamp(0.008, calc(var(--wp-c) * 0.1), 0.02);
     --desk-a: 1;
+    /* Dialogs and menus: a sheet, not the desk. Lifted slate so they do not
+     * sit in the picture's mud. `/ 1` is load-bearing on a transparent window. */
+    --pop-l: clamp(26%, calc(var(--surf-l) + 8%), 36%);
+    --pop-c: clamp(0.015, calc(var(--wp-c) * 0.45), 0.07);
 
     /* `/ 1` is load-bearing: WebView2 on a transparent window drops oklch
      * fills that omit alpha, so menus and dialogs would show the wallpaper. */
@@ -152,7 +158,7 @@
     --foreground: var(--ink);
     --card: var(--surface);
     --card-foreground: var(--ink);
-    --popover: oklch(calc(var(--surf-l) + 5%) var(--sc) var(--wp-h) / 1);
+    --popover: oklch(var(--pop-l) var(--pop-c) var(--wp-h) / 1);
     --popover-foreground: var(--ink);
     --primary: var(--ink);
     --primary-foreground: var(--surface);
@@ -214,14 +220,18 @@
     --dock: oklch(18% 0.04 var(--wp-h) / 0.18);
     --dock-line: oklch(20% 0.04 var(--wp-h) / 0.08);
 
-    /* Menus and dialogs stay Solid paper even when the desk is Tinted/Blend. */
-    --popover: oklch(94.5% clamp(0.006, calc(var(--wp-c) * 0.32), 0.05) var(--wp-h) / 1);
+    /* A readable sheet: above the 66% Tinted floor (mud) and below Solid
+     * paper (glare), with enough chroma to keep the wallpaper's colour. */
+    --pop-l: clamp(80%, var(--surf-l), 90%);
+    --pop-c: clamp(0.02, calc(var(--wp-c) * 0.55), 0.08);
     --input: oklch(20% 0.03 var(--wp-h) / 0.14);
     --destructive: oklch(55% 0.2 25);
 }
 :root[data-wp="light"][data-tone="solid"] {
     --surf-l: 94.5%;
     --sc: clamp(0.006, calc(var(--wp-c) * 0.32), 0.05);
+    --pop-l: 94.5%;
+    --pop-c: clamp(0.006, calc(var(--wp-c) * 0.32), 0.05);
 }
 :root[data-wp="light"][data-tone="blend"] {
     --surf-l: clamp(62%, calc(var(--wp-l) * 100% + 11%), 92%);
@@ -349,6 +359,14 @@
     background: transparent !important;
     }
 
+  /* The Input primitive paints placeholders in muted ink. On a veil that ink is
+   * black on a dark wash; keep the placeholder on the same contrast as home chrome. */
+  input.home-ink::placeholder {
+    color: var(--home-ink-faint);
+    text-shadow: var(--home-ink-shadow);
+    opacity: 1;
+    }
+
   /*
    * Visitors on a transparent WebView. Opacity fade-in leaves them washed;
    * pin alpha at 1 and skip that animation on the menu primitives.
@@ -359,7 +377,8 @@
   [data-slot="dropdown-menu-sub-content"],
   [data-slot="popover-content"],
   [data-slot="dialog-content"],
-  [data-slot="select-content"] {
+  [data-slot="select-content"],
+  [data-slot="search-card"] {
     background-color: var(--popover);
     opacity: 1;
     isolation: isolate;

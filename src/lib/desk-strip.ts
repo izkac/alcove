@@ -1,4 +1,5 @@
 import type { Alcove } from "@/types"
+import type { WallpaperTheme } from "@/lib/wallpaper"
 
 export type DeskInfo = {
   id: string
@@ -74,11 +75,41 @@ export type DeskLaunchMessage = {
 }
 
 /**
+ * The launcher asked for something only a desk can do — open a drawer, show a
+ * dialog, collapse the rail. The search window holds a read-only copy of the
+ * state and none of the dialogs, so it names the job and the desk performs it.
+ */
+export type DeskCommandMessage = {
+  type: "desk-command"
+  command: DeskCommand
+  /** Only for "open-alcove". */
+  alcoveId?: string
+}
+
+export const DESK_COMMANDS = [
+  "open-alcove",
+  "new-alcove",
+  "settings",
+  "collapse-all",
+  "wallpaper",
+  "toggle-taskbar",
+  "empty-bin",
+] as const
+
+export type DeskCommand = (typeof DESK_COMMANDS)[number]
+
+/**
  * The wallpaper is a Windows-wide thing, but each desk window paints and samples
  * it separately, so whoever changes it tells the others to look again.
  */
 export type DeskWallpaperMessage = {
   type: "wallpaper-changed"
+}
+
+/** The desk sampled the wallpaper. Search and the bar paint from these numbers. */
+export type DeskThemeMessage = {
+  type: "theme"
+  theme: WallpaperTheme
 }
 
 export type DeskChannelMessage =
@@ -89,7 +120,9 @@ export type DeskChannelMessage =
   | DeskDragHandoffMessage
   | DeskGhostEndMessage
   | DeskLaunchMessage
+  | DeskCommandMessage
   | DeskWallpaperMessage
+  | DeskThemeMessage
 
 /** The ghost lives in one webview. Paint it here only while the cursor is on this desk. */
 export function ghostStaysHere(hit: DeskHit | null, currentDeskId: string) {

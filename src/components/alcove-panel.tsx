@@ -63,7 +63,7 @@ const ICON_BTN =
   "home-ink flex size-7 items-center justify-center rounded-md outline-none transition-colors duration-150 hover:bg-veil-hover focus-visible:outline-2 focus-visible:outline-sel"
 
 const FILTER =
-  "home-ink h-8 border-transparent bg-veil pr-2 pl-8 placeholder:home-ink-faint focus-visible:border-sel focus-visible:ring-sel/25 text-ui md:text-ui"
+  "home-ink h-8 border-transparent bg-veil pr-2 pl-8 placeholder:text-home-ink-faint focus-visible:border-sel focus-visible:ring-sel/25 text-ui md:text-ui"
 
 export function AlcovePanel(props: AlcovePanelProps) {
   const { alcove, icons, dimmed, onToggle, onFocus } = props

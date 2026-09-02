@@ -181,7 +181,8 @@ A monochrome system in two lightness registers, warmed or cooled by the wallpape
 - **Wallpaper Selection** (`oklch(50% 0.16 var(--wp-h))` on paper, `oklch(78% 0.1 var(--wp-h))` on slate): the only accent. Used for the open drawer's roundel ring, selected icon tiles, focus rings, the Inbox count badge, the kept-slot pin, switches, and checkboxes. Its soft form at 13 to 16 percent alpha fills selected tiles. It is never decoration.
 
 ### Neutral
-- **Paper** (`oklch(var(--surf-l) var(--sc) var(--wp-h))`; Tinted: `--surf-l` is the wallpaper lightness plus 18 points, clamped 66% to 94.5%, and `--sc` is half the wallpaper chroma capped at 0.09; Solid: 94.5% and 0.32 of the chroma capped at 0.05): dialogs, menus, search, chips and the preview card on a light wallpaper. Rail, drawers and the strip use Dock instead.
+- **Paper** (`oklch(var(--surf-l) var(--sc) var(--wp-h))`; Tinted: `--surf-l` is the wallpaper lightness plus 18 points, clamped 66% to 94.5%, and `--sc` is half the wallpaper chroma capped at 0.09; Solid: 94.5% and 0.32 of the chroma capped at 0.05): chips and the preview card on a light wallpaper. Rail, drawers and the strip use Dock instead. Dialogs and menus use **Sheet** instead, so they neither sit in the wallpaper's mud nor glare as Solid paper.
+- **Sheet** (`oklch(var(--pop-l) var(--pop-c) var(--wp-h) / 1)`; Tinted paper: lightness clamped 80% to 90% with a little more of the wallpaper chroma; Tinted slate: 26% to 36%; Solid: the Solid surface): dialogs, menus and search. Always opaque.
 - **Paper Raised** (`--surf-l` minus 4.5 points): roundels at rest, filter fields, hover fills, the details-view header.
 - **Paper Field** (`--surf-l` minus 9 points): segmented controls, count pills, the deepest recess.
 - **Slate** (`oklch(var(--surf-l) var(--sc) var(--wp-h))`; Tinted: wallpaper lightness plus 9 points, clamped 20% to 32%, chroma 0.35 of the wallpaper's capped at 0.06; Solid: 24% and 0.2 of the chroma capped at 0.035): every surface on a dark wallpaper, and the default before the wallpaper has been read.
@@ -199,9 +200,9 @@ A monochrome system in two lightness registers, warmed or cooled by the wallpape
 ### Named Rules
 **The Borrowed Hue Rule.** No colour in this system has a hue or a saturation of its own. Every neutral, every surface and the accent read `--wp-h` and `--wp-c`. A screenshot of Alcove on two different wallpapers should show two different tints of the same design, and on a grey wallpaper no tint at all.
 
-**The Never White Rule.** Paper tops out at 94.5% lightness, and in the default Tinted tone it sits only 18 points above the wallpaper. Pure white on a saturated wallpaper reads as glare; if a surface looks white, its chroma or lightness is wrong.
+**The Never White Rule.** Paper tops out at 94.5% lightness, and in the default Tinted tone it sits only 18 points above the wallpaper. Pure white on a saturated wallpaper reads as glare; if a surface looks white, its chroma or lightness is wrong. Light vs dark is the median pixel, so a dark picture with a few bright sparkles stays slate.
 
-**The One Step Rule.** A visitor (a dialog, a menu, a chip) is the wallpaper one step lighter, in the wallpaper's own colour. Home chrome is not a visitor: it does not take that step, or it reads as a card on top of the picture.
+**The One Step Rule.** A visitor (a chip, a preview) is the wallpaper one step lighter, in the wallpaper's own colour. Dialogs and menus take a further step: a sheet at 80–90% on paper or 26–36% on slate, so they stay a readable card. Home chrome is not a visitor: it does not take that step, or it reads as a card on top of the picture.
 
 **The Home Chrome Rule.** The rail, the strip and the open drawer are marks on the picture. Their fill is the Dock wash, their edge is a Dock Line, and their labels carry their own contrast the way parked icons do. Dialogs stay surfaces because they cover a choice.
 
