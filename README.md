@@ -13,7 +13,7 @@ browser it runs as a clickable mock with sample data, which is how you develop i
 
 ## Install
 
-Download `Alcove_0.2.0_x64-setup.exe` and run it. It installs for the current user,
+Download `Alcove_0.2.2_x64-setup.exe` and run it. It installs for the current user,
 adds Alcove to the Start menu, and registers it to start at sign-in. You can turn
 sign-in start off in Settings; uninstalling removes it.
 
