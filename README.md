@@ -2,6 +2,8 @@
 
 Give every icon a home.
 
+![A drawer opens from the shelf rail as a panel, a second click spreads Documents into a canvas with named rows, then search opens over the wallpaper](docs/demo.gif)
+
 Alcove is a Windows desktop organizer. It replaces the loose grid of icons on your
 desktop with named groups — **Alcoves** — that open one at a time, spread across the
 desktop when they get big, and keep their own arrangement per monitor. It reads the
@@ -13,7 +15,7 @@ browser it runs as a clickable mock with sample data, which is how you develop i
 
 ## Install
 
-Download `Alcove_0.2.2_x64-setup.exe` and run it. It installs for the current user,
+Download the installer from the [latest release](https://github.com/izkac/alcove/releases/latest) and run it. It installs for the current user,
 adds Alcove to the Start menu, and registers it to start at sign-in. You can turn
 sign-in start off in Settings; uninstalling removes it.
 
