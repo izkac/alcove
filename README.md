@@ -114,7 +114,16 @@ up somewhere you would not lose a password.
 To cut a release:
 
 1. Bump `version` in `package.json` and `src-tauri/tauri.conf.json`.
-2. Build with the signing key in the environment:
+2. Tag it and push: `git tag v0.2.4 && git push origin v0.2.4`.
+
+`.github/workflows/release.yml` builds the installer, signs the updater
+artifacts and drafts a GitHub release holding the `.exe`, the `.exe.sig` and
+`latest.json`. It stays a **draft** on purpose: the updater reads
+`releases/latest`, so nothing reaches existing installs until you publish it.
+The workflow needs `TAURI_SIGNING_PRIVATE_KEY` (the key's contents, not its
+path) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as repository secrets.
+
+To build one locally instead:
 
 ```bat
 set TAURI_SIGNING_PRIVATE_KEY_PATH=%USERPROFILE%\.tauri\alcove.key
@@ -122,9 +131,7 @@ set TAURI_SIGNING_PRIVATE_KEY_PASSWORD=
 npm run installer
 ```
 
-3. Publish the `.exe`, the `.exe.sig`, and a `latest.json` naming that version
-   and the installer URL, as a GitHub release. Everything lands in
-   `src-tauri\target\release\bundle\nsis\`.
+Everything lands in `src-tauri\target\release\bundle\nsis\`.
 
 Installing runs the NSIS installer, which takes the running Alcove down with it.
 Because Alcove hides Explorer's icon list while attached, the update path hands

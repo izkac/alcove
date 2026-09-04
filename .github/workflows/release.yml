@@ -1,0 +1,80 @@
+# Cuts a release from a version tag: builds the NSIS installer, signs the updater
+# artifacts with the minisign key, and drafts a GitHub release with the .exe, the
+# .exe.sig and latest.json. Replaces the manual "To cut a release" steps in README.md.
+#
+# Secrets this needs:
+#   TAURI_SIGNING_PRIVATE_KEY           contents of %USERPROFILE%\.tauri\alcove.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password (empty string if none)
+#
+# The release is left as a DRAFT on purpose: the updater endpoint reads
+# releases/latest, so nothing reaches existing installs until you publish it.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: # build without releasing, to check the pipeline still works
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: npm ci
+
+      # ponytail: version lives in package.json and tauri.conf.json both. Catch the
+      # drift here rather than in a release that ships the wrong number.
+      - name: Check the tag matches the version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(node -p "require('./package.json').version")
+          conf=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          echo "tag=$tag package.json=$pkg tauri.conf.json=$conf"
+          test "$tag" = "$pkg" && test "$tag" = "$conf"
+
+      - run: npm run lint
+      - run: npm run check
+
+      - name: Build and draft the release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          # Empty on a manual run, which makes tauri-action build without releasing.
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Alcove {0}', github.ref_name) || '' }}
+          releaseDraft: true
+          args: --bundles nsis
+
+      # TODO: Authenticode signing goes HERE, once SignPath approves.
+      # It has to run before the updater signature is made, or the .sig will not
+      # match the shipped .exe. That means dropping tauri-action's one-shot build
+      # for: build unsigned -> submit to SignPath -> `tauri signer sign` the signed
+      # .exe -> upload. See signpath/github-action-submit-signing-request.
+
+      - name: Attest what we just built
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: src-tauri/target/release/bundle/nsis/*-setup.exe
