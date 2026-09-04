@@ -114,7 +114,15 @@ up somewhere you would not lose a password.
 To cut a release:
 
 1. Bump `version` in `package.json` and `src-tauri/tauri.conf.json`.
-2. Tag it and push: `git tag v0.2.4 && git push origin v0.2.4`.
+2. Tag it with a message and push:
+
+```bat
+git tag -a v0.2.5 -m "What changed, in the words users will read."
+git push origin v0.2.5
+```
+
+The tag message becomes the release body *and* the `notes` the updater shows
+people in the update prompt, so write it for them rather than for yourself.
 
 `.github/workflows/release.yml` builds the installer, signs the updater
 artifacts and drafts a GitHub release holding the `.exe`, the `.exe.sig` and

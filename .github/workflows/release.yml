@@ -55,6 +55,18 @@ jobs:
       - run: npm run lint
       - run: npm run check
 
+      # tauri-action bakes the release body into latest.json, which the updater
+      # shows people in the update prompt. Left unset it is empty, and they get
+      # asked to update with no reason given.
+      - name: Take the release notes from the tag
+        id: notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          notes=$(git for-each-ref "refs/tags/$GITHUB_REF_NAME" --format='%(contents)')
+          [ -n "$notes" ] || notes="See the commit history for what changed."
+          { echo "body<<NOTES_EOF"; echo "$notes"; echo "NOTES_EOF"; } >> "$GITHUB_OUTPUT"
+
       - name: Build and draft the release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -65,6 +77,7 @@ jobs:
           # Empty on a manual run, which makes tauri-action build without releasing.
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Alcove {0}', github.ref_name) || '' }}
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           args: --bundles nsis
 
