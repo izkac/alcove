@@ -49,6 +49,18 @@ export type SurfaceTone = (typeof SURFACE_TONES)[number]
 export const TEXT_SIZES = ["default", "large", "larger"] as const
 export type TextSize = (typeof TEXT_SIZES)[number]
 
+/**
+ * One open window, as Windows reports it. Shared by the taskbar and the
+ * launcher — both answer "switch me to that thing", just from different ends.
+ */
+export type RunningApp = {
+  hwnd: number
+  title: string
+  exePath: string
+  iconUrl: string | null
+  foreground: boolean
+}
+
 export type DesktopIcon = {
   id: string
   name: string
@@ -102,6 +114,17 @@ export type Alcove = {
   folderView?: FolderView
   /** Monitor this drawer lives on. Null = primary. Inbox ignores this. */
   stripId?: string | null
+  /**
+   * The drive root this drawer mirrors, e.g. `"E:\\"`. Set only for a drawer
+   * Alcove opened for a removable volume, and never saved.
+   */
+  removable?: string | null
+}
+
+/** A removable volume Alcove can see, as reported by `list_removable_drives`. */
+export type RemovableDrive = {
+  root: string
+  name: string
 }
 
 /** One open, decayed to `at`. Score is meaningless without its timestamp. */
@@ -155,4 +178,6 @@ export type DesktopState = {
   topHide: string[]
   /** System shortcuts pinned on the left of the frequent strip. */
   stripToolIds: string[]
+  /** Whether plugging a removable drive in opens a drawer for it. */
+  autoDriveDrawers?: boolean
 }

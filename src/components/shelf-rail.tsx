@@ -37,6 +37,8 @@ type ShelfRailProps = {
   onLinkFolder: (alcove: Alcove) => void
   onUnlinkFolder: (alcoveId: string) => void
   onDelete: (alcoveId: string) => void
+  /** Ejects a removable drawer's volume. */
+  onEject: (alcoveId: string) => void
   desks?: DeskInfo[]
   deskId?: string
   stripHover?: boolean
@@ -75,6 +77,7 @@ export function ShelfRail({
   onSetGlyph,
   onLinkFolder,
   onUnlinkFolder,
+  onEject,
   onDelete,
   desks = [],
   deskId,
@@ -191,6 +194,14 @@ export function ShelfRail({
               </button>
             </ContextMenuTrigger>
             <ContextMenuContent className="w-56">
+              {alcove.removable ? (
+                // Everything else here would be undone by the next poll: the
+                // drawer is the stick, and lasts exactly as long as it does.
+                <ContextMenuItem onSelect={() => onEject(alcove.id)}>
+                  Eject {alcove.name}
+                </ContextMenuItem>
+              ) : (
+                <>
               <ContextMenuItem onSelect={() => onEdit(alcove)}>Edit…</ContextMenuItem>
               {onReorder ? (
                 <>
@@ -270,6 +281,8 @@ export function ShelfRail({
               >
                 Delete Alcove
               </ContextMenuItem>
+                </>
+              )}
             </ContextMenuContent>
           </ContextMenu>
         )

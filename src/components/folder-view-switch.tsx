@@ -20,7 +20,7 @@ export function FolderViewSwitch({ value, onChange }: FolderViewSwitchProps) {
     <div
       role="group"
       aria-label="Folder view"
-      className="flex shrink-0 rounded-lg bg-surface-2 p-0.5"
+      className="flex shrink-0 rounded-lg bg-veil p-0.5"
     >
       {FOLDER_VIEW_OPTIONS.map((option) => {
         const Icon = ICONS[option.id]
@@ -34,9 +34,9 @@ export function FolderViewSwitch({ value, onChange }: FolderViewSwitchProps) {
             aria-pressed={active}
             onClick={() => onChange(option.id)}
             className={cn(
-              "flex size-7 items-center justify-center rounded-md text-ink-faint outline-none transition-colors duration-150",
-              "hover:text-ink focus-visible:outline-2 focus-visible:outline-sel",
-              active && "bg-surface text-ink shadow-[0_1px_2px_oklch(0%_0_0/0.12)]",
+              "home-ink-faint flex size-7 items-center justify-center rounded-md outline-none transition-colors duration-150",
+              "hover:home-ink focus-visible:outline-2 focus-visible:outline-sel",
+              active && "home-ink bg-veil-hover",
             )}
           >
             <Icon className="size-3.5" />

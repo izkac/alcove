@@ -1,6 +1,6 @@
 [package]
 name = "alcove"
-version = "0.2.0"
+version = "0.2.2"
 description = "Give every icon a home."
 edition = "2021"
 rust-version = "1.77.2"
@@ -36,6 +36,8 @@ windows = { version = "0.61.3", features = [
         "Win32_System_Kernel",
         "Win32_System_LibraryLoader",
         "Win32_System_Threading",
+        "Win32_System_IO",
+        "Win32_System_Ioctl",
     "Win32_UI_Controls",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",

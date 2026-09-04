@@ -7,6 +7,14 @@ export const HOME_LIMIT = 9
 /** Recent is volatile by nature; it must not crowd out the stable half. */
 const TODAY_LIMIT = 5
 
+/**
+ * Pictures arrive in batches — one wallpaper hunt drops eight files into
+ * Downloads in a minute and every one of them is "modified today". Left alone
+ * they take the whole list and bury the document you were actually writing, so
+ * only the two newest ever stand for the batch.
+ */
+const TODAY_IMAGE_LIMIT = 2
+
 export type LauncherHome = {
   today: DesktopIcon[]
   frequent: DesktopIcon[]
@@ -29,7 +37,8 @@ function startOfDay(now: number): number {
  *
  * Apps and shortcuts are excluded from Today. A `.lnk`'s timestamp is when it
  * was installed, not when it was used, so they would fill the list on the day
- * you set the machine up and never leave.
+ * you set the machine up and never leave. Pictures are capped rather than
+ * excluded — one saved photo is worth a row, eight downloaded ones are not.
  */
 export function launcherHome(
   icons: DesktopIcon[],
@@ -40,6 +49,7 @@ export function launcherHome(
   const hidden = new Set(hide)
   const midnight = startOfDay(now)
 
+  let images = 0
   const today = icons
     .filter(
       (icon) =>
@@ -51,6 +61,7 @@ export function launcherHome(
         icon.modifiedAt <= now,
     )
     .sort((a, b) => (b.modifiedAt ?? 0) - (a.modifiedAt ?? 0))
+    .filter((icon) => icon.kind !== "image" || (images += 1) <= TODAY_IMAGE_LIMIT)
     .slice(0, TODAY_LIMIT)
 
   const taken = new Set(today.map((icon) => icon.id))

@@ -24,7 +24,7 @@ import { folderIconSize, folderViewFor } from "@/lib/folder-view"
 import { iconPack } from "@/lib/icon-select"
 import { cn } from "@/lib/utils"
 import type { Alcove, AlcoveColor, Density, DesktopIcon, FolderView } from "@/types"
-import { Maximize2, Pencil, Search, Trash2 } from "lucide-react"
+import { Eject, Maximize2, Pencil, Search, Trash2 } from "lucide-react"
 import type { PointerEvent } from "react"
 
 type AlcovePanelProps = {
@@ -57,13 +57,15 @@ type AlcovePanelProps = {
   folderPath?: string | null
   onCrumb?: (path: string) => void
   onOpenFolderHere?: () => void
+  /** Only passed for a drawer mirroring a removable volume. */
+  onEject?: () => void
 }
 
 const ICON_BTN =
-  "flex size-7 items-center justify-center rounded-md text-ink-muted outline-none transition-colors duration-150 hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-sel"
+  "home-ink flex size-7 items-center justify-center rounded-md outline-none transition-colors duration-150 hover:bg-veil-hover focus-visible:outline-2 focus-visible:outline-sel"
 
 const FILTER =
-  "h-8 border-transparent bg-surface-2 pr-2 pl-8 text-ink placeholder:text-ink-faint focus-visible:border-sel focus-visible:ring-sel/25 text-ui md:text-ui"
+  "home-ink h-8 border-transparent bg-veil pr-2 pl-8 placeholder:text-home-ink-faint focus-visible:border-sel focus-visible:ring-sel/25 text-ui md:text-ui"
 
 export function AlcovePanel(props: AlcovePanelProps) {
   const { alcove, icons, dimmed, onToggle, onFocus } = props
@@ -118,6 +120,7 @@ function ExpandedAlcove({
   folderPath,
   onCrumb,
   onOpenFolderHere,
+  onEject,
 }: AlcovePanelProps) {
   const config = DENSITY_CONFIG[density]
   const [query, setQuery] = useState("")
@@ -184,24 +187,27 @@ function ExpandedAlcove({
           }}
           aria-label={alcove.name}
           className={cn(
-            "alcove-rise flex max-h-[min(78vh,760px)] max-w-full flex-col overflow-hidden rounded-[14px] border border-hairline bg-desk text-ink shadow-sheet transition-opacity duration-200",
+            "alcove-rise flex max-h-[min(78vh,760px)] max-w-full flex-col overflow-hidden rounded-[14px] border border-dock-line bg-dock transition-opacity duration-200",
             dimmed && "opacity-25",
           )}
         >
           <header className="flex items-center gap-2.5 px-3 pt-2.5 pb-2">
             <span
               style={tintStyle(alcove.isInbox ? "amber" : alcove.color)}
-              className="flex size-7 items-center justify-center rounded-lg bg-surface-2"
+              className="flex size-7 items-center justify-center rounded-lg"
             >
-              <AlcoveGlyphMark glyph={resolveAlcoveGlyph(alcove)} className="tint size-4" />
+              <AlcoveGlyphMark
+                glyph={resolveAlcoveGlyph(alcove)}
+                className="tint home-mark size-4"
+              />
             </span>
             <button
               type="button"
               onClick={onToggle}
-              className="flex min-w-0 items-center gap-2 rounded-md text-left text-title font-medium text-ink outline-none focus-visible:outline-2 focus-visible:outline-sel"
+              className="home-ink flex min-w-0 items-center gap-2 rounded-md text-left text-title font-medium outline-none focus-visible:outline-2 focus-visible:outline-sel"
             >
               <span className="min-w-0 truncate">{alcove.name}</span>
-              <span className="text-meta font-normal text-ink-muted">
+              <span className="home-ink-faint text-meta font-normal">
                 {query.trim()
                   ? `${filtered.length}/${icons.length}`
                   : icons.length}
@@ -218,26 +224,43 @@ function ExpandedAlcove({
             ) : (
               <span className="flex-1" />
             )}
-            <button
-              type="button"
-              title="Edit Alcove"
-              aria-label="Edit Alcove"
-              onClick={onEdit}
-              className={ICON_BTN}
-            >
-              <Pencil className="size-3.5" />
-            </button>
-            {!alcove.isInbox ? (
+            {alcove.removable ? (
+              // A removable drawer lasts as long as the stick is in the port, so
+              // renaming or deleting it would only be undone by the next poll.
+              // Eject is the one thing you can usefully do to it.
               <button
                 type="button"
-                title="Delete Alcove"
-                aria-label="Delete Alcove"
-                onClick={onDelete}
-                className={cn(ICON_BTN, "hover:text-destructive")}
+                title={`Eject ${alcove.name}`}
+                aria-label={`Eject ${alcove.name}`}
+                onClick={onEject}
+                className={ICON_BTN}
               >
-                <Trash2 className="size-3.5" />
+                <Eject className="size-3.5" />
               </button>
-            ) : null}
+            ) : (
+              <>
+                <button
+                  type="button"
+                  title="Edit Alcove"
+                  aria-label="Edit Alcove"
+                  onClick={onEdit}
+                  className={ICON_BTN}
+                >
+                  <Pencil className="size-3.5" />
+                </button>
+                {!alcove.isInbox ? (
+                  <button
+                    type="button"
+                    title="Delete Alcove"
+                    aria-label="Delete Alcove"
+                    onClick={onDelete}
+                    className={cn(ICON_BTN, "hover:text-destructive")}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                ) : null}
+              </>
+            )}
             {alcove.folderPath && onFolderView ? (
               <FolderViewSwitch value={itemView} onChange={onFolderView} />
             ) : null}
@@ -255,7 +278,7 @@ function ExpandedAlcove({
           </header>
           {emptyInbox ? null : (
             <div className="relative px-3 pb-2">
-              <Search className="pointer-events-none absolute top-1/2 left-5 size-3.5 -translate-y-1/2 text-ink-faint" />
+              <Search className="home-ink-faint pointer-events-none absolute top-1/2 left-5 size-3.5 -translate-y-1/2" />
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
@@ -288,8 +311,8 @@ function ExpandedAlcove({
           >
             {emptyInbox ? (
               <div className="col-span-full flex flex-col items-center justify-center gap-1.5 px-4 py-6 text-center">
-                <p className="text-ui font-medium text-ink">Inbox is clear</p>
-                <p className="max-w-[26ch] text-meta text-ink-muted">
+                <p className="home-ink text-ui font-medium">Inbox is clear</p>
+                <p className="home-ink-faint max-w-[26ch] text-meta">
                   New files on the Desktop land here until you file them.
                 </p>
                 {onDropIncoming ? (
@@ -304,7 +327,7 @@ function ExpandedAlcove({
                 ) : null}
               </div>
             ) : filtered.length === 0 ? (
-              <div className="col-span-full px-4 py-8 text-center text-ui text-ink-muted">
+              <div className="home-ink-faint col-span-full px-4 py-8 text-center text-ui">
                 No icons match “{query.trim()}”.
               </div>
             ) : alcove.folderPath ? (
@@ -326,6 +349,7 @@ function ExpandedAlcove({
                   size={config.icon}
                   highlighted={highlightedIconId === icon.id}
                   selected={selectedIds.includes(icon.id)}
+                  onWallpaper
                   onOpen={handleOpen}
                   onPointerDown={onIconPointerDown}
                 />
@@ -354,7 +378,13 @@ function ExpandedAlcove({
             {onPaste ? (
               <ContextMenuItem onSelect={onPaste}>Paste</ContextMenuItem>
             ) : null}
-            <ContextMenuItem onSelect={onEdit}>Edit…</ContextMenuItem>
+            {alcove.removable ? (
+              // Renaming or relinking a drive drawer is undone by the next
+              // poll, and deleting it just brings it back with a new id.
+              <ContextMenuItem onSelect={onEject}>Eject {alcove.name}</ContextMenuItem>
+            ) : (
+              <ContextMenuItem onSelect={onEdit}>Edit…</ContextMenuItem>
+            )}
             {!alcove.isInbox ? (
               <ContextMenuSub>
                 <ContextMenuSubTrigger>Icon</ContextMenuSubTrigger>
@@ -377,7 +407,7 @@ function ExpandedAlcove({
                 ))}
               </ContextMenuSubContent>
             </ContextMenuSub>
-            {!alcove.isInbox ? (
+            {!alcove.isInbox && !alcove.removable ? (
               <>
                 <ContextMenuSeparator />
                 <ContextMenuItem variant="destructive" onSelect={onDelete}>

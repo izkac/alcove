@@ -2,6 +2,7 @@ import { toast } from "sonner"
 
 import { clampSlotCount, resizeSlots } from "@/lib/frecency"
 import { invoke, isTauri } from "@/lib/tauri"
+import { stripRemovable } from "@/lib/removable-drawers"
 import { migrateStripToolIds } from "@/lib/strip-tools"
 import {
   FOLDER_VIEWS,
@@ -18,34 +19,40 @@ const STORAGE_KEY = "alcove.desktop.v1"
 /** Fills in fields added after a state was saved, so old saves still load. */
 function migrate(state: DesktopState): DesktopState {
   const slots = state.topSlots ?? []
+  // A removable drawer is never meant to be saved, but an older build or a
+  // hand-edited file could still hand us one — drop it before anything else
+  // touches alcoves/icons/layoutSnapshots below.
+  const stripped = stripRemovable(state)
   return {
-    ...state,
-    alcoves: state.alcoves.map((alcove) => ({
+    ...stripped,
+    alcoves: stripped.alcoves.map((alcove) => ({
       ...alcove,
       groups: alcove.groups ?? [],
       folderView: FOLDER_VIEWS.includes(alcove.folderView as FolderView)
         ? alcove.folderView
         : undefined,
       stripId: alcove.stripId ?? null,
+      removable: alcove.removable ?? null,
     })),
-    icons: state.icons.map((icon) => ({
+    icons: stripped.icons.map((icon) => ({
       ...icon,
       groupId: icon.groupId ?? null,
     })),
-    frecency: state.frecency ?? {},
-    topSlotCount: clampSlotCount(state.topSlotCount),
-    topSlots: resizeSlots(slots, state.topSlotCount),
-    topKeep: state.topKeep ?? [],
-    topHide: state.topHide ?? [],
-    stripEdge: state.stripEdge === "bottom" ? "bottom" : "top",
-    surfaceTone: SURFACE_TONES.includes(state.surfaceTone as SurfaceTone)
-      ? state.surfaceTone
+    frecency: stripped.frecency ?? {},
+    topSlotCount: clampSlotCount(stripped.topSlotCount),
+    topSlots: resizeSlots(slots, stripped.topSlotCount),
+    topKeep: stripped.topKeep ?? [],
+    topHide: stripped.topHide ?? [],
+    stripEdge: stripped.stripEdge === "bottom" ? "bottom" : "top",
+    surfaceTone: SURFACE_TONES.includes(stripped.surfaceTone as SurfaceTone)
+      ? stripped.surfaceTone
       : "tinted",
-    textSize: TEXT_SIZES.includes(state.textSize as TextSize)
-      ? state.textSize
+    textSize: TEXT_SIZES.includes(stripped.textSize as TextSize)
+      ? stripped.textSize
       : "default",
-    strongText: state.strongText === true,
-    stripToolIds: migrateStripToolIds(state.stripToolIds),
+    strongText: stripped.strongText === true,
+    stripToolIds: migrateStripToolIds(stripped.stripToolIds),
+    autoDriveDrawers: stripped.autoDriveDrawers ?? true,
   }
 }
 
@@ -68,9 +75,12 @@ export function loadDesktopState(): DesktopState | null {
 }
 
 function serialize(state: DesktopState): string {
+  // Removable drawers are a live mirror of whatever is plugged in right now;
+  // a drive that was here last Tuesday must not come back as an empty drawer.
+  const clean = stripRemovable(state)
   const slim: DesktopState = {
-    ...state,
-    icons: state.icons.map(({ imageUrl: _imageUrl, ...icon }) => icon),
+    ...clean,
+    icons: clean.icons.map(({ imageUrl: _imageUrl, ...icon }) => icon),
   }
   return JSON.stringify(slim)
 }

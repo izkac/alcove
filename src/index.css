@@ -26,12 +26,14 @@
     --color-sel: var(--sel);
     --color-sel-soft: var(--sel-soft);
     --color-on-wp: var(--on-wp);
-    /* Visitors (drawers) may let the wallpaper through in Blend. */
+    /* Visitors (chips, preview) may let the wallpaper through in Blend. */
     --color-desk: var(--desk);
     /* Home chrome (rail, strip) sits in the picture, not on it. */
     --color-home: var(--home);
     --color-home-line: var(--home-line);
     --color-home-drag: var(--home-drag);
+    --color-home-ink: var(--home-ink);
+    --color-home-ink-faint: var(--home-ink-faint);
     --color-veil: var(--veil);
     --color-veil-hover: var(--veil-hover);
     --color-dock: var(--dock);
@@ -96,7 +98,8 @@
  * (data-tone) decides how far the visitors lean into them: "solid" is a fixed
  * slate or paper, "tinted" sits one step above the wallpaper in its own colour,
  * "blend" sits closer still and lets a little of the picture through. Home
- * chrome (the rail and the strip) is a veil in tinted and blend, not a slab.
+ * chrome (the rail, the strip and open drawers) is a veil in tinted and blend,
+ * not a slab.
  */
 :root {
     --wp-h: 250;
@@ -110,10 +113,16 @@
     --sc: clamp(0.01, calc(var(--wp-c) * 0.35), 0.06);
     --ic: clamp(0.008, calc(var(--wp-c) * 0.1), 0.02);
     --desk-a: 1;
+    /* Dialogs and menus: a sheet, not the desk. Lifted slate so they do not
+     * sit in the picture's mud. `/ 1` is load-bearing on a transparent window. */
+    --pop-l: clamp(26%, calc(var(--surf-l) + 8%), 36%);
+    --pop-c: clamp(0.015, calc(var(--wp-c) * 0.45), 0.07);
 
-    --surface: oklch(var(--surf-l) var(--sc) var(--wp-h));
-    --surface-2: oklch(calc(var(--surf-l) + 5%) var(--sc) var(--wp-h));
-    --surface-3: oklch(calc(var(--surf-l) + 10%) var(--sc) var(--wp-h));
+    /* `/ 1` is load-bearing: WebView2 on a transparent window drops oklch
+     * fills that omit alpha, so menus and dialogs would show the wallpaper. */
+    --surface: oklch(var(--surf-l) var(--sc) var(--wp-h) / 1);
+    --surface-2: oklch(calc(var(--surf-l) + 5%) var(--sc) var(--wp-h) / 1);
+    --surface-3: oklch(calc(var(--surf-l) + 10%) var(--sc) var(--wp-h) / 1);
     --desk: oklch(var(--surf-l) var(--sc) var(--wp-h) / var(--desk-a));
     /* A wash, not a panel: the picture is the rail's background. */
     --home: oklch(var(--surf-l) var(--sc) var(--wp-h) / 0);
@@ -149,7 +158,7 @@
     --foreground: var(--ink);
     --card: var(--surface);
     --card-foreground: var(--ink);
-    --popover: var(--surface-2);
+    --popover: oklch(var(--pop-l) var(--pop-c) var(--wp-h) / 1);
     --popover-foreground: var(--ink);
     --primary: var(--ink);
     --primary-foreground: var(--surface);
@@ -189,8 +198,8 @@
     --surf-l: clamp(66%, calc(var(--wp-l) * 100% + 18%), 94.5%);
     --sc: clamp(0.01, calc(var(--wp-c) * 0.5), 0.09);
     --ic: clamp(0.01, calc(var(--wp-c) * 0.18), 0.035);
-    --surface-2: oklch(calc(var(--surf-l) - 4.5%) var(--sc) var(--wp-h));
-    --surface-3: oklch(calc(var(--surf-l) - 9%) var(--sc) var(--wp-h));
+    --surface-2: oklch(calc(var(--surf-l) - 4.5%) var(--sc) var(--wp-h) / 1);
+    --surface-3: oklch(calc(var(--surf-l) - 9%) var(--sc) var(--wp-h) / 1);
     --ink: oklch(24% var(--ic) var(--wp-h));
     --ink-muted: oklch(clamp(30%, calc(var(--surf-l) - 40%), 48%) var(--ic) var(--wp-h));
     --ink-faint: oklch(clamp(42%, calc(var(--surf-l) - 26%), 63%) var(--ic) var(--wp-h));
@@ -211,13 +220,18 @@
     --dock: oklch(18% 0.04 var(--wp-h) / 0.18);
     --dock-line: oklch(20% 0.04 var(--wp-h) / 0.08);
 
-    --popover: var(--surface);
+    /* A readable sheet: above the 66% Tinted floor (mud) and below Solid
+     * paper (glare), with enough chroma to keep the wallpaper's colour. */
+    --pop-l: clamp(80%, var(--surf-l), 90%);
+    --pop-c: clamp(0.02, calc(var(--wp-c) * 0.55), 0.08);
     --input: oklch(20% 0.03 var(--wp-h) / 0.14);
     --destructive: oklch(55% 0.2 25);
 }
 :root[data-wp="light"][data-tone="solid"] {
     --surf-l: 94.5%;
     --sc: clamp(0.006, calc(var(--wp-c) * 0.32), 0.05);
+    --pop-l: 94.5%;
+    --pop-c: clamp(0.006, calc(var(--wp-c) * 0.32), 0.05);
 }
 :root[data-wp="light"][data-tone="blend"] {
     --surf-l: clamp(62%, calc(var(--wp-l) * 100% + 11%), 92%);
@@ -345,6 +359,31 @@
     background: transparent !important;
     }
 
+  /* The Input primitive paints placeholders in muted ink. On a veil that ink is
+   * black on a dark wash; keep the placeholder on the same contrast as home chrome. */
+  input.home-ink::placeholder {
+    color: var(--home-ink-faint);
+    text-shadow: var(--home-ink-shadow);
+    opacity: 1;
+    }
+
+  /*
+   * Visitors on a transparent WebView. Opacity fade-in leaves them washed;
+   * pin alpha at 1 and skip that animation on the menu primitives.
+   */
+  [data-slot="context-menu-content"],
+  [data-slot="context-menu-sub-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="popover-content"],
+  [data-slot="dialog-content"],
+  [data-slot="select-content"],
+  [data-slot="search-card"] {
+    background-color: var(--popover);
+    opacity: 1;
+    isolation: isolate;
+    }
+
   [data-drag-source] {
     opacity: 0.4;
     }
@@ -359,11 +398,13 @@
    * little more chromatic so each drawer is recognisable at a glance.
    * Solid + light restores the paper tint, because that rail is paper.
    */
-  [data-alcove-strip] {
+  [data-alcove-strip],
+  section[data-alcove-id] {
     --tint-l: 94%;
     --tint-c: 0.12;
     }
-  :root[data-wp="light"][data-tone="solid"] [data-alcove-strip] {
+  :root[data-wp="light"][data-tone="solid"] [data-alcove-strip],
+  :root[data-wp="light"][data-tone="solid"] section[data-alcove-id] {
     --tint-l: 56%;
     --tint-c: 0.13;
     }

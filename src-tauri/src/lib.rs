@@ -3,6 +3,7 @@ mod crash;
 mod desktop;
 mod harvest;
 mod persist;
+mod removable;
 mod search;
 mod taskbar;
 mod update;
@@ -44,9 +45,35 @@ fn list_folder_icons(path: String) -> Result<Vec<harvest::HarvestedIcon>, String
     harvest::list_folder(&path)
 }
 
+/// Blocking thread, not the main one. Extracting an icon is COM per file and the
+/// launcher asks for one per row it draws, so on the main thread a fresh list of
+/// results stalled the Windows message pump — which is felt as the typing itself
+/// going sluggish.
 #[tauri::command]
-fn shell_icon(target: String) -> Result<String, String> {
-    harvest::shell_icon(&target)
+async fn shell_icon(target: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || harvest::shell_icon(&target))
+        .await
+        .map_err(|err| err.to_string())?
+}
+
+/// Walks the disk and fires while the user is still typing, so it goes on a
+/// blocking thread rather than an async worker. It was on a worker, where up to
+/// 600ms of sync disk I/O per keystroke starved every other command — icons and
+/// thumbnails included — which is most of what "the launcher is slow" felt like.
+#[tauri::command]
+async fn search_folders(
+    roots: Vec<String>,
+    query: String,
+    limit: usize,
+) -> Result<Vec<harvest::HarvestedIcon>, String> {
+    tauri::async_runtime::spawn_blocking(move || harvest::search_folder(&roots, &query, limit))
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn reveal_desktop_item(path: String) -> Result<(), String> {
+    harvest::reveal_item(&path)
 }
 
 /// Async so a cold PDF/video thumbnail extraction runs off the main thread —
@@ -62,15 +89,29 @@ fn list_known_folders() -> Vec<harvest::KnownFolder> {
 }
 
 #[tauri::command]
-fn pick_folder(window: WebviewWindow) -> Result<Option<String>, String> {
-    let _pause = harvest::pause_desktop_restore();
-    let (tx, rx) = std::sync::mpsc::channel();
-    window
-        .run_on_main_thread(move || {
-            let _ = tx.send(harvest::pick_folder(0));
-        })
-        .map_err(|err| err.to_string())?;
-    rx.recv().map_err(|err| err.to_string())?
+async fn pick_folder(_window: WebviewWindow) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(|| harvest::pick_folder(0))
+        .await
+        .map_err(|err| err.to_string())?
+}
+
+/// Blocking thread, not the main one. A drive spinning up from standby, or a
+/// card reader with nothing in the slot, can take its time answering.
+#[tauri::command]
+async fn list_removable_drives() -> Result<Vec<removable::RemovableDrive>, String> {
+    tauri::async_runtime::spawn_blocking(removable::list)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+/// Blocking thread for the same reason as `list_removable_drives` — locking
+/// and dismounting a volume is synchronous I/O that can stall waiting on the
+/// device.
+#[tauri::command]
+async fn eject_drive(root: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || removable::eject(&root))
+        .await
+        .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
@@ -148,17 +189,15 @@ fn desktop_background() -> Result<harvest::DesktopBackground, String> {
     harvest::desktop_background()
 }
 
+/// Unused by the UI: `IFileOpenDialog::Show` access-violates in comdlg32 while
+/// Explorer's desktop view is hidden. The in-app picture picker sets wallpaper
+/// through `set_wallpaper` instead. Kept for the helper CLI.
 #[tauri::command]
-fn pick_wallpaper(window: WebviewWindow) -> Result<Option<String>, String> {
-    let _pause = harvest::pause_desktop_restore();
-    let (tx, rx) = std::sync::mpsc::channel();
-    window
-        .run_on_main_thread(move || {
-            crash::breadcrumb("pick_wallpaper: on UI thread");
-            let _ = tx.send(harvest::pick_image(0));
-        })
-        .map_err(|err| err.to_string())?;
-    rx.recv().map_err(|err| err.to_string())?
+async fn pick_wallpaper() -> Result<Option<String>, String> {
+    crash::breadcrumb("pick_wallpaper: helper process");
+    tauri::async_runtime::spawn_blocking(|| harvest::pick_image(0))
+        .await
+        .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
@@ -290,6 +329,7 @@ fn save_desktop_state(app: tauri::AppHandle, json: String) -> Result<(), String>
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     crash::install();
+    harvest::maybe_run_cli_picker();
 
     #[cfg(all(windows, not(debug_assertions)))]
     if !autostart::claim_singleton() {
@@ -309,6 +349,8 @@ pub fn run() {
             shell_icon,
             thumbnail,
             pick_folder,
+            list_removable_drives,
+            eject_drive,
             open_desktop_item,
             recycle_bin,
             show_recycle_bin_menu,
@@ -325,6 +367,8 @@ pub fn run() {
             list_running_windows,
             activate_window,
             focus_desktop,
+            search_folders,
+            reveal_desktop_item,
             show_search_window,
             hide_search_window,
             autostart_enabled,

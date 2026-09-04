@@ -308,7 +308,9 @@ mod win {
     fn raise_over_wallpaper(hwnd: HWND) {
         // Win+D raises a wallpaper WorkerW above normal windows. A brief
         // topmost pulse jumps over it, then we drop back so apps can cover us.
-        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE;
+        // Pure z-order: visibility is the caller's business, and SWP_SHOWWINDOW
+        // here made every pulse repaint a full-screen webview.
+        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
         unsafe {
             let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, flags);
             let _ = SetWindowPos(hwnd, Some(HWND_NOTOPMOST), 0, 0, 0, 0, flags);
@@ -316,18 +318,30 @@ mod win {
         }
     }
 
+    /// Call Win32 here, not Tauri — this runs off the UI thread.
+    ///
+    /// Every branch is guarded, because the watchdog calls this thirty times a
+    /// second for as long as the desktop holds focus after Win+D — and
+    /// `desktop_is_in_front` stays true the whole time, since we raise without
+    /// taking focus. Showing and re-pulsing the z-order unconditionally is what
+    /// made the desk visibly redraw itself over and over instead of once.
     fn restore_to_desktop(hwnd: HWND, def_view: Option<isize>) {
-        // Call Win32 here, not Tauri — this runs off the UI thread.
-        // SW_SHOW leaves a minimized window minimized; SW_RESTORE actually pops it.
+        let mut woke = false;
         unsafe {
+            // SW_SHOW leaves a minimized window minimized; SW_RESTORE pops it.
             if IsIconic(hwnd).as_bool() {
                 let _ = ShowWindow(hwnd, SW_RESTORE);
-            } else {
+                woke = true;
+            } else if !IsWindowVisible(hwnd).as_bool() {
                 let _ = ShowWindow(hwnd, SW_SHOW);
+                woke = true;
             }
         }
         hide_def_view(def_view);
-        raise_over_wallpaper(hwnd);
+        // Only jump the wallpaper when the wallpaper is actually on top of us.
+        if woke || wallpaper_is_covering(hwnd) {
+            raise_over_wallpaper(hwnd);
+        }
     }
 
     fn apply_desktop_chrome(window: &WebviewWindow) -> Result<(), String> {

@@ -305,3 +305,81 @@ Written down so they stop coming back:
 - **Live folders** — implemented since these notes began (`list_folder_icons`,
   `folderPath` on an Alcove, icons/list/details views), which is what makes #4
   cheap and #9 nearly free.
+- **12** — implemented. `src-tauri/src/removable.rs` lists removable volumes and
+  ejects one; `src/lib/removable-drawers.ts` (self-check: `npm run check`) turns
+  that list into drawers on the poll that already watches the Desktop, so the
+  "volume-change listener" the build note asked for never had to exist. Eject
+  locks and dismounts rather than asking the device tree to drop the drive, so
+  the letter can linger until the stick is pulled — the ceiling is named in the
+  source. Autoplay is untouched: it is a Windows setting, not ours to write.
+
+## Companion ideas (2 September 2026)
+
+A second pass, this time asking which niche desktop tools *around* Alcove are
+missing from the market and which of those belong inside it. Same three tests as
+above. The sorting rule that fell out: **does the feature read the Desktop and
+open things with the shell, or does it start watching something new?** The first
+kind belongs here. The second kind is a different app with a different trust
+story, and bundling it makes Alcove the thing that asks for permissions it never
+needed before.
+
+### 11. Drop shelf (temporary)
+
+A drawer that floats above other windows while you drag, and forgets its
+contents when emptied. Dropover and Yoink own this on macOS; Windows has nothing.
+
+- **Source of the content:** a drag already in progress, from Explorer, a
+  browser, or another drawer. Passes test 1 because the file is in your hand.
+- **Why not the Inbox:** the Inbox is a place to keep things. The shelf is a
+  place to carry them, across virtual desktops and between two Explorer windows
+  that will not sit side by side. It is empty most of the time by design.
+- **Build note:** drawers, drag and drop and icon rendering all exist. The only
+  new piece is an always-on-top window mode for one drawer.
+
+### 12. Removable drive drawer (temporary)
+
+Plug in a USB stick or a camera and it opens as a drawer with an eject button
+inside it, instead of the Autoplay dialog.
+
+- **Why not Autoplay:** Autoplay asks a question and then opens Explorer.
+  Every alternative is worse than a drawer that is already the shape of the
+  thing you plugged in.
+- **Build note:** a mirrored-folder drawer whose folder appears and
+  disappears. Folder mirroring and the file watcher exist. New pieces are a
+  volume-change listener and an eject call.
+
+### 13. Notes and tags on files (permanent)
+
+A note or colour tag that sticks to a file, shown as a badge on the icon and
+searchable from Ctrl+Space. macOS has Finder comments and tags. Windows has the
+property system, which only works for Office and media files, and TagSpaces,
+which is Electron with sidecar files.
+
+- **Where it lives:** an NTFS alternate data stream on the file, so it travels
+  with the file on the same volume and nothing is copied or moved. That keeps
+  the promise on the front page of the README.
+- **This is not Sticky Notes** (rejected above). Sticky Notes is a note about
+  nothing in particular. This is a note about *this file*, which is the thing
+  Windows cannot do.
+- **Build note:** Alcove already owns the icon and the search index. Badge on
+  the icon, one field in search, one small ADS read and write.
+
+### Decided against bundling
+
+Written down with the reason, same as the rejected list above:
+
+- **Window layout memory per monitor set.** Manages other apps' windows, not
+  files. Different permissions, different failure modes, useful to people who
+  never want a desktop organiser. Standalone app.
+- **Downloads inbox with decay.** Tempting because the Inbox exists, but
+  watching Downloads and suggesting deletions breaks the "reads the Desktop,
+  touches nothing else" boundary. It also wants a queue to clear, not a place
+  to keep things.
+- **Activity timeline.** Logging every file open across every app needs its own
+  privacy story, retention setting and uninstall promise. The frequent strip
+  stays a ranked list, not a history. Being built separately as **Trail**
+  (`S:\Hypno\Trail`); mockup at
+  https://claude.ai/code/artifact/13806dc1-273e-4121-a5a5-b217b57f14a6
+- **Ambient wallpaper layer** (calendar, next meeting). Shares the colour
+  technique and nothing else. Calendar data drags in accounts and network, and
+  Alcove's pitch is that it never phones home except for updates.

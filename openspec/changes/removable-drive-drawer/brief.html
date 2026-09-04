@@ -1,0 +1,118 @@
+<!-- forge-brief-specs-hash:c5b2110c9c3566c7 -->
+<!doctype html>
+<meta charset="utf-8">
+<title>Removable drive drawer</title>
+<style>
+  body { max-width: 46rem; margin: 3rem auto; padding: 0 1.25rem;
+         font: 16px/1.6 -apple-system, "Segoe UI", system-ui, sans-serif;
+         color: #1c1c1e; background: #fdfdfc; }
+  h1 { font-size: 1.6rem; margin-bottom: .25rem; }
+  h2 { font-size: 1.1rem; margin-top: 2.25rem; border-bottom: 1px solid #e5e3de;
+       padding-bottom: .3rem; }
+  .sub { color: #6b6862; margin-top: 0; }
+  li { margin: .35rem 0; }
+  code { background: #f1efe9; padding: .1em .35em; border-radius: 3px; font-size: .9em; }
+  .note { background: #f7f5ef; border-left: 3px solid #c9c2ad; padding: .75rem 1rem;
+          margin: 1rem 0; }
+  pre.mermaid { background: #fff; text-align: center; }
+</style>
+
+<h1>Removable drive drawer</h1>
+<p class="sub">Plug a USB stick in and it opens as a drawer on the desk.</p>
+
+<h2>TL;DR</h2>
+<p>
+  Today, plugging in a USB stick gets you the Windows Autoplay dialog and then an
+  Explorer window sitting on top of the desk Alcove already owns. After this change
+  the stick opens as a drawer, in the same place and the same shape as everything
+  else, with an eject button in its header. Pull the stick and the drawer goes away
+  by itself.
+</p>
+
+<h2>What you'll get</h2>
+<ul>
+  <li>A drawer appears within about two seconds of plugging in a USB stick or a
+      memory card, named after the volume's label.</li>
+  <li>It behaves like any other folder drawer: browse it, drill into subfolders,
+      drag files out into an Alcove, open something.</li>
+  <li>An eject button inside the drawer. It flushes and unmounts the drive, then
+      closes the drawer.</li>
+  <li>Unplugging without ejecting also closes the drawer — no ghost drawer left
+      pointing at a drive that isn't there.</li>
+  <li>Nothing is remembered. Restarting Alcove never resurrects a drawer for a
+      stick you used last week.</li>
+  <li>A switch in Settings turns the whole thing off. It's on by default.</li>
+</ul>
+
+<h2>How it works</h2>
+<p>
+  Alcove already has "live folder" drawers — a drawer that mirrors a folder on
+  disk. A USB stick is just a folder at <code>E:\</code>, so the drawer itself is
+  free. What's new is noticing the drive. Rather than subscribing to Windows
+  device events, Alcove reuses the two-second heartbeat it already runs to spot
+  changes on the Desktop, and asks "which removable drives are mounted right now?"
+  on the same tick. The answer is compared to the drawers on screen, and drawers
+  are added or removed to match.
+</p>
+
+<pre class="mermaid">
+flowchart TD
+  A["Every 2s: which removable<br/>drives are mounted?"] --> B{"Compare to<br/>drawers on screen"}
+  B -->|"drive with no drawer"| C["Open a drawer at its root"]
+  B -->|"drawer with no drive"| D["Close the drawer"]
+  B -->|"both present"| E["Leave it alone<br/>(rename if relabelled)"]
+  C --> F["Browse, drag out, drill in —<br/>an ordinary folder drawer"]
+  F --> G["Eject button"]
+  G --> H["Lock, unmount, eject the volume"]
+  H -->|"worked"| D
+  H -->|"a file is still open"| I["Toast naming the drive.<br/>Drawer stays."]
+</pre>
+
+<h2>What changes for you</h2>
+<ul>
+  <li>Windows Autoplay still pops up — Alcove does not touch that system setting.
+      The drawer is a better place to go than the dialog, not a replacement for it.
+      Turn Autoplay off in Windows Settings if you want it gone.</li>
+  <li>A new Settings row: <em>open a drawer for USB drives</em>.</li>
+  <li>Removable drawers can't be renamed, recoloured or kept — they're temporary
+      by design.</li>
+</ul>
+
+<h2>Risks and open questions</h2>
+<ul>
+  <li><strong>Eject may not remove the drive letter.</strong> Alcove does the part
+      that protects your data — flush and unmount — but on some sticks the letter
+      stays in Explorer until you physically pull it. The full "safely remove
+      hardware" behaviour needs a lot more code and was deliberately deferred.</li>
+  <li><strong>A drawer opening unasked is intrusive.</strong> That's what the off
+      switch is for. The drawer will not steal focus from a canvas you have open.</li>
+  <li><strong>Slow drives.</strong> A card reader with no card, or a drive spinning
+      up, can be slow to answer. Reading the drive list happens off the main thread,
+      and a drive that won't give up its label is shown as "Removable Disk".</li>
+  <li><strong>Testing needs real hardware.</strong> The logic is covered by
+      automated checks, but the final "plug it in, see the drawer" pass is manual.</li>
+</ul>
+
+<h2>Out of scope</h2>
+<ul>
+  <li>Suppressing or replacing Windows Autoplay.</li>
+  <li>Phones and cameras that connect over MTP. They have no drive letter and no
+      folder to mirror, so there is nothing for a drawer to list.</li>
+  <li>Remembering a name, colour or view per stick.</li>
+  <li>CD/DVD drives — removable USB volumes only.</li>
+</ul>
+
+<h2>Work overview</h2>
+<ul>
+  <li><strong>Rust: list drives and eject one</strong> — a small Windows module plus
+      two commands the UI can call. (5 tasks)</li>
+  <li><strong>Turning the drive list into drawers</strong> — the add/remove/rename
+      logic, kept as a pure function with its own self-check, plus keeping these
+      drawers out of the saved state. (5 tasks)</li>
+  <li><strong>Interface</strong> — the eject button and the Settings switch. (2 tasks)</li>
+  <li><strong>Verify</strong> — the full check, lint, build and Rust test sweep, then
+      the plug-it-in pass by hand. (2 tasks)</li>
+</ul>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true });</script>

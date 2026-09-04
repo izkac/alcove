@@ -18,11 +18,18 @@ export function installUpdate() {
   })
 }
 
+/**
+ * The one toast that never times out, so it is also the one that has to be
+ * dismissable — it sits over the top-right of an open drawer, which is where
+ * the drawer keeps its own controls. Later is honest: the offer comes back on
+ * the next run, and Settings can ask for it again before that.
+ */
 function offer(version: string) {
   toast(`Alcove ${version} is available`, {
     id: "alcove-update",
     duration: Infinity,
     action: { label: "Install", onClick: installUpdate },
+    cancel: { label: "Later", onClick: () => undefined },
   })
 }
 

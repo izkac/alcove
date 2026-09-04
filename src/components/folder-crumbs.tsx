@@ -29,7 +29,7 @@ export function FolderCrumbs({
   const trail = crumbTrail(root, path || root)
   return (
     <span
-      className={cn("flex min-w-0 items-center gap-1 text-ink-faint", className)}
+      className={cn("home-ink-faint flex min-w-0 items-center gap-1", className)}
       title={path || root}
     >
       {trail.map((crumb, index) => {
@@ -38,11 +38,11 @@ export function FolderCrumbs({
           <span key={crumb.path} className="flex min-w-0 items-center gap-1">
             {index > 0 ? <span aria-hidden>/</span> : null}
             {last || !onCrumb ? (
-              <span className={cn("truncate", last && "text-ink-muted")}>{crumb.name}</span>
+              <span className={cn("truncate", last && "home-ink")}>{crumb.name}</span>
             ) : (
               <button
                 type="button"
-                className="truncate rounded outline-none hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-sel"
+                className="truncate rounded outline-none hover:home-ink hover:underline focus-visible:outline-2 focus-visible:outline-sel"
                 onClick={(event) => {
                   event.stopPropagation()
                   onCrumb(crumb.path)
@@ -62,7 +62,7 @@ export function FolderCrumbs({
           type="button"
           title="Open this folder in Explorer"
           aria-label="Open this folder in Explorer"
-          className="shrink-0 rounded p-0.5 outline-none transition-colors duration-150 hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-sel"
+          className="shrink-0 rounded p-0.5 outline-none transition-colors duration-150 hover:bg-veil-hover hover:home-ink focus-visible:outline-2 focus-visible:outline-sel"
           onClick={(event) => {
             event.stopPropagation()
             onOpenHere()

@@ -39,15 +39,15 @@ function CommandDialog({
   children,
   className,
   showCloseButton = false,
-  filter,
+  shouldFilter,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string
   description?: string
   className?: string
   showCloseButton?: boolean
-  /** Passed through to the inner Command, so callers can rank results. */
-  filter?: React.ComponentProps<typeof CommandPrimitive>["filter"]
+  /** Passed through, so a caller that ranks its own rows can switch cmdk off. */
+  shouldFilter?: boolean
 }) {
   return (
     <Dialog {...props}>
@@ -63,7 +63,7 @@ function CommandDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <Command
-          filter={filter}
+          shouldFilter={shouldFilter}
           className="max-h-[min(28rem,70vh)] overflow-hidden rounded-xl bg-popover"
         >
           {children}

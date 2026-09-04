@@ -36,3 +36,15 @@ dist-ssr
 scripts/leads.md
 scripts/listen.seen.json
 scripts/listen.feeds.txt
+
+# Out-of-tree release build output
+/src-tauri/target-rel/
+
+# Local agent tooling, not project code
+.agents/
+.claude/
+.codex/
+.cursor/
+.forge/
+.impeccable/
+.opencode/

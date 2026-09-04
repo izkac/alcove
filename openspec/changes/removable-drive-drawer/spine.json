@@ -1,0 +1,42 @@
+{
+  "change": "removable-drive-drawer",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Removable volumes are enumerated",
+      "library": "src-tauri/src/removable.rs (list)",
+      "runtimeOwner": "tauri command list_removable_drives (src-tauri/src/lib.rs), called by the 2s poll in src/hooks/use-alcove-desktop.ts",
+      "writes": "RemovableDrive[] returned to the frontend poll",
+      "reads": "GetLogicalDrives, GetDriveTypeW, GetVolumeInformationW",
+      "uiConsumer": "syncDriveDrawers in src/lib/removable-drawers.ts",
+      "evidence": "cargo test removable::tests (never_lists_the_system_drive, every_root_is_a_drive_root)"
+    },
+    {
+      "capability": "A removable volume opens as a temporary drawer",
+      "library": "src/lib/removable-drawers.ts (syncDriveDrawers)",
+      "runtimeOwner": "the desktop_revision poll effect in src/hooks/use-alcove-desktop.ts",
+      "writes": "DesktopState.alcoves — one Alcove per drive, folderPath and removable set to the drive root",
+      "reads": "list_removable_drives result, state.autoDriveDrawers",
+      "uiConsumer": "AlcovePanel / AlcoveCanvas via DesktopShell, and the drawer rail",
+      "evidence": "src/lib/removable-drawers.check.ts (insert, remove, idempotent re-poll, relabel, disabled)"
+    },
+    {
+      "capability": "Removable drawers are never persisted",
+      "library": "src/lib/removable-drawers.ts (stripRemovable)",
+      "runtimeOwner": "serialize() and migrate() in src/lib/storage.ts, on every save and every load",
+      "writes": "desktop.json and localStorage, with removable drawers and their icons removed",
+      "reads": "DesktopState",
+      "uiConsumer": "N/A — this is the absence of a surface",
+      "evidence": "src/lib/removable-drawers.check.ts (stripRemovable case)"
+    },
+    {
+      "capability": "A removable drawer can eject its volume",
+      "library": "src-tauri/src/removable.rs (eject)",
+      "runtimeOwner": "tauri command eject_drive, called by ejectDrive in src/hooks/use-alcove-desktop.ts from the drawer header button",
+      "writes": "the volume is locked, dismounted and ejected; on success the Alcove is dropped from state",
+      "reads": "Alcove.removable (the drive root)",
+      "uiConsumer": "eject button in src/components/alcove-panel.tsx and src/components/alcove-canvas.tsx",
+      "evidence": "cargo test removable::tests::eject_refuses_nonsense_without_touching_hardware; the success path is manual e2e (needs a real stick)"
+    }
+  ]
+}

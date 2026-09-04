@@ -3,8 +3,8 @@ import type { PointerEvent as ReactPointerEvent } from "react"
 import { toast } from "sonner"
 import { AlcoveCanvas } from "@/components/alcove-canvas"
 import { AlcovePanel } from "@/components/alcove-panel"
-import { PreviewCard } from "@/components/preview-card"
 import { BackgroundDialog } from "@/components/background-dialog"
+import { WallpaperDialog } from "@/components/wallpaper-dialog"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import {
   CreateAlcoveDialog,
@@ -16,7 +16,8 @@ import { OnboardingDialog } from "@/components/onboarding-dialog"
 import { PinField } from "@/components/pin-field"
 import { ShelfRail } from "@/components/shelf-rail"
 import { RenameDialog } from "@/components/rename-dialog"
-import { SearchSpotlight } from "@/components/search-spotlight"
+import { SearchSpotlight, type LauncherPick } from "@/components/search-spotlight"
+import { parentPath } from "@/lib/search-hits"
 import { SettingsDialog } from "@/components/settings-dialog"
 import {
   ContextMenu,
@@ -47,7 +48,12 @@ import {
   toDesktopIcon,
   type HarvestedIcon,
 } from "@/lib/harvest-merge"
-import { alcovesOnDesk, deskChannel, type DeskChannelMessage } from "@/lib/desk-strip"
+import {
+  alcovesOnDesk,
+  deskChannel,
+  type DeskChannelMessage,
+  type DeskCommand,
+} from "@/lib/desk-strip"
 import {
   dragIconIds,
   iconPack,
@@ -211,6 +217,8 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
         onTextSize={desktop.setTextSize}
         onStrongText={desktop.setStrongText}
         onStripToolIds={desktop.setStripToolIds}
+        autoDriveDrawers={state.autoDriveDrawers !== false}
+        onAutoDriveDrawers={desktop.setAutoDriveDrawers}
         topSlotCount={state.topSlotCount ?? TOP_SLOTS}
         onTopSlotCount={desktop.setTopSlotCount}
         onCollapseAll={() => {
@@ -257,6 +265,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
   const { state, sortedAlcoves, iconsIn } = desktop
   const { desk, desks, stripHover } = useDesk()
   const [backgroundOpen, setBackgroundOpen] = useState(false)
+  const [wallpaperOpen, setWallpaperOpen] = useState(false)
   // The desktop's current colour, so the picker opens where the user already is.
   const [deskColor, setDeskColor] = useState("#1B2027")
   useUpdateCheck(desk.primary)
@@ -329,11 +338,6 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
   const drillIcons = drill && drill.alcoveId === openAlcove?.id ? drill.icons : null
   const openIcons = drillIcons ?? (openAlcove ? iconsIn(openAlcove.id) : [])
   const openView = openAlcove ? viewFor(openAlcove, openIcons.length) : "panel"
-  // One selected item means "what is this?"; a multi-selection means "move these".
-  const previewIcon =
-    selectedIds.length === 1
-      ? openIcons.find((item) => item.id === selectedIds[0]) ?? null
-      : null
   const heavyAlcoveId = disproportionateId(
     deskAlcoves.map((alcove) => ({
       id: alcove.id,
@@ -406,19 +410,18 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
 
   /** Swap the Windows wallpaper for a picture the user picks. */
   function chooseWallpaper() {
+    setWallpaperOpen(true)
+  }
+
+  function applyWallpaper(path: string) {
     if (!isTauri()) {
       toast("Changing the wallpaper is only on Windows")
       return
     }
-    invoke<string | null>("pick_wallpaper")
-      .then((path) => {
-        if (!path) return
-        return invoke("set_wallpaper", { path }).then(() => {
-          announceWallpaperChange()
-          toast("Wallpaper changed")
-        })
-      })
-      .catch((err) => toast(err instanceof Error ? err.message : String(err)))
+    return invoke("set_wallpaper", { path }).then(() => {
+      announceWallpaperChange()
+      toast("Wallpaper changed")
+    })
   }
 
   /** Clear the wallpaper and leave a plain colour. */
@@ -734,6 +737,117 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
       desktop.reorderAlcove,
     )
 
+  /**
+   * The verbs the launcher offers. They live here because they need the drawers,
+   * the dialogs and the desktop state — none of which the search window has.
+   */
+  const runDeskCommand = useCallback(
+    (command: DeskCommand, alcoveId?: string) => {
+      const surface = () => {
+        if (isTauri()) invoke("focus_desktop").catch(() => undefined)
+      }
+      if (command === "open-alcove") {
+        if (!alcoveId) return
+        setOpenAlcoveId(alcoveId)
+        setSelectedIds([])
+        surface()
+        return
+      }
+      if (command === "new-alcove") {
+        onOpenCreate()
+        surface()
+        return
+      }
+      if (command === "settings") {
+        onOpenSettings()
+        surface()
+        return
+      }
+      if (command === "wallpaper") {
+        setWallpaperOpen(true)
+        surface()
+        return
+      }
+      if (command === "collapse-all") {
+        desktop.collapseAll()
+        setOpenAlcoveId(null)
+        setSelectedIds([])
+        return
+      }
+      if (!isTauri()) {
+        toast("That one is only on Windows")
+        return
+      }
+      if (command === "toggle-taskbar") {
+        invoke<boolean>("windows_taskbar_hidden")
+          .then((hidden) => invoke<boolean>("set_windows_taskbar_hidden", { hidden: !hidden }))
+          .then((hidden) => toast(hidden ? "Windows taskbar hidden" : "Windows taskbar shown"))
+          .catch((err) => toast(err instanceof Error ? err.message : String(err)))
+        return
+      }
+      if (command === "empty-bin") {
+        // Windows puts up its own confirmation, so this never silently deletes.
+        invoke("empty_recycle_bin").catch((err) =>
+          toast(err instanceof Error ? err.message : String(err)),
+        )
+      }
+    },
+    [desktop, onOpenCreate, onOpenSettings],
+  )
+
+  /**
+   * Ctrl+F is "find it on my desktop", not "launch it" — so Enter on a file
+   * brings its drawer forward and selects it, the way the dialog title has
+   * always promised. The Enter modifiers still go straight to Explorer, and
+   * everything that is not a file behaves as it does in the standalone window.
+   */
+  function onPickFromSearch(chosen: LauncherPick) {
+      if (chosen.kind === "icon") {
+        const { icon, how } = chosen
+        if (how === "reveal" && icon.path && isTauri()) {
+          invoke("reveal_desktop_item", { path: icon.path }).catch(() => undefined)
+          return
+        }
+        if (how === "folder" && icon.path && isTauri()) {
+          const parent = parentPath(icon.path)
+          if (parent) invoke("open_desktop_item", { path: parent }).catch(() => undefined)
+          return
+        }
+        // A hit from the deep walk has no drawer to bring forward, so it opens.
+        if (!icon.alcoveId) {
+          openIcon(icon)
+          return
+        }
+        desktop.revealIcon(icon.id)
+        setOpenAlcoveId(icon.alcoveId)
+        setSelectedIds([icon.id])
+        setSelectAnchorId(icon.id)
+        return
+      }
+      if (chosen.kind === "window" && isTauri()) {
+        invoke("activate_window", { hwnd: chosen.app.hwnd }).catch(() => undefined)
+        return
+      }
+      if (chosen.kind === "alcove") {
+        runDeskCommand("open-alcove", chosen.alcove.id)
+        return
+      }
+      if (chosen.kind === "command") {
+        runDeskCommand(chosen.command)
+        return
+      }
+      if (chosen.kind === "target" && isTauri()) {
+        invoke("open_desktop_item", { path: chosen.target }).catch(() => undefined)
+      }
+  }
+
+  // Which drawers this desk is responsible for, without making the channel
+  // resubscribe every time the list is rebuilt.
+  const ownedRef = useRef<string[]>([])
+  useEffect(() => {
+    ownedRef.current = deskAlcoves.map((alcove) => alcove.id)
+  })
+
   useEffect(() => {
     const channel = deskChannel()
     if (!channel) return
@@ -742,6 +856,18 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
       if (data.type === "icon-launched") {
         // One desk records it, or every monitor counts the same launch again.
         if (desk.primary) desktop.noteOpen(data.iconId)
+        return
+      }
+      if (data.type === "desk-command") {
+        // A drawer opens on the screen it lives on; everything else is a job for
+        // one desk only, or every monitor would put up its own dialog.
+        if (data.command === "open-alcove") {
+          if (data.alcoveId && ownedRef.current.includes(data.alcoveId)) {
+            runDeskCommand(data.command, data.alcoveId)
+          }
+          return
+        }
+        if (desk.primary) runDeskCommand(data.command)
         return
       }
       if (data.type !== "icon-drop" || data.deskId !== desk.id) return
@@ -757,7 +883,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
       channel.removeEventListener("message", onMessage)
       channel.close()
     }
-  }, [desk.id, desk.primary, desktop, dropIconsAt, state.icons])
+  }, [desk.id, desk.primary, desktop, dropIconsAt, runDeskCommand, state.icons])
 
   function newGroup() {
     if (!openAlcove) return
@@ -809,6 +935,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                 <ShelfRail
                     alcoves={deskAlcoves}
                     countFor={(alcoveId) => iconsIn(alcoveId).length}
+                    onEject={desktop.ejectDrive}
                     sizeFor={(alcoveId) => totalByteSize(iconsIn(alcoveId))}
                     heavyAlcoveId={heavyAlcoveId}
                     openAlcoveId={openAlcoveId}
@@ -905,6 +1032,11 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                           setSelectedIds([])
                         }}
                         onCompact={() => desktop.setAlcoveView(openAlcove.id, "panel")}
+                        onEject={
+                          openAlcove.removable
+                            ? () => desktop.ejectDrive(openAlcove.id)
+                            : undefined
+                        }
                         onEdit={() => onOpenEdit(openAlcove)}
                         onDelete={
                           openAlcove.isInbox
@@ -990,6 +1122,11 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                         alcove={{ ...openAlcove, collapsed: false }}
                         icons={openIcons}
                         onExpandCanvas={() => desktop.setAlcoveView(openAlcove.id, "canvas")}
+                        onEject={
+                          openAlcove.removable
+                            ? () => desktop.ejectDrive(openAlcove.id)
+                            : undefined
+                        }
                         allAlcoves={sortedAlcoves}
                         pinIds={state.pinIds}
                         density={state.density}
@@ -1060,7 +1197,6 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                         }
                       />
                     ) : null}
-                    <PreviewCard icon={previewIcon} />
                     </div>
                     {state.stripEdge === "bottom" ? frequentStrip : null}
                   </div>
@@ -1127,6 +1263,11 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         onOpenChange={setBackgroundOpen}
         onApply={applyBackgroundColor}
       />
+      <WallpaperDialog
+        open={wallpaperOpen}
+        onOpenChange={setWallpaperOpen}
+        onApply={applyWallpaper}
+      />
       <OnboardingDialog
         open={state.phase === "onboarding"}
         groups={desktop.suggestions}
@@ -1179,12 +1320,8 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         alcoves={sortedAlcoves}
         frecency={state.frecency}
         hide={state.topHide}
-        onSelect={(icon) => {
-          desktop.revealIcon(icon.id)
-          if (icon.alcoveId) setOpenAlcoveId(icon.alcoveId)
-          setSelectedIds([icon.id])
-          setSelectAnchorId(icon.id)
-        }}
+        openLabel="show on the desktop"
+        onPick={onPickFromSearch}
       />
     </div>
   )

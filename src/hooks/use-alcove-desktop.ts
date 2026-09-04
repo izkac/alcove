@@ -27,6 +27,7 @@ import {
   snapshotsForAlcoves,
   suggestionsFromIcons,
 } from "@/lib/organize"
+import { dropDriveDrawer, normalizeDriveRoot, syncDriveDrawers } from "@/lib/removable-drawers"
 import {
   hydrateDesktopState,
   loadDesktopState,
@@ -44,6 +45,7 @@ import type {
   DesktopState,
   FolderView,
   LayoutId,
+  RemovableDrive,
   StripEdge,
   SurfaceTone,
   TextSize,
@@ -63,6 +65,14 @@ const topDefaults = (count?: number) => ({
 
 /** How many pins the bottom-right stack holds before it stops being a shelf. */
 const CORNER_PINS = 8
+
+/**
+ * How long an ejected drive root is ignored in the drive poll. Two poll ticks
+ * plus slack: long enough that no list asked for before the eject can still
+ * resurrect the drawer, short enough that a stick left physically in the port
+ * comes back rather than staying invisible.
+ */
+const EJECT_SETTLE_MS = 5000
 
 /** Takes icons off the desktop entirely — the corner stack and the wallpaper. */
 function dropPins(current: DesktopState, iconIds: string[]): DesktopState {
@@ -927,6 +937,26 @@ export function useAlcoveDesktop() {
    */
   const seenRevision = useRef<number | null>(null)
 
+  /**
+   * Ejects and the drive poll race: the eject wins, but a drive list asked for
+   * before it landed can still arrive after. Roots stay here long enough to
+   * outlive any list already in flight, so the drawer does not come back.
+   * A drive genuinely still plugged in reappears once the window lapses.
+   */
+  const ejectedAt = useRef(new Map<string, number>())
+  /** Alcove ids with an eject in flight, so a double-click sends one call. */
+  const ejecting = useRef(new Set<string>())
+  const justEjected = useCallback((root: string) => {
+    const key = normalizeDriveRoot(root)
+    const at = ejectedAt.current.get(key)
+    if (at === undefined) return false
+    if (Date.now() - at < EJECT_SETTLE_MS) return true
+    ejectedAt.current.delete(key)
+    return false
+  }, [])
+
+  const drivesOn = state.autoDriveDrawers !== false
+
   useEffect(() => {
     if (!isTauri() || !hydrated) return
     let alive = true
@@ -939,6 +969,26 @@ export function useAlcoveDesktop() {
           if (seen !== null && revision !== seen) void reloadHarvest()
         })
         .catch(() => undefined)
+      // Same interval as the revision check, not a second poll: a removable
+      // drive is noticed by re-reading GetLogicalDrives, same shape as the
+      // Desktop watcher's counter. Skipped entirely when the feature is off —
+      // the whole justification is that it is cheap, and someone who turned it
+      // off because a card reader spins up every tick must actually get quiet.
+      if (drivesOn) {
+        invoke<RemovableDrive[]>("list_removable_drives")
+          .then((drives) => {
+            if (!alive) return
+            // A drive ejected moments ago can still be in a list that was
+            // asked for before the eject landed. Honouring it would put the
+            // drawer straight back, which is the opposite of what the click
+            // asked for.
+            const settled = drives.filter((drive) => !justEjected(drive.root))
+            setState((current) =>
+              syncDriveDrawers(current, settled, current.autoDriveDrawers !== false),
+            )
+          })
+          .catch(() => undefined)
+      }
     }
     check()
     const timer = window.setInterval(check, 2000)
@@ -946,7 +996,7 @@ export function useAlcoveDesktop() {
       alive = false
       window.clearInterval(timer)
     }
-  }, [hydrated, reloadHarvest])
+  }, [drivesOn, hydrated, justEjected, reloadHarvest])
 
   const pasteFiles = useCallback(
     async (dest: string | null, assignAlcoveId: string | null) => {
@@ -1054,6 +1104,43 @@ export function useAlcoveDesktop() {
     setState((current) => ({ ...current, focusedAlcoveId: alcoveId }))
   }, [])
 
+  const setAutoDriveDrawers = useCallback((enabled: boolean) => {
+    setState((current) => ({ ...current, autoDriveDrawers: enabled }))
+  }, [])
+
+  /**
+   * Flushes and dismounts the volume, then drops its drawer — only on success,
+   * so a failed eject (a file held open elsewhere) leaves the drawer in place
+   * for the toast to point at.
+   */
+  const ejectDrive = useCallback(
+    (alcoveId: string) => {
+      const alcove = state.alcoves.find((item) => item.id === alcoveId)
+      if (!alcove?.removable) return
+      const root = alcove.removable
+      // Ejecting is slow enough to double-click through. The second call opens
+      // a volume the first one already dismounted, fails, and would report a
+      // failure for an eject that worked.
+      if (ejecting.current.has(alcoveId)) return
+      ejecting.current.add(alcoveId)
+      invoke("eject_drive", { root })
+        .then(() => {
+          // Hold the root down for a few polls: the volume is dismounted, but
+          // a list already in flight may still name it.
+          ejectedAt.current.set(normalizeDriveRoot(root), Date.now())
+          setState((current) => dropDriveDrawer(current, alcoveId))
+        })
+        .catch((error) => {
+          console.error("Could not eject drive", error)
+          toast(`Could not eject ${alcove.name}`)
+        })
+        .finally(() => {
+          ejecting.current.delete(alcoveId)
+        })
+    },
+    [state.alcoves],
+  )
+
   const setAlcoveStrip = useCallback((alcoveId: string, stripId: string) => {
     setState((current) => ({
       ...current,
@@ -1152,6 +1239,8 @@ export function useAlcoveDesktop() {
     setFocusedAlcove,
     setAlcoveStrip,
     reorderAlcove,
+    setAutoDriveDrawers,
+    ejectDrive,
   }
 }
 

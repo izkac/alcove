@@ -51,6 +51,8 @@ type SettingsDialogProps = {
   onTextSize: (size: TextSize) => void
   onStrongText: (on: boolean) => void
   onStripToolIds: (ids: string[]) => void
+  autoDriveDrawers: boolean
+  onAutoDriveDrawers: (enabled: boolean) => void
   onTopSlotCount: (count: number) => void
   onCollapseAll: () => void
   onDropIncoming: () => void
@@ -291,6 +293,17 @@ function SystemTab(props: SettingsDialogProps) {
                         toast(err instanceof Error ? err.message : String(err))
                       })
                   }}
+                />
+              </SettingRow>
+            ) : null}
+            {isTauri() ? (
+              <SettingRow
+                label="Open a drawer for USB drives"
+                description="Plugging one in opens it as a drawer; unplugging closes it"
+              >
+                <Switch
+                  checked={props.autoDriveDrawers}
+                  onCheckedChange={props.onAutoDriveDrawers}
                 />
               </SettingRow>
             ) : null}
