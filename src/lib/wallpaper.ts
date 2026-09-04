@@ -276,9 +276,14 @@ export function themeFromBackground(
         resolve(themeFromPixels(ctx.getImageData(0, 0, side, side).data))
       } catch {
         resolve(fromColor())
+      } finally {
+        image.src = ""
       }
     }
-    image.onerror = () => resolve(fromColor())
+    image.onerror = () => {
+      image.src = ""
+      resolve(fromColor())
+    }
     image.src = imageUrl
   })
 }

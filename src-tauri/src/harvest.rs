@@ -117,6 +117,38 @@ pub struct DesktopBackground {
     pub image_url: Option<String>,
 }
 
+/// Scale so the picture covers the desk. Never upscales: CSS `cover` can do that
+/// on a small file, and a 9504×6336 wallpaper must not be decoded at full size
+/// in the WebView.
+pub fn fit_cover(src_w: u32, src_h: u32, dest_w: u32, dest_h: u32) -> (u32, u32) {
+    if src_w == 0 || src_h == 0 {
+        return (dest_w.max(1), dest_h.max(1));
+    }
+    let dest_w = dest_w.max(1);
+    let dest_h = dest_h.max(1);
+    if src_w <= dest_w && src_h <= dest_h {
+        return (src_w, src_h);
+    }
+    // max(dest_w/src_w, dest_h/src_h) without floats: dest_w*src_h vs dest_h*src_w.
+    let by_w = dest_w as u64 * src_h as u64;
+    let by_h = dest_h as u64 * src_w as u64;
+    if by_w >= by_h {
+        let height = (src_h as u64 * dest_w as u64 + src_w as u64 / 2) / src_w as u64;
+        let height = height.max(1) as u32;
+        if dest_w >= src_w {
+            return (src_w, src_h);
+        }
+        (dest_w, height)
+    } else {
+        let width = (src_w as u64 * dest_h as u64 + src_h as u64 / 2) / src_h as u64;
+        let width = width.max(1) as u32;
+        if dest_h >= src_h {
+            return (src_w, src_h);
+        }
+        (width, dest_h)
+    }
+}
+
 #[cfg(windows)]
 mod win {
     use super::HarvestedIcon;
@@ -1327,10 +1359,10 @@ mod win {
         Ok(())
     }
 
-    pub fn desktop_background() -> Result<super::DesktopBackground, String> {
+    pub fn desktop_background(max_w: u32, max_h: u32) -> Result<super::DesktopBackground, String> {
         Ok(super::DesktopBackground {
             color: desktop_color(),
-            image_url: wallpaper_data_url(),
+            image_url: wallpaper_data_url(max_w, max_h),
         })
     }
 
@@ -1343,31 +1375,44 @@ mod win {
         format!("#{r:02X}{g:02X}{b:02X}")
     }
 
-    fn wallpaper_data_url() -> Option<String> {
+    fn wallpaper_data_url(max_w: u32, max_h: u32) -> Option<String> {
         let path = wallpaper_path()?;
         let meta = std::fs::metadata(&path).ok()?;
-        if meta.len() == 0 || meta.len() > 8_000_000 {
+        // File size is only a DoS guard. A 3 MB JPEG can still be 60 megapixels;
+        // the WebView must never see those pixels.
+        if meta.len() == 0 || meta.len() > 32_000_000 {
             return None;
         }
-        let bytes = std::fs::read(&path).ok()?;
-        let mime = match path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .map(|ext| ext.to_ascii_lowercase())
-            .as_deref()
-        {
-            Some("png") => "image/png",
-            Some("bmp") => "image/bmp",
-            Some("gif") => "image/gif",
-            Some("webp") => "image/webp",
-            Some("tif") | Some("tiff") => "image/tiff",
-            Some("jpg") | Some("jpeg") | Some("jfif") => "image/jpeg",
-            _ => "image/jpeg",
+        let (max_w, max_h) = clamp_desk(max_w, max_h);
+        let img = image::open(&path).ok()?;
+        let (tw, th) = super::fit_cover(img.width(), img.height(), max_w, max_h);
+        let rgb = if img.width() != tw || img.height() != th {
+            img.resize_exact(tw, th, image::imageops::FilterType::Triangle)
+                .to_rgb8()
+        } else {
+            img.to_rgb8()
         };
+        let mut out = Vec::new();
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 82);
+        encoder
+            .encode(
+                rgb.as_raw(),
+                rgb.width(),
+                rgb.height(),
+                image::ExtendedColorType::Rgb8,
+            )
+            .ok()?;
         Some(format!(
-            "data:{mime};base64,{}",
-            base64::engine::general_purpose::STANDARD.encode(bytes)
+            "data:image/jpeg;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(out)
         ))
+    }
+
+    fn clamp_desk(width: u32, height: u32) -> (u32, u32) {
+        (
+            if width == 0 { 1920 } else { width.clamp(320, 3840) },
+            if height == 0 { 1080 } else { height.clamp(240, 2160) },
+        )
     }
 
     fn wallpaper_path() -> Option<std::path::PathBuf> {
@@ -2388,7 +2433,7 @@ mod win {
         Err("recycle bin is Windows-only".into())
     }
 
-    pub fn desktop_background() -> Result<super::DesktopBackground, String> {
+    pub fn desktop_background(_max_w: u32, _max_h: u32) -> Result<super::DesktopBackground, String> {
         Ok(super::DesktopBackground {
             color: "#191919".into(),
             image_url: None,
@@ -2498,8 +2543,8 @@ pub fn recycle_bin() -> Result<RecycleBin, String> {
     win::recycle_bin()
 }
 
-pub fn desktop_background() -> Result<DesktopBackground, String> {
-    win::desktop_background()
+pub fn desktop_background(max_w: u32, max_h: u32) -> Result<DesktopBackground, String> {
+    win::desktop_background(max_w, max_h)
 }
 
 pub fn popup_recycle_bin_menu(hwnd: isize, x: i32, y: i32) -> Result<(), String> {
@@ -2520,4 +2565,29 @@ pub fn paste_into(hwnd: isize, dest: Option<&str>) -> Result<(), String> {
 
 pub fn recycle_paths(hwnd: isize, paths: &[String]) -> Result<(), String> {
     win::recycle_paths(hwnd, paths)
+}
+
+#[cfg(test)]
+mod fit_cover_tests {
+    use super::fit_cover;
+
+    #[test]
+    fn huge_photo_covers_this_desk() {
+        assert_eq!(fit_cover(9504, 6336, 1920, 1040), (1920, 1280));
+    }
+
+    #[test]
+    fn already_small_stays() {
+        assert_eq!(fit_cover(800, 600, 1920, 1080), (800, 600));
+    }
+
+    #[test]
+    fn exact_match() {
+        assert_eq!(fit_cover(1920, 1080, 1920, 1080), (1920, 1080));
+    }
+
+    #[test]
+    fn portrait_does_not_upscale() {
+        assert_eq!(fit_cover(1080, 1920, 1920, 1080), (1080, 1920));
+    }
 }

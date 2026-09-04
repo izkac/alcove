@@ -1343,6 +1343,7 @@ function Wallpaper({ onColor }: { onColor?: (hex: string) => void }) {
     imageUrl: string | null
   }>({ color: "#191919", imageUrl: null })
   const colorRef = useRef(onColor)
+  const painted = useRef("")
   useEffect(() => {
     colorRef.current = onColor
   }, [onColor])
@@ -1367,13 +1368,20 @@ function Wallpaper({ onColor }: { onColor?: (hex: string) => void }) {
       )
       return
     }
-    invoke<{ color: string; imageUrl: string | null }>("desktop_background")
+    invoke<{ color: string; imageUrl: string | null }>("desktop_background", {
+      width: Math.max(1, Math.round(window.innerWidth * (window.devicePixelRatio || 1))),
+      height: Math.max(1, Math.round(window.innerHeight * (window.devicePixelRatio || 1))),
+    })
       .then((next) => {
         const color = next.color || "#191919"
-        setBackground({ color, imageUrl: next.imageUrl })
+        const imageUrl = next.imageUrl
+        const key = `${color}\0${imageUrl ?? ""}`
+        if (painted.current === key) return
+        painted.current = key
+        setBackground({ color, imageUrl })
         colorRef.current?.(color)
         // Read the wallpaper before deciding whether we are paper or slate.
-        return themeFromBackground(color, next.imageUrl).then(applyTheme)
+        return themeFromBackground(color, imageUrl).then(applyTheme)
       })
       .catch(() => undefined)
   }, [])

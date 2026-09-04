@@ -46,3 +46,4 @@ windows = { version = "0.61.3", features = [
 ] }
 png = "0.17"
 base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "bmp", "gif", "webp"] }

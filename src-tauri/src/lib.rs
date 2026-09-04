@@ -184,9 +184,13 @@ fn recycle_desktop_items(window: WebviewWindow, paths: Vec<String>) -> Result<()
     rx.recv().map_err(|err| err.to_string())?
 }
 
+/// Blocking thread: decoding a 60-megapixel wallpaper and shrinking it to the
+/// desk must not stall the message pump.
 #[tauri::command]
-fn desktop_background() -> Result<harvest::DesktopBackground, String> {
-    harvest::desktop_background()
+async fn desktop_background(width: u32, height: u32) -> Result<harvest::DesktopBackground, String> {
+    tauri::async_runtime::spawn_blocking(move || harvest::desktop_background(width, height))
+        .await
+        .map_err(|err| err.to_string())?
 }
 
 /// Unused by the UI: `IFileOpenDialog::Show` access-violates in comdlg32 while

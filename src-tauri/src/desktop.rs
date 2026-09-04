@@ -325,7 +325,7 @@ mod win {
     /// `desktop_is_in_front` stays true the whole time, since we raise without
     /// taking focus. Showing and re-pulsing the z-order unconditionally is what
     /// made the desk visibly redraw itself over and over instead of once.
-    fn restore_to_desktop(hwnd: HWND, def_view: Option<isize>) {
+    fn restore_to_desktop(hwnd: HWND, def_view: Option<isize>, raise: bool) {
         let mut woke = false;
         unsafe {
             // SW_SHOW leaves a minimized window minimized; SW_RESTORE pops it.
@@ -338,8 +338,10 @@ mod win {
             }
         }
         hide_def_view(def_view);
-        // Only jump the wallpaper when the wallpaper is actually on top of us.
-        if woke || wallpaper_is_covering(hwnd) {
+        // Raise when we just woke, or when the caller saw the wallpaper jump
+        // over us. Repeating the pulse while it stays covering used to keep
+        // another full-screen compositor buffer thirty times a second.
+        if woke || raise {
             raise_over_wallpaper(hwnd);
         }
     }
@@ -667,6 +669,8 @@ mod win {
                 let mut win_d_was_down = false;
                 let mut burst_left = 0u8;
                 let mut ticks = 0u32;
+                let mut covering: std::collections::HashSet<isize> =
+                    std::collections::HashSet::new();
                 loop {
                     std::thread::sleep(Duration::from_millis(30));
                     ticks = ticks.saturating_add(1);
@@ -686,6 +690,7 @@ mod win {
                     if !attached {
                         win_d_was_down = false;
                         burst_left = 0;
+                        covering.clear();
                         continue;
                     }
                     if crate::harvest::desktop_restore_paused() {
@@ -709,6 +714,7 @@ mod win {
                     if just_pressed {
                         // Explorer finishes Show Desktop a beat after the key.
                         burst_left = 12;
+                        covering.clear();
                     }
                     let labels = if labels.is_empty() {
                         vec!["main".to_string()]
@@ -722,8 +728,15 @@ mod win {
                         let Ok(hwnd) = window_hwnd(&window) else {
                             continue;
                         };
+                        let key = hwnd_ptr(hwnd);
+                        let is_covering = wallpaper_is_covering(hwnd);
+                        let newly_covering = is_covering && covering.insert(key);
+                        if !is_covering {
+                            covering.remove(&key);
+                        }
+                        let raise = newly_covering;
                         if burst_left > 0 || needs_restore(hwnd) {
-                            restore_to_desktop(hwnd, def_view);
+                            restore_to_desktop(hwnd, def_view, raise);
                         }
                     }
                     burst_left = burst_left.saturating_sub(1);
