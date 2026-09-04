@@ -290,7 +290,7 @@ assert.equal(
 // direction, and a drilled row is not state at all.
 const rooms = [
   { id: "apps", folderPath: null },
-  { id: "downloads", folderPath: "C:\Users\me\Downloads" },
+  { id: "downloads", folderPath: "C:\\Users\\me\\Downloads" },
 ]
 const onDesk = new Set(["a", "b"])
 
