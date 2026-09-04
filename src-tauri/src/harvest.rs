@@ -149,6 +149,21 @@ pub fn fit_cover(src_w: u32, src_h: u32, dest_w: u32, dest_h: u32) -> (u32, u32)
     }
 }
 
+/// Largest JPEG IDCT downscale (1/8, 1/4, 1/2, or full) that still covers the
+/// desk. Decoding a 9504×6336 photo at 1/4 is sixteen times less work than
+/// materialising every pixel and then shrinking.
+#[cfg(test)]
+pub fn jpeg_idct_scale(src_w: u32, src_h: u32, need_w: u32, need_h: u32) -> u8 {
+    let need_w = need_w.max(1);
+    let need_h = need_h.max(1);
+    for denom in [8u8, 4, 2] {
+        if src_w / u32::from(denom) >= need_w && src_h / u32::from(denom) >= need_h {
+            return denom;
+        }
+    }
+    1
+}
+
 #[cfg(windows)]
 mod win {
     use super::HarvestedIcon;
@@ -1384,7 +1399,38 @@ mod win {
             return None;
         }
         let (max_w, max_h) = clamp_desk(max_w, max_h);
-        let img = image::open(&path).ok()?;
+        if let Some(jpeg) = read_fitted_cache(&path, max_w, max_h) {
+            return Some(jpeg_data_url(&jpeg));
+        }
+        let jpeg = fit_wallpaper(&path, max_w, max_h)?;
+        write_fitted_cache(&path, max_w, max_h, &jpeg);
+        Some(jpeg_data_url(&jpeg))
+    }
+
+    fn jpeg_data_url(jpeg: &[u8]) -> String {
+        format!(
+            "data:image/jpeg;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(jpeg)
+        )
+    }
+
+    fn is_jpeg(path: &Path) -> bool {
+        matches!(
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.to_ascii_lowercase())
+                .as_deref(),
+            Some("jpg") | Some("jpeg") | Some("jfif")
+        )
+    }
+
+    fn fit_wallpaper(path: &Path, max_w: u32, max_h: u32) -> Option<Vec<u8>> {
+        if is_jpeg(path) {
+            if let Some(jpeg) = fit_jpeg_scaled(path, max_w, max_h) {
+                return Some(jpeg);
+            }
+        }
+        let img = image::open(path).ok()?;
         let (tw, th) = super::fit_cover(img.width(), img.height(), max_w, max_h);
         let rgb = if img.width() != tw || img.height() != th {
             img.resize_exact(tw, th, image::imageops::FilterType::Triangle)
@@ -1392,6 +1438,49 @@ mod win {
         } else {
             img.to_rgb8()
         };
+        encode_rgb_jpeg(&rgb)
+    }
+
+    /// Decode the JPEG at 1/8, 1/4 or 1/2 if that still covers the desk, then
+    /// resize. The IDCT runs on far fewer coefficients than a full decode.
+    fn fit_jpeg_scaled(path: &Path, max_w: u32, max_h: u32) -> Option<Vec<u8>> {
+        let file = std::fs::File::open(path).ok()?;
+        let mut decoder = jpeg_decoder::Decoder::new(std::io::BufReader::new(file));
+        decoder.read_info().ok()?;
+        let info = decoder.info()?;
+        let src_w = u32::from(info.width);
+        let src_h = u32::from(info.height);
+        let (need_w, need_h) = super::fit_cover(src_w, src_h, max_w, max_h);
+        decoder
+            .scale(need_w.min(u32::from(u16::MAX)) as u16, need_h.min(u32::from(u16::MAX)) as u16)
+            .ok()?;
+        let pixels = decoder.decode().ok()?;
+        let info = decoder.info()?;
+        let width = u32::from(info.width);
+        let height = u32::from(info.height);
+        let rgb = match info.pixel_format {
+            jpeg_decoder::PixelFormat::RGB24 => image::RgbImage::from_raw(width, height, pixels)?,
+            jpeg_decoder::PixelFormat::L8 => {
+                let mut rgb = Vec::with_capacity(pixels.len() * 3);
+                for grey in pixels {
+                    rgb.extend_from_slice(&[grey, grey, grey]);
+                }
+                image::RgbImage::from_raw(width, height, rgb)?
+            }
+            _ => return None,
+        };
+        let (tw, th) = super::fit_cover(rgb.width(), rgb.height(), max_w, max_h);
+        let rgb = if rgb.width() != tw || rgb.height() != th {
+            image::DynamicImage::ImageRgb8(rgb)
+                .resize_exact(tw, th, image::imageops::FilterType::Triangle)
+                .to_rgb8()
+        } else {
+            rgb
+        };
+        encode_rgb_jpeg(&rgb)
+    }
+
+    fn encode_rgb_jpeg(rgb: &image::RgbImage) -> Option<Vec<u8>> {
         let mut out = Vec::new();
         let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 82);
         encoder
@@ -1402,10 +1491,64 @@ mod win {
                 image::ExtendedColorType::Rgb8,
             )
             .ok()?;
-        Some(format!(
-            "data:image/jpeg;base64,{}",
-            base64::engine::general_purpose::STANDARD.encode(out)
-        ))
+        Some(out)
+    }
+
+    const WALLPAPER_TAG: &str = "w1";
+
+    fn wallpaper_cache_dir() -> Option<std::path::PathBuf> {
+        let base = std::env::var_os("LOCALAPPDATA")?;
+        let dir = std::path::PathBuf::from(base)
+            .join("alcove")
+            .join("wallpaper-cache");
+        std::fs::create_dir_all(&dir).ok()?;
+        Some(dir)
+    }
+
+    fn wallpaper_cache_path(path: &Path, max_w: u32, max_h: u32) -> Option<std::path::PathBuf> {
+        use std::time::UNIX_EPOCH;
+        let meta = std::fs::metadata(path).ok()?;
+        let mtime = meta
+            .modified()
+            .ok()?
+            .duration_since(UNIX_EPOCH)
+            .ok()?
+            .as_secs();
+        let mut hash: u64 = 0xcbf29ce484222325;
+        for byte in path.to_string_lossy().as_bytes() {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        Some(wallpaper_cache_dir()?.join(format!(
+            "{hash:016x}-{mtime}-{}-{max_w}x{max_h}-{WALLPAPER_TAG}.jpg",
+            meta.len()
+        )))
+    }
+
+    fn read_fitted_cache(path: &Path, max_w: u32, max_h: u32) -> Option<Vec<u8>> {
+        let file = wallpaper_cache_path(path, max_w, max_h)?;
+        let bytes = std::fs::read(file).ok()?;
+        (bytes.len() > 32).then_some(bytes)
+    }
+
+    fn write_fitted_cache(path: &Path, max_w: u32, max_h: u32, jpeg: &[u8]) {
+        let Some(file) = wallpaper_cache_path(path, max_w, max_h) else {
+            return;
+        };
+        if let Some(dir) = file.parent() {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let old = entry.path();
+                    if old != file {
+                        let _ = std::fs::remove_file(old);
+                    }
+                }
+            }
+        }
+        let tmp = file.with_extension("jpg.tmp");
+        if std::fs::write(&tmp, jpeg).is_ok() {
+            let _ = std::fs::rename(&tmp, file);
+        }
     }
 
     fn clamp_desk(width: u32, height: u32) -> (u32, u32) {
@@ -2569,7 +2712,7 @@ pub fn recycle_paths(hwnd: isize, paths: &[String]) -> Result<(), String> {
 
 #[cfg(test)]
 mod fit_cover_tests {
-    use super::fit_cover;
+    use super::{fit_cover, jpeg_idct_scale};
 
     #[test]
     fn huge_photo_covers_this_desk() {
@@ -2589,5 +2732,15 @@ mod fit_cover_tests {
     #[test]
     fn portrait_does_not_upscale() {
         assert_eq!(fit_cover(1080, 1920, 1920, 1080), (1080, 1920));
+    }
+
+    #[test]
+    fn jpeg_scale_quarters_a_huge_photo() {
+        assert_eq!(jpeg_idct_scale(9504, 6336, 1920, 1280), 4);
+    }
+
+    #[test]
+    fn jpeg_scale_leaves_a_small_photo_alone() {
+        assert_eq!(jpeg_idct_scale(800, 600, 1920, 1080), 1);
     }
 }

@@ -44,11 +44,20 @@ export function SearchOverlay() {
 
   useEffect(() => {
     if (!isTauri()) return
-    invoke<{ id: string; imageUrl: string }[]>("list_desktop_icons")
-      .then((list) =>
-        setIconArt(Object.fromEntries(list.map((item) => [item.id, item.imageUrl]))),
-      )
-      .catch(() => undefined)
+    function loadArt() {
+      invoke<{ id: string; imageUrl: string }[]>("list_desktop_icons")
+        .then((list) =>
+          setIconArt(Object.fromEntries(list.map((item) => [item.id, item.imageUrl]))),
+        )
+        .catch(() => undefined)
+    }
+    // Hidden at boot: don't compete with the desk's first wallpaper fit.
+    const idle = window.setTimeout(loadArt, 2000)
+    window.addEventListener("focus", loadArt)
+    return () => {
+      window.clearTimeout(idle)
+      window.removeEventListener("focus", loadArt)
+    }
   }, [])
 
   const shownAt = useRef(0)

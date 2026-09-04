@@ -69,6 +69,8 @@ import {
   applyText,
   applyTone,
   onWallpaperChange,
+  rememberBackground,
+  savedBackground,
   themeFromBackground,
 } from "@/lib/wallpaper"
 import { disproportionateId, totalByteSize } from "@/lib/weight"
@@ -1338,10 +1340,9 @@ const MOCK_WALLPAPER = {
 }
 
 function Wallpaper({ onColor }: { onColor?: (hex: string) => void }) {
-  const [background, setBackground] = useState<{
-    color: string
-    imageUrl: string | null
-  }>({ color: "#191919", imageUrl: null })
+  const [background, setBackground] = useState(
+    () => savedBackground() ?? { color: "#191919", imageUrl: null },
+  )
   const colorRef = useRef(onColor)
   const painted = useRef("")
   useEffect(() => {
@@ -1379,6 +1380,7 @@ function Wallpaper({ onColor }: { onColor?: (hex: string) => void }) {
         if (painted.current === key) return
         painted.current = key
         setBackground({ color, imageUrl })
+        rememberBackground({ color, imageUrl })
         colorRef.current?.(color)
         // Read the wallpaper before deciding whether we are paper or slate.
         return themeFromBackground(color, imageUrl).then(applyTheme)

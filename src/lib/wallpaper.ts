@@ -25,7 +25,39 @@ export type WallpaperTheme = {
 }
 
 const KEY = "alcove.theme.v1"
+const WALLPAPER_KEY = "alcove.wallpaper.v1"
+/** Fitted JPEGs are a few hundred KB. Refuse anything that looks like the old full photo. */
+const WALLPAPER_STORE_MAX = 700_000
 const FALLBACK: WallpaperTheme = { mode: "dark", hue: 250, chroma: 0, lightness: 0.2 }
+
+export type DeskBackground = {
+  color: string
+  imageUrl: string | null
+}
+
+/** Last fitted wallpaper, so the desk paints a picture before Rust answers. */
+export function savedBackground(): DeskBackground | null {
+  try {
+    const raw = localStorage.getItem(WALLPAPER_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<DeskBackground>
+    if (typeof parsed.color !== "string") return null
+    if (parsed.imageUrl != null && typeof parsed.imageUrl !== "string") return null
+    if ((parsed.imageUrl?.length ?? 0) > WALLPAPER_STORE_MAX) return null
+    return { color: parsed.color, imageUrl: parsed.imageUrl ?? null }
+  } catch {
+    return null
+  }
+}
+
+export function rememberBackground(background: DeskBackground) {
+  try {
+    if ((background.imageUrl?.length ?? 0) > WALLPAPER_STORE_MAX) return
+    localStorage.setItem(WALLPAPER_KEY, JSON.stringify(background))
+  } catch {
+    // quota; the next start just waits for Rust
+  }
+}
 
 /** Above this mean OKLab lightness the wallpaper counts as light. */
 const LIGHT_ABOVE = 0.5
