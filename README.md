@@ -2,7 +2,7 @@
 
 Give every icon a home.
 
-![A drawer opens from the shelf rail as a panel, a second click spreads Documents into a canvas with named rows, then search opens over the wallpaper](docs/demo.gif)
+![A drawer opens from the shelf rail as a panel, a second click spreads Documents into a canvas with named rows, then search opens over the wallpaper. The wallpaper is then changed and every surface re-tints from dark slate to light paper to match it](docs/demo.gif)
 
 Alcove is a Windows desktop organizer. It replaces the loose grid of icons on your
 desktop with named groups — **Alcoves** — that open one at a time, spread across the
