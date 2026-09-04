@@ -1349,6 +1349,15 @@ function Wallpaper({ onColor }: { onColor?: (hex: string) => void }) {
 
   const load = useCallback(() => {
     if (!isTauri()) {
+      // ponytail: dev-only hook. A picture parked here (a data URL, say, dropped
+      // in by the site's screenshot script) poses the mock on a real wallpaper
+      // and tints it the way the desktop app would.
+      const posed = localStorage.getItem("alcove.mock.wallpaper")
+      if (posed) {
+        setBackground({ color: "#191919", imageUrl: posed })
+        themeFromBackground("#191919", posed).then(applyTheme)
+        return
+      }
       const dark = new URLSearchParams(window.location.search).has("dark")
       // The light stand-in mimics the Windows 10 wallpaper's numbers.
       applyTheme(
