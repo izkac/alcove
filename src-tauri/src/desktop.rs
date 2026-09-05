@@ -85,7 +85,7 @@ mod win {
         SendMessageTimeoutW, SetWindowLongPtrW, SetWindowPos, ShowWindow, WindowFromPoint,
         GA_ROOT, GWLP_HWNDPARENT, HWND_TOP, SMTO_ABORTIFHUNG, SWP_NOACTIVATE, SWP_NOMOVE,
         SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE, SW_RESTORE, SW_SHOW, WINDOWPOS,
-        WM_WINDOWPOSCHANGING,
+        GetWindow, GW_HWNDPREV, WM_WINDOWPOSCHANGING,
     };
 
     struct ShellWindows {
@@ -167,6 +167,7 @@ mod win {
         let Some(host) = host else {
             return;
         };
+        PINNED_HOST.store(host, Ordering::SeqCst);
         if !alive(hwnd) {
             return;
         }
@@ -207,6 +208,10 @@ mod win {
     /// them apart from Windows raising the desk because someone clicked it.
     static MOVING: AtomicIsize = AtomicIsize::new(0);
 
+    /// The icon host the desk must sit directly above, readable from the
+    /// window procedure without taking the state lock on the UI thread.
+    static PINNED_HOST: AtomicIsize = AtomicIsize::new(0);
+
     const DESK_SUBCLASS: usize = 0xA1C0;
 
     /// Run a deliberate z-order change on `hwnd`.
@@ -239,15 +244,28 @@ mod win {
         _data: usize,
     ) -> LRESULT {
         if message == WM_WINDOWPOSCHANGING && MOVING.load(Ordering::SeqCst) != hwnd_ptr(hwnd) {
-            let pos = &mut *(lparam.0 as *mut WINDOWPOS);
-            // Only the raise that rides an activation is refused. Windows
-            // clears SWP_NOACTIVATE exactly when the move accompanies the
-            // window being activated, which is the click case. The lift that
-            // comes with our owner being raised carries SWP_NOACTIVATE and
-            // must go through, or Show Desktop leaves the desk buried -- that
-            // is the whole mechanism this window relies on.
-            if (pos.flags & SWP_NOACTIVATE) == windows::Win32::UI::WindowsAndMessaging::SET_WINDOW_POS_FLAGS(0) {
-                pos.flags |= SWP_NOZORDER;
+            // Say where the desk belongs rather than trying to work out what
+            // moved it. Guessing the cause failed twice: reading
+            // SWP_NOACTIVATE let a click through on a desk sitting deep in the
+            // stack, and WM_MOUSEACTIVATE never arrives at all because the
+            // click lands on the WebView child.
+            //
+            // The desk's place is immediately above the icon host. Held there,
+            // a click cannot climb over an application, and the lift Windows
+            // performs when it raises the host on Show Desktop still carries
+            // the desk up, because the host is what we are measured against.
+            let host = hwnd_from(PINNED_HOST.load(Ordering::SeqCst));
+            if alive(host) {
+                let pos = &mut *(lparam.0 as *mut WINDOWPOS);
+                // The window directly above the host is where we go under. If
+                // that is already us, stay put by anchoring to whatever is
+                // above us instead.
+                let mut anchor = GetWindow(host, GW_HWNDPREV).unwrap_or_default();
+                if anchor.0 == hwnd.0 {
+                    anchor = GetWindow(hwnd, GW_HWNDPREV).unwrap_or_default();
+                }
+                pos.hwndInsertAfter = if valid(anchor) { anchor } else { HWND_TOP };
+                pos.flags &= !SWP_NOZORDER;
             }
         }
         DefSubclassProc(hwnd, message, wparam, lparam)

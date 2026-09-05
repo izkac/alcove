@@ -68,3 +68,8 @@ focus and input, and SHALL remain behind every application window.
 #### Scenario: The shell can still lift the desk
 - **WHEN** the shell raises the window that owns the desk
 - **THEN** the desk rises with it, because that lift does not accompany an activation
+
+#### Scenario: The first click after Show Desktop is no different
+- **WHEN** the user presses Win+D, raises an application, and clicks the desk for the first time
+- **THEN** the application stays in front, exactly as on every later click
+

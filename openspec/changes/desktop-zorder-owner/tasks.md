@@ -34,3 +34,6 @@
 - [x] 5.2 Install the pin in `prepare()` and in `arm_one_desk`, so every desk carries it, including one added for a new monitor.
 - [x] 5.3 `scripts/e2e/desk-stays-behind.ps1`: put a real application in front, click a desk pixel, and fail if the desk moved ahead of it or is painted over it. Wired into `e2e.json`.
 - [x] 5.4 Verified the test catches the fault: with the pin disabled and rebuilt, both assertions fire; restored, it passes. Win+D and the click check each pass five consecutive runs.
+- [x] 5.5 Say where the desk belongs instead of guessing what moved it. Reading `SWP_NOACTIVATE` let the first click after Show Desktop through, and `WM_MOUSEACTIVATE` never arrives because the click lands on the WebView child. `WM_WINDOWPOSCHANGING` now anchors the desk directly above the icon host, which holds for a click and still lets the shell carry the desk up on Win+D.
+- [x] 5.6 Extended `desk-stays-behind.ps1` to enter through Show Desktop and click twice, which is the state the fault needed. Verified it fails with the anchor disabled (all three assertions) and passes with it restored; Win+D and the click check each pass five consecutive runs.
+
