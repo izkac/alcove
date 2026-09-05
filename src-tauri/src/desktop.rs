@@ -72,8 +72,10 @@ fn owner_needs_rearm(current: Option<isize>, host: Option<isize>) -> bool {
 mod win {
     use super::*;
     use windows::core::{w, BOOL, PCWSTR};
-    use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
+    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+    use std::sync::atomic::{AtomicIsize, Ordering};
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+    use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
     use windows::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MonitorFromWindow, ScreenToClient, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
@@ -82,7 +84,8 @@ mod win {
         GetAncestor, GetWindowLongPtrW, GetWindowRect, IsIconic, IsWindow, IsWindowVisible,
         SendMessageTimeoutW, SetWindowLongPtrW, SetWindowPos, ShowWindow, WindowFromPoint,
         GA_ROOT, GWLP_HWNDPARENT, HWND_TOP, SMTO_ABORTIFHUNG, SWP_NOACTIVATE, SWP_NOMOVE,
-        SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_RESTORE, SW_SHOW,
+        SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE, SW_RESTORE, SW_SHOW, WINDOWPOS,
+        WM_WINDOWPOSCHANGING,
     };
 
     struct ShellWindows {
@@ -167,6 +170,7 @@ mod win {
         if !alive(hwnd) {
             return;
         }
+        pin_desk_depth(hwnd);
         if owner_needs_rearm(current_owner(hwnd), Some(host)) {
             own_desktop(hwnd, hwnd_from(host));
         }
@@ -199,6 +203,63 @@ mod win {
         matches!(class_name(probe).as_str(), "Progman" | "WorkerW")
     }
 
+    /// Our own z-order moves are announced here, so the guard below can tell
+    /// them apart from Windows raising the desk because someone clicked it.
+    static MOVING: AtomicIsize = AtomicIsize::new(0);
+
+    const DESK_SUBCLASS: usize = 0xA1C0;
+
+    /// Run a deliberate z-order change on `hwnd`.
+    fn moving_ourselves<T>(hwnd: HWND, act: impl FnOnce() -> T) -> T {
+        MOVING.store(hwnd_ptr(hwnd), Ordering::SeqCst);
+        let out = act();
+        MOVING.store(0, Ordering::SeqCst);
+        out
+    }
+
+    /// Keeps the desk out of the foreground.
+    ///
+    /// Clicking a window makes Windows activate it, and activation raises it
+    /// above everything else in its band -- so a click on the desk threw the
+    /// user's app behind a full-screen window. The desk is furniture: it must
+    /// take the click and the keyboard focus without ever changing places with
+    /// an application.
+    ///
+    /// Dropping the z-order part of the move does exactly that and nothing
+    /// more. Position, size and activation are left alone, so focus, typing
+    /// and drag still work. Our own raises set MOVING first and pass straight
+    /// through, which is what still lets us climb back over the wallpaper
+    /// after Explorer rebuilds the desktop.
+    unsafe extern "system" fn desk_subclass(
+        hwnd: HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+        _id: usize,
+        _data: usize,
+    ) -> LRESULT {
+        if message == WM_WINDOWPOSCHANGING && MOVING.load(Ordering::SeqCst) != hwnd_ptr(hwnd) {
+            let pos = &mut *(lparam.0 as *mut WINDOWPOS);
+            // Only the raise that rides an activation is refused. Windows
+            // clears SWP_NOACTIVATE exactly when the move accompanies the
+            // window being activated, which is the click case. The lift that
+            // comes with our owner being raised carries SWP_NOACTIVATE and
+            // must go through, or Show Desktop leaves the desk buried -- that
+            // is the whole mechanism this window relies on.
+            if (pos.flags & SWP_NOACTIVATE) == windows::Win32::UI::WindowsAndMessaging::SET_WINDOW_POS_FLAGS(0) {
+                pos.flags |= SWP_NOZORDER;
+            }
+        }
+        DefSubclassProc(hwnd, message, wparam, lparam)
+    }
+
+    /// Idempotent: installing the same id twice replaces the first.
+    fn pin_desk_depth(hwnd: HWND) {
+        unsafe {
+            let _ = SetWindowSubclass(hwnd, Some(desk_subclass), DESK_SUBCLASS, 0);
+        }
+    }
+
     /// Lift the desk to the top of the non-topmost band, once.
     ///
     /// Ownership decides where we land the *next* time Windows orders us
@@ -209,7 +270,7 @@ mod win {
     /// lost, never on the Show Desktop path, so it cannot bring back the
     /// per-tick pulse this change deleted.
     fn raise_once(hwnd: HWND) {
-        unsafe {
+        moving_ourselves(hwnd, || unsafe {
             let _ = SetWindowPos(
                 hwnd,
                 Some(HWND_TOP),
@@ -219,7 +280,7 @@ mod win {
                 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
             );
-        }
+        });
     }
 
     pub fn window_hwnd(window: &WebviewWindow) -> Result<HWND, String> {
@@ -349,7 +410,7 @@ mod win {
         if show {
             flags |= SWP_SHOWWINDOW;
         }
-        unsafe {
+        moving_ourselves(hwnd, || unsafe {
             let _ = SetWindowPos(
                 hwnd,
                 Some(HWND_TOP),
@@ -359,7 +420,7 @@ mod win {
                 area.bottom - area.top,
                 flags,
             );
-        }
+        });
         Ok(())
     }
 
@@ -657,6 +718,7 @@ mod win {
         cover_work_area(window, hwnd, false)?;
         let mut inner = state.inner.lock().map_err(|err| err.to_string())?;
         inner.prepared = true;
+        pin_desk_depth(hwnd);
         inner.def_view = Some(hwnd_ptr(shell.def_view));
         // A null host would compare unequal to every real owner and make
         // rearm_desks write owner 0 forever, so record it only when valid.

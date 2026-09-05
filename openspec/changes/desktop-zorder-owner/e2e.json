@@ -18,6 +18,11 @@
       "expect": "PASS"
     },
     {
+      "name": "desk-stays-behind",
+      "cmd": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/e2e/desk-stays-behind.ps1",
+      "expect": "PASS"
+    },
+    {
       "name": "teardown",
       "cmd": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/e2e/desk-teardown.ps1"
     }

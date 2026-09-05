@@ -51,3 +51,20 @@ desktop icon host and SHALL restore it, without recreating the window.
 #### Scenario: An armed window is left alone
 - **WHEN** a desk window's owner already matches the known icon host
 - **THEN** Alcove makes no further window call for it
+
+### Requirement: The desk never comes forward over an application
+
+Clicking the desk SHALL NOT change its z-order. The desk SHALL still accept
+focus and input, and SHALL remain behind every application window.
+
+#### Scenario: Clicking the desk leaves applications where they are
+- **WHEN** an application is in the foreground and the user clicks a visible part of the desk
+- **THEN** the application stays in front of the desk, still covering the area it occupied
+
+#### Scenario: The desk still takes focus
+- **WHEN** the user clicks the desk
+- **THEN** the desk becomes the focused window, so typing and selection work
+
+#### Scenario: The shell can still lift the desk
+- **WHEN** the shell raises the window that owns the desk
+- **THEN** the desk rises with it, because that lift does not accompany an activation

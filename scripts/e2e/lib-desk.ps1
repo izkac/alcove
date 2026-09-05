@@ -23,6 +23,10 @@ public class Desk {
   [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint f);
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int a, out int v, int s);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] static extern void mouse_event(uint f, uint x, uint y, uint d, UIntPtr e);
 
   delegate bool EnumProc(IntPtr h, IntPtr p);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L,T,R,B; }
@@ -85,6 +89,23 @@ public class Desk {
   }
 
   public static bool Cloaked(IntPtr h) { int v; return DwmGetWindowAttribute(h, 14, out v, 4) == 0 && v != 0; }
+
+  /// The top-level window painted at a screen point, or Zero.
+  public static IntPtr RootAt(int x, int y) {
+    IntPtr at = WindowFromPoint(new POINT { X = x, Y = y });
+    if (at == IntPtr.Zero) return IntPtr.Zero;
+    IntPtr root = GetAncestor(at, 2);
+    return root == IntPtr.Zero ? at : root;
+  }
+
+  /// A left click at a screen point, through the real input queue so the
+  /// window sees exactly what a user's click looks like.
+  public static void ClickAt(int x, int y) {
+    SetCursorPos(x, y);
+    System.Threading.Thread.Sleep(250);
+    mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+    mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+  }
 
   /// What is actually painted at the middle of the window. "self" means the
   /// desk is on top there; anything else names the window covering it.

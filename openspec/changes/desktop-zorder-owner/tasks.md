@@ -27,3 +27,10 @@
 - [ ] 4.4 **Blocked.** Needs a second monitor; none attached to this machine. `sync_desks` arms each desk it creates, but the multi-monitor path is unexercised.
 - [x] 4.5 **Detach.** Ctrl+Shift+F12 restored Explorer's icons (`DefView visible=True`), released the owner to `0x0`, and returned Alcove to an ordinary 1456x939 window.
 - [x] 4.6 e2e harness authored (`openspec/changes/desktop-zorder-owner/e2e.json`, `scripts/e2e/`) and executed green. It fails on the old behaviour: `ownerIsHost` is false in all 31 samples without the change, so the assert step fails deterministically rather than relying on catching the transient cover.
+
+## 5. Keep the desk behind applications
+
+- [x] 5.1 Subclass each desk window and drop the z-order half of `WM_WINDOWPOSCHANGING` when the move rides an activation (`SWP_NOACTIVATE` clear). Our own moves announce themselves through `MOVING` and pass unchanged.
+- [x] 5.2 Install the pin in `prepare()` and in `arm_one_desk`, so every desk carries it, including one added for a new monitor.
+- [x] 5.3 `scripts/e2e/desk-stays-behind.ps1`: put a real application in front, click a desk pixel, and fail if the desk moved ahead of it or is painted over it. Wired into `e2e.json`.
+- [x] 5.4 Verified the test catches the fault: with the pin disabled and rebuilt, both assertions fire; restored, it passes. Win+D and the click check each pass five consecutive runs.
