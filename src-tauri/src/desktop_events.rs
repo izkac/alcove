@@ -11,9 +11,22 @@ mod win {
 
     static WORKER: OnceLock<std::thread::Thread> = OnceLock::new();
     static DIRTY: AtomicBool = AtomicBool::new(false);
+    /// Set only when one of Explorer's own desktop windows appeared or went
+    /// away. Kept apart from `DIRTY` because that one also fires on every
+    /// foreground change, and re-scanning the shell on each alt-tab is the
+    /// per-tick cost this module exists to avoid.
+    static SHELL_DIRTY: AtomicBool = AtomicBool::new(false);
 
     pub fn take_notification() -> bool {
         DIRTY.swap(false, Ordering::Relaxed)
+    }
+
+    /// True when Explorer has rebuilt part of the desktop since the last call.
+    /// Show Desktop moves `SHELLDLL_DefView` into a freshly created `WorkerW`,
+    /// so the window a desk must be owned by changes mid-gesture; waiting for
+    /// the slow sweep to notice leaves the desk covered in the meantime.
+    pub fn take_shell_notification() -> bool {
+        SHELL_DIRTY.swap(false, Ordering::Relaxed)
     }
 
     unsafe extern "system" fn changed(
@@ -37,6 +50,7 @@ mod win {
             if !matches!(name.as_str(), "Progman" | "WorkerW" | "SHELLDLL_DefView") {
                 return;
             }
+            SHELL_DIRTY.store(true, Ordering::Relaxed);
         }
         DIRTY.store(true, Ordering::Relaxed);
         if let Some(worker) = WORKER.get() {

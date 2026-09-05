@@ -1,0 +1,161 @@
+<!-- forge-brief-specs-hash:e249e5230f0c58dc -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alcove — stop the desktop flash on Win+D</title>
+<style>
+  :root { color-scheme: light; }
+  body {
+    max-width: 48rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem;
+    font: 16px/1.6 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1c1c1e; background: #fdfdfc;
+  }
+  h1 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 .35rem; }
+  .sub { color: #6b6b70; margin: 0 0 2rem; }
+  h2 { font-size: 1.1rem; margin: 2.2rem 0 .6rem; padding-bottom: .3rem; border-bottom: 1px solid #e6e6e2; }
+  ul { padding-left: 1.2rem; }
+  li { margin: .35rem 0; }
+  table { border-collapse: collapse; width: 100%; margin: .8rem 0; font-size: .94rem; }
+  th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid #e6e6e2; vertical-align: top; }
+  th { font-weight: 600; background: #f5f5f2; }
+  code { background: #f2f2ee; padding: .1rem .3rem; border-radius: 3px; font-size: .9em; }
+  .callout { background: #f5f7f5; border-left: 3px solid #6f8f74; padding: .75rem 1rem; margin: 1rem 0; }
+  .mermaid { margin: 1.2rem 0; }
+  .muted { color: #6b6b70; font-size: .92rem; }
+</style>
+</head>
+<body>
+
+<h1>Stop the desktop flash on Win+D</h1>
+<p class="sub">Alcove change: <code>desktop-zorder-owner</code></p>
+
+<h2>TL;DR</h2>
+<p>
+  Pressing Win+D makes Alcove blink. The cause is not sloppy timing: Windows
+  raises the desktop over Alcove, and Alcove fights its way back on top, which
+  is the flash you see. This change lets Alcove ride along with the desktop
+  instead of racing it, so there is nothing to fight and nothing to flash.
+</p>
+
+<h2>What you'll get</h2>
+<ul>
+  <li>Win+D leaves the desk exactly where it is. No blink, no blank frame, no wallpaper peeking through.</li>
+  <li>Everything else stays as it is: applications still cover the desk, clicking the desk still works, the desk still hides Explorer's icons.</li>
+  <li>Alcove survives an Explorer restart the way it does today, and puts itself back in place within about two seconds.</li>
+  <li>Slightly less background work. A polling loop that ran thirty times a second in bursts is deleted along with the code it existed to serve.</li>
+</ul>
+
+<h2>How it works</h2>
+<p>
+  Windows lets one window declare another as its <strong>owner</strong>. An
+  owned window is always drawn above its owner. Explorer's desktop icons never
+  blink on Win+D for exactly this reason: they belong to the window Windows
+  raises. Alcove will name that same window as its owner, and inherit the same
+  immunity.
+</p>
+<p>
+  Today Alcove instead watches for the moment it gets covered and then shoves
+  itself back to the front. That shove is the flash. Once ownership is in
+  place, the watching and the shoving are both deleted.
+</p>
+
+<pre class="mermaid">
+flowchart TD
+  A["User presses Win+D"] --> B["Windows raises the desktop windows<br/>to the front"]
+  B --> C{"Is Alcove owned by<br/>the desktop?"}
+  C -- "today: no" --> D["Alcove is covered"]
+  D --> E["Watchdog notices, up to 250ms later"]
+  E --> F["Alcove shoves itself back on top"]
+  F --> G["Visible flash"]
+  C -- "after this change: yes" --> H["Alcove rises with the desktop<br/>automatically"]
+  H --> I["Nothing to fix, nothing to flash"]
+</pre>
+
+<div class="callout">
+  <strong>This was measured, not guessed.</strong> Test windows were driven
+  through a real Show Desktop on this machine. Alcove is never minimized by
+  Win+D, which is what the current code assumes. It is covered. The ownership
+  approach was then confirmed to hold position through Win+D, to still let
+  ordinary applications cover the desk, and to survive its owner being
+  destroyed.
+</div>
+
+<h2>What changes for you</h2>
+<p>
+  Nothing to learn and nothing to configure. No new setting, no new command, no
+  change to how drawers or the desk behave. The only difference you should
+  notice is the absence of the flash.
+</p>
+
+<h2>Risks and open questions</h2>
+<table>
+  <tr><th>Risk</th><th>Where it stands</th></tr>
+  <tr>
+    <td>Explorer restarting takes the desk with it</td>
+    <td>Tested and ruled out. When the owner window dies, Windows leaves our window alive and simply forgets the ownership. Alcove re-establishes it on its next sweep.</td>
+  </tr>
+  <tr>
+    <td>Alcove floats above applications instead of behind them</td>
+    <td>Tested. A maximized foreground window still covers the desk. Ownership only orders Alcove against the desktop, not against everything.</td>
+  </tr>
+  <tr>
+    <td>Windows 11 behaves differently</td>
+    <td>Unverified — this machine is Windows 10. The change reuses the existing desktop-window lookup rather than adding assumptions, so a different layout is found the same way it is today. Worth a check on Windows 11 before release.</td>
+  </tr>
+  <tr>
+    <td>Something else minimizes the desk</td>
+    <td>The existing safety net for a minimized or hidden desk is kept, just no longer used for Win+D.</td>
+  </tr>
+</table>
+<h2>Verification status</h2>
+<div class="callout">
+  <p style="margin:.2rem 0 .6rem"><strong>Checked end to end on this machine.</strong>
+  Pressing Show Desktop with the change running: the desk stays put in all 31
+  measurements taken across the transition, is never covered by the desktop, and
+  is never minimised. Ordinary windows still cover it afterwards, as before.</p>
+  <p style="margin:.2rem 0 .6rem"><strong>Restarting the desktop was tested too.</strong>
+  Explorer was killed and restarted while Alcove was running. Alcove survived,
+  noticed that the desktop had come back as a different kind of window, re-attached
+  itself to the new one, and kept the icons hidden. Releasing the desktop with the
+  emergency shortcut also works: the icons come back and Alcove becomes a normal window.</p>
+  <p style="margin:.2rem 0 0">One check remains open: a second monitor, which this
+  machine does not have.</p>
+</div>
+<div class="callout" style="border-left-color:#8a8a80;background:#f7f7f4">
+  <strong>A correction to an earlier version of this brief.</strong> It claimed the
+  current code builds an app that never appears. That was my mistake. I had built
+  the test copy with the wrong command, producing a build that looks for a
+  development server instead of using its own built-in interface. Built the normal
+  way, it works. There is no such problem in your code, and the warning has been
+  withdrawn.
+</div>
+
+<p class="muted">
+  Separately, and not caused by this change: this machine currently has the
+  desktop icon list hidden with no Alcove running. That is either a leftover
+  from a run that was killed, which the next start repairs on its own, or the
+  Windows "Show desktop icons" setting being off. It was left untouched.
+</p>
+
+<h2>Out of scope</h2>
+<ul>
+  <li>Making Alcove a true child window of the desktop. It was measured and it works, but a child dies when its parent dies, so an Explorer restart would destroy the desk. Ownership does not have that failure.</li>
+  <li>Any change to wallpaper painting, icon hiding, drawers, or search.</li>
+  <li>The unrelated open item on removable-drive drawers.</li>
+</ul>
+
+<h2>Work overview</h2>
+<table>
+  <tr><th>Group</th><th>What it covers</th><th>Size</th></tr>
+  <tr><td>Own the desktop icon host</td><td>The window call itself, remembering which window to point at, and the one piece of decision logic, with tests.</td><td>4 tasks</td></tr>
+  <tr><td>Arm, re-arm and release</td><td>Set it when Alcove takes the desktop and when a monitor is added, restore it after an Explorer restart, clear it on detach.</td><td>4 tasks</td></tr>
+  <tr><td>Delete the recovery machinery</td><td>Remove the shove, the cover detection, and the fast polling burst that fed them.</td><td>4 tasks</td></tr>
+  <tr><td>Verify</td><td>Build and test suites, then hands-on checks: Win+D, app covering, Explorer restart, second monitor, detach.</td><td>6 tasks</td></tr>
+</table>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</body>
+</html>

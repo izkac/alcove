@@ -295,6 +295,16 @@ export function themeFromBackground(
   if (!imageUrl) return Promise.resolve(fromColor())
   return new Promise((resolve) => {
     const image = new Image()
+    // Dropping the decoded bitmap must not start another load. Assigning
+    // src = "" resolves against the document URL, which is not an image, so
+    // it fails and calls onerror -- which used to clear src again and spin
+    // the CPU forever, recomputing the theme on every turn. Detach the
+    // handlers first so the release cannot come back round.
+    const release = () => {
+      image.onload = null
+      image.onerror = null
+      image.src = ""
+    }
     image.onload = () => {
       try {
         // Small on purpose: this is a mood reading, not a histogram.
@@ -309,11 +319,11 @@ export function themeFromBackground(
       } catch {
         resolve(fromColor())
       } finally {
-        image.src = ""
+        release()
       }
     }
     image.onerror = () => {
-      image.src = ""
+      release()
       resolve(fromColor())
     }
     image.src = imageUrl

@@ -57,20 +57,32 @@ fn same_monitor(a: &Monitor, b: &Monitor) -> bool {
     a.position() == b.position() && a.size() == b.size()
 }
 
+/// Pure decision behind the 2s owner re-check: only true when we know which
+/// window should own the desk (a host) and the desk's current owner is not
+/// that window. With no known host there is nothing to compare against, so a
+/// desk with no owner yet is left alone rather than armed against a guess.
+fn owner_needs_rearm(current: Option<isize>, host: Option<isize>) -> bool {
+    match host {
+        Some(host) => current != Some(host),
+        None => false,
+    }
+}
+
 #[cfg(windows)]
 mod win {
     use super::*;
     use windows::core::{w, BOOL, PCWSTR};
-    use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
+    use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MonitorFromWindow, ScreenToClient, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, FindWindowExW, FindWindowW, GetAncestor, GetClassNameW, GetCursorPos,
-        GetParent, GetWindowRect, IsIconic, IsWindowVisible, SetWindowPos,
-        ShowWindow, WindowFromPoint, GA_ROOT, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST,
-        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_RESTORE, SW_SHOW,
+        EnumWindows, FindWindowExW, FindWindowW, GetClassNameW, GetCursorPos, GetParent,
+        GetAncestor, GetWindowLongPtrW, GetWindowRect, IsIconic, IsWindow, IsWindowVisible,
+        SendMessageTimeoutW, SetWindowLongPtrW, SetWindowPos, ShowWindow, WindowFromPoint,
+        GA_ROOT, GWLP_HWNDPARENT, HWND_TOP, SMTO_ABORTIFHUNG, SWP_NOACTIVATE, SWP_NOMOVE,
+        SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_RESTORE, SW_SHOW,
     };
 
     struct ShellWindows {
@@ -97,6 +109,117 @@ mod win {
 
     fn valid(hwnd: HWND) -> bool {
         !hwnd.0.is_null()
+    }
+
+    /// GWLP_HWNDPARENT sets a top-level window's OWNER, despite the name --
+    /// there is no separate "set the owner" call in Win32. Windows keeps an
+    /// owned window above its owner in z-order for as long as the owner
+    /// lives (design.md M2), which is what removes the need to re-raise the
+    /// desk when Explorer raises its icon host for Show Desktop.
+    fn own_desktop(hwnd: HWND, host: HWND) {
+        unsafe {
+            let _ = SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, hwnd_ptr(host));
+        }
+    }
+
+    /// Clears GWLP_HWNDPARENT, releasing the owner relationship `own_desktop`
+    /// set. Same "owner, not parent" caveat applies: this does not reparent
+    /// anything, it just stops Explorer's icon host from carrying the desk
+    /// above it in z-order.
+    fn disown_desktop(hwnd: HWND) {
+        unsafe {
+            let _ = SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, 0);
+        }
+    }
+
+    /// Reads back the owner Windows currently has recorded for `hwnd`. A
+    /// cross-process owner that gets destroyed (an Explorer restart) leaves
+    /// this at 0 rather than tearing the owned window down (design.md M4),
+    /// so `None` here means "needs re-arming", not "something broke".
+    fn current_owner(hwnd: HWND) -> Option<isize> {
+        let raw = unsafe { GetWindowLongPtrW(hwnd, GWLP_HWNDPARENT) };
+        if raw == 0 {
+            None
+        } else {
+            Some(raw)
+        }
+    }
+
+    /// True while Windows still knows this handle. Desk handles are raw
+    /// `isize` we stored earlier, and Windows recycles handles, so every
+    /// owner write goes through this first.
+    fn alive(hwnd: HWND) -> bool {
+        valid(hwnd) && unsafe { IsWindow(Some(hwnd)) }.as_bool()
+    }
+
+    /// Arms a single desk window against `host`, when a host is already
+    /// known. Silently does nothing before `prepare()` has found the shell --
+    /// there is nothing yet to own the desk.
+    ///
+    /// Writes only when the owner is actually wrong. `sync_desks` runs every
+    /// two seconds for the life of the session, and re-stamping the same
+    /// owner on a window hosting a full-screen WebView2 surface is exactly
+    /// the kind of needless z-order work this change exists to remove.
+    fn arm_one_desk(host: Option<isize>, hwnd: HWND) {
+        let Some(host) = host else {
+            return;
+        };
+        if !alive(hwnd) {
+            return;
+        }
+        if owner_needs_rearm(current_owner(hwnd), Some(host)) {
+            own_desktop(hwnd, hwnd_from(host));
+        }
+    }
+
+    /// True when one of Explorer's desktop windows is painted over the middle
+    /// of the desk. One hit test, consulted only when Explorer has just
+    /// rebuilt the desktop -- the per-tick version of this probe is what used
+    /// to burn a core, so it must never move back onto the sweep.
+    ///
+    /// Checking for a *desktop* window specifically is the point: an ordinary
+    /// application covering the desk is correct and must not provoke a raise.
+    fn desktop_is_covering(hwnd: HWND) -> bool {
+        let Ok(area) = (unsafe { work_area_for(hwnd) }) else {
+            return false;
+        };
+        let point = POINT {
+            x: (area.left + area.right) / 2,
+            y: (area.top + area.bottom) / 2,
+        };
+        let at = unsafe { WindowFromPoint(point) };
+        if !valid(at) {
+            return false;
+        }
+        let root = unsafe { GetAncestor(at, GA_ROOT) };
+        let probe = if valid(root) { root } else { at };
+        if probe.0 == hwnd.0 {
+            return false;
+        }
+        matches!(class_name(probe).as_str(), "Progman" | "WorkerW")
+    }
+
+    /// Lift the desk to the top of the non-topmost band, once.
+    ///
+    /// Ownership decides where we land the *next* time Windows orders us
+    /// against the icon host; it does not move a window that is already
+    /// underneath one. After an Explorer restart the fresh WorkerW is created
+    /// above us, so re-arming alone would leave the desk alive but buried
+    /// under bare wallpaper. This runs only when the owner was genuinely
+    /// lost, never on the Show Desktop path, so it cannot bring back the
+    /// per-tick pulse this change deleted.
+    fn raise_once(hwnd: HWND) {
+        unsafe {
+            let _ = SetWindowPos(
+                hwnd,
+                Some(HWND_TOP),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+        }
     }
 
     pub fn window_hwnd(window: &WebviewWindow) -> Result<HWND, String> {
@@ -141,6 +264,44 @@ mod win {
             take_def_view(hwnd, found);
         }
         BOOL(1)
+    }
+
+    /// Ask Explorer to split the desktop, so the icon list lives in a WorkerW
+    /// with a second WorkerW painting the wallpaper behind it.
+    ///
+    /// This is what makes Show Desktop safe for us. While the icons sit in
+    /// Progman, the shell builds a *new* wallpaper window above everything
+    /// each time, and no owner we hold can put us above a window that did not
+    /// exist when we armed -- the desk shows the desktop for a moment before
+    /// we can react. Split, the shell raises the very window we are owned by,
+    /// and the desk rides up with it.
+    ///
+    /// Measured over six Show Desktop runs each way: unsplit, four runs showed
+    /// the desktop through the desk; split, none did.
+    ///
+    /// 0x052C is undocumented, and is the message wallpaper apps have sent for
+    /// years. It is best effort: `find_shell` reads both layouts, so if a
+    /// future Explorer ignores this we are no worse off than before.
+    fn ensure_wallpaper_split() {
+        unsafe {
+            let Ok(progman) = FindWindowW(w!("Progman"), PCWSTR::null()) else {
+                return;
+            };
+            if !valid(progman) {
+                return;
+            }
+            let mut result = 0usize;
+            // ABORTIFHUNG so a wedged Explorer cannot stall the caller.
+            let _ = SendMessageTimeoutW(
+                progman,
+                0x052C,
+                WPARAM(0),
+                LPARAM(0),
+                SMTO_ABORTIFHUNG,
+                1000,
+                Some(&mut result),
+            );
+        }
     }
 
     unsafe fn find_shell() -> Result<ShellWindows, String> {
@@ -215,38 +376,6 @@ mod win {
         result.is_ok() && cloaked != 0
     }
 
-    fn is_desktop_class(class: &str) -> bool {
-        class == "Progman" || class == "WorkerW"
-    }
-
-    fn belongs_to(root: HWND, at: HWND) -> bool {
-        if !valid(at) {
-            return false;
-        }
-        if at.0 == root.0 {
-            return true;
-        }
-        let ancestor = unsafe { GetAncestor(at, GA_ROOT) };
-        valid(ancestor) && ancestor.0 == root.0
-    }
-
-    fn wallpaper_is_covering(hwnd: HWND) -> bool {
-        let Ok(area) = (unsafe { work_area_for(hwnd) }) else {
-            return false;
-        };
-        let point = POINT {
-            x: (area.left + area.right) / 2,
-            y: (area.top + area.bottom) / 2,
-        };
-        let at = unsafe { WindowFromPoint(point) };
-        if belongs_to(hwnd, at) {
-            return false;
-        }
-        let root = unsafe { GetAncestor(at, GA_ROOT) };
-        let probe = if valid(root) { root } else { at };
-        is_desktop_class(&class_name(probe)) && is_large(probe)
-    }
-
     fn needs_restore(hwnd: HWND) -> bool {
         unsafe {
             let mut rect = RECT::default();
@@ -258,22 +387,88 @@ mod win {
         }
     }
 
-    /// Re-point at the live SHELLDLL_DefView and hide it if we own the desktop.
+    /// Re-point at the live SHELLDLL_DefView and hide it if we own the
+    /// desktop. Also re-points the recorded owner target: an Explorer
+    /// restart hands us a new icon host, and re-arming against the stale one
+    /// would be a no-op that leaves the desk unowned.
     fn refresh_def_view(state: &super::DesktopState) {
-        let found = match unsafe { find_shell() } {
-            Ok(found) => hwnd_ptr(found.def_view),
+        let mut found = match unsafe { find_shell() } {
+            Ok(found) => found,
             Err(_) => return,
         };
+        // An Explorer restart rebuilds the desktop unsplit, which puts the
+        // icons back in Progman and re-opens the Show Desktop gap. Ask again.
+        if class_name(found.host) == "Progman" {
+            ensure_wallpaper_split();
+            if let Ok(again) = unsafe { find_shell() } {
+                found = again;
+            }
+        }
+        let def_view = hwnd_ptr(found.def_view);
+        let host = valid(found.host).then(|| hwnd_ptr(found.host));
         let Ok(mut inner) = state.inner.lock() else {
             return;
         };
-        if !inner.attached || inner.def_view == Some(found) {
+        if !inner.attached {
+            return;
+        }
+        if host.is_some() {
+            inner.host = host;
+        }
+        if inner.def_view == Some(def_view) {
             return;
         }
         log::info!("desktop icon list changed; re-hiding the new one");
-        inner.def_view = Some(found);
+        inner.def_view = Some(def_view);
         drop(inner);
-        hide_def_view(Some(found));
+        hide_def_view(Some(def_view));
+    }
+
+    /// Re-checks each desk window's owner against the recorded host and
+    /// repairs it if Explorer reset it -- a shell restart clears
+    /// GWLP_HWNDPARENT without rebuilding the desk window (design.md M4).
+    /// Only logs when a window actually needed fixing, so a quiet steady
+    /// state produces no output.
+    fn rearm_desks(state: &super::DesktopState) {
+        let (host, desks) = match state.inner.lock() {
+            Ok(inner) => (inner.host, inner.desks.clone()),
+            Err(_) => return,
+        };
+        let Some(host) = host else {
+            return;
+        };
+        for (label, raw) in desks {
+            let hwnd = hwnd_from(raw);
+            if !alive(hwnd) {
+                continue;
+            }
+            if owner_needs_rearm(current_owner(hwnd), Some(host)) {
+                own_desktop(hwnd, hwnd_from(host));
+                // The restart that cleared our owner also built a new
+                // wallpaper window above us. Ownership governs the next
+                // ordering, not this one, so lift the desk back out from
+                // under it here.
+                raise_once(hwnd);
+                log::info!("re-armed desk window {label} against the icon host");
+            }
+        }
+    }
+
+    /// Raise any desk the desktop has just been drawn over. Pairs with
+    /// `rearm_desks`: that fixes *who* we sit above, this fixes the one case
+    /// where the ordering was already wrong before we got there.
+    fn lift_covered_desks(state: &super::DesktopState) {
+        let desks = match state.inner.lock() {
+            Ok(inner) => inner.desks.clone(),
+            Err(_) => return,
+        };
+        for (label, raw) in desks {
+            let hwnd = hwnd_from(raw);
+            if alive(hwnd) && desktop_is_covering(hwnd) {
+                raise_once(hwnd);
+                log::info!("lifted desk window {label} back over the desktop");
+            }
+        }
     }
 
     fn hide_def_view(def_view: Option<isize>) {
@@ -284,44 +479,22 @@ mod win {
         }
     }
 
-    fn raise_over_wallpaper(hwnd: HWND) {
-        // Win+D raises a wallpaper WorkerW above normal windows. A brief
-        // topmost pulse jumps over it, then we drop back so apps can cover us.
-        // Pure z-order: visibility is the caller's business, and SWP_SHOWWINDOW
-        // here made every pulse repaint a full-screen webview.
-        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
-        unsafe {
-            let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, flags);
-            let _ = SetWindowPos(hwnd, Some(HWND_NOTOPMOST), 0, 0, 0, 0, flags);
-            let _ = SetWindowPos(hwnd, Some(HWND_TOP), 0, 0, 0, 0, flags);
-        }
-    }
-
     /// Call Win32 here, not Tauri — this runs off the UI thread.
     ///
-    /// Only when the desk is actually gone (minimized, hidden, cloaked) or the
-    /// wallpaper just jumped over us. "The desktop holds focus" is the idle
-    /// state — we never take focus — and treating it as a restore made the
-    /// full-screen WebView paint thirty times a second.
-    fn restore_to_desktop(hwnd: HWND, def_view: Option<isize>, raise: bool) {
-        let mut woke = false;
+    /// Win+D is handled by ownership now (design.md M2): an owned desk window
+    /// stays above the icon host with no raise of ours needed. This is now
+    /// only a safety net for software that genuinely minimizes or hides the
+    /// desk — an RDP session change, some fullscreen games.
+    fn restore_to_desktop(hwnd: HWND, def_view: Option<isize>) {
         unsafe {
             // SW_SHOW leaves a minimized window minimized; SW_RESTORE pops it.
             if IsIconic(hwnd).as_bool() {
                 let _ = ShowWindow(hwnd, SW_RESTORE);
-                woke = true;
             } else if !IsWindowVisible(hwnd).as_bool() {
                 let _ = ShowWindow(hwnd, SW_SHOW);
-                woke = true;
             }
         }
         hide_def_view(def_view);
-        // Raise when we just woke, or when the caller saw the wallpaper jump
-        // over us. Repeating the pulse while it stays covering used to keep
-        // another full-screen compositor buffer thirty times a second.
-        if woke || raise {
-            raise_over_wallpaper(hwnd);
-        }
     }
 
     fn apply_desktop_chrome(window: &WebviewWindow) -> Result<(), String> {
@@ -342,6 +515,15 @@ mod win {
         };
         inner.desks.retain(|(name, _)| name != label);
         inner.desks.push((label.to_string(), hwnd_ptr(hwnd)));
+    }
+
+    /// Drop a desk we no longer own a window for, so nothing writes through
+    /// its recycled handle later.
+    fn forget_desk(state: &super::DesktopState, label: &str) {
+        let Ok(mut inner) = state.inner.lock() else {
+            return;
+        };
+        inner.desks.retain(|(name, _)| name != label);
     }
 
     fn place_on_monitor(window: &WebviewWindow, monitor: &Monitor) -> Result<(), String> {
@@ -382,6 +564,7 @@ mod win {
         if !state.attached() {
             return Ok(());
         }
+        let host = state.inner.lock().map_err(|err| err.to_string())?.host;
         let monitors = app.available_monitors().map_err(|err| err.to_string())?;
         let primary = app.primary_monitor().ok().flatten();
         let mut wanted: Vec<String> = Vec::new();
@@ -389,6 +572,7 @@ mod win {
         if let Some(main) = app.get_webview_window("main") {
             if let Ok(hwnd) = window_hwnd(&main) {
                 remember_desk(state, "main", hwnd);
+                arm_one_desk(host, hwnd);
             }
         }
 
@@ -404,6 +588,7 @@ mod win {
             if let Some(existing) = app.get_webview_window(&label) {
                 if let Ok(hwnd) = window_hwnd(&existing) {
                     remember_desk(state, &label, hwnd);
+                    arm_one_desk(host, hwnd);
                 }
                 continue;
             }
@@ -429,6 +614,7 @@ mod win {
             let _ = built.show();
             if let Ok(hwnd) = window_hwnd(&built) {
                 remember_desk(state, &label, hwnd);
+                arm_one_desk(host, hwnd);
             }
             log::info!("desk window {label} covering {id}");
         }
@@ -443,6 +629,11 @@ mod win {
             if let Some(window) = app.get_webview_window(&label) {
                 let _ = window.close();
             }
+            // Forget the handle too. Windows recycles HWNDs, and the owner
+            // calls below write through these raw values -- a stale entry
+            // would eventually point at some other process's window and we
+            // would set its owner to Explorer's icon host every two seconds.
+            forget_desk(state, &label);
         }
         Ok(())
     }
@@ -456,6 +647,7 @@ mod win {
         }
         drop(inner);
         let hwnd = window_hwnd(window)?;
+        ensure_wallpaper_split();
         let shell = unsafe { find_shell()? };
         apply_desktop_chrome(window)?;
         if let Ok(Some(primary)) = window.primary_monitor() {
@@ -466,6 +658,9 @@ mod win {
         let mut inner = state.inner.lock().map_err(|err| err.to_string())?;
         inner.prepared = true;
         inner.def_view = Some(hwnd_ptr(shell.def_view));
+        // A null host would compare unequal to every real owner and make
+        // rearm_desks write owner 0 forever, so record it only when valid.
+        inner.host = valid(shell.host).then(|| hwnd_ptr(shell.host));
         inner.desks.clear();
         inner
             .desks
@@ -478,7 +673,28 @@ mod win {
         let def_view = state.inner.lock().map_err(|err| err.to_string())?.def_view;
         hide_def_view(def_view);
         crate::persist::mark_desktop_hidden(window.app_handle(), true);
-        state.inner.lock().map_err(|err| err.to_string())?.attached = true;
+        // `prepare` runs once and short-circuits ever after, so on a re-attach
+        // its recorded host can be hours old and belong to an Explorer that
+        // has since restarted. Ask the shell again before arming against it.
+        let fresh_host = unsafe { find_shell() }
+            .ok()
+            .map(|shell| shell.host)
+            .filter(|host| valid(*host))
+            .map(hwnd_ptr);
+        let (host, desks) = {
+            let mut inner = state.inner.lock().map_err(|err| err.to_string())?;
+            inner.attached = true;
+            if fresh_host.is_some() {
+                inner.host = fresh_host;
+            }
+            (inner.host, inner.desks.clone())
+        };
+        // Arm every desk window we already know about before anything is
+        // shown. A desk that gets shown unowned, even briefly, is a desk
+        // Win+D can cover until the next sweep notices.
+        for (_, raw) in &desks {
+            arm_one_desk(host, hwnd_from(*raw));
+        }
         let hwnd = window_hwnd(window)?;
         cover_work_area(window, hwnd, true)?;
         window.show().map_err(|err| err.to_string())?;
@@ -561,9 +777,27 @@ mod win {
 
     pub fn detach(window: &WebviewWindow, state: &super::DesktopState) -> Result<(), String> {
         let app = window.app_handle().clone();
+        // Read the desk list before close_extra_desks destroys the desk-*
+        // windows below: disowning after that would be calling
+        // SetWindowLongPtrW on a dead handle instead of actually releasing
+        // it, and a desk window we leave owned is a reference to a shell
+        // window Alcove has no business holding once it detaches.
+        let desks = state
+            .inner
+            .lock()
+            .map_err(|err| err.to_string())?
+            .desks
+            .clone();
+        for (_, raw) in &desks {
+            let hwnd = hwnd_from(*raw);
+            if alive(hwnd) {
+                disown_desktop(hwnd);
+            }
+        }
         close_extra_desks(&app);
         let mut inner = state.inner.lock().map_err(|err| err.to_string())?;
         let shown_def_view = inner.def_view.take();
+        inner.host.take();
         if let Some(def_view) = shown_def_view {
             unsafe {
                 let _ = ShowWindow(hwnd_from(def_view), SW_SHOW);
@@ -645,13 +879,19 @@ mod win {
             let app = app.clone();
             move || {
                 crate::desktop_events::listen(std::thread::current());
-                let mut burst_left = 0u8;
                 let mut next_sync = std::time::Instant::now();
-                let mut covering: std::collections::HashSet<isize> =
-                    std::collections::HashSet::new();
                 loop {
-                    std::thread::park_timeout(Duration::from_millis(if burst_left > 0 { 30 } else { 250 }));
-                    let notified = crate::desktop_events::take_notification();
+                    std::thread::park_timeout(Duration::from_millis(250));
+                    // A shell event unparks us early (desktop_events::listen).
+                    crate::desktop_events::take_notification();
+                    // Explorer rebuilt part of the desktop. Show Desktop moves
+                    // SHELLDLL_DefView into a WorkerW it creates on the spot, and that
+                    // new window sits above a desk still owned by the old host --
+                    // measured at ~400ms of visible cover while the slow sweep waited
+                    // its turn. Re-point and re-arm now instead. Only shell window
+                    // show/hide sets this, so an alt-tab does not drag the shell scan
+                    // along with it.
+                    let shell_changed = crate::desktop_events::take_shell_notification();
                     let (attached, def_view, labels) =
                         match app.state::<super::DesktopState>().inner.lock() {
                             Ok(inner) => (
@@ -666,12 +906,25 @@ mod win {
                             _ => continue,
                         };
                     if !attached {
-                        burst_left = 0;
-                        covering.clear();
                         continue;
                     }
                     if crate::harvest::desktop_restore_paused() {
                         continue;
+                    }
+                    if shell_changed {
+                        // Cheap half only: find the live icon host and re-arm.
+                        // sync_desks enumerates monitors and can build windows,
+                        // so it stays on the timer below.
+                        let state = app.state::<super::DesktopState>();
+                        // Lift first. Explorer can raise a fresh wallpaper
+                        // window over the desk without our owner changing at
+                        // all, and ownership alone cannot undo an order that
+                        // was already wrong. This is one hit test; putting the
+                        // shell rescan ahead of it spent ~100ms of visible
+                        // cover walking every top-level window first.
+                        lift_covered_desks(&state);
+                        refresh_def_view(&state);
+                        rearm_desks(&state);
                     }
                     if std::time::Instant::now() >= next_sync {
                         next_sync = std::time::Instant::now() + Duration::from_secs(2);
@@ -685,12 +938,10 @@ mod win {
                         // process's window while the real icon list sits visible
                         // on top of us. Re-find it.
                         refresh_def_view(&state);
-                    }
-                    if notified {
-                        // Explorer finishes Show Desktop a beat after its
-                        // foreground/minimize notification. Keep the fast burst.
-                        burst_left = 12;
-                        covering.clear();
+                        // Same restart clears GWLP_HWNDPARENT on every desk
+                        // window Windows reset the owner attribute on. Put it
+                        // back rather than waiting for the next attach.
+                        rearm_desks(&state);
                     }
                     let labels = if labels.is_empty() {
                         vec!["main".to_string()]
@@ -704,18 +955,10 @@ mod win {
                         let Ok(hwnd) = window_hwnd(&window) else {
                             continue;
                         };
-                        let key = hwnd_ptr(hwnd);
-                        let is_covering = wallpaper_is_covering(hwnd);
-                        let newly_covering = is_covering && covering.insert(key);
-                        if !is_covering {
-                            covering.remove(&key);
-                        }
-                        let raise = newly_covering;
-                        if burst_left > 0 || needs_restore(hwnd) || newly_covering {
-                            restore_to_desktop(hwnd, def_view, raise);
+                        if needs_restore(hwnd) {
+                            restore_to_desktop(hwnd, def_view);
                         }
                     }
-                    burst_left = burst_left.saturating_sub(1);
                 }
             }
         });
@@ -778,6 +1021,9 @@ struct Inner {
     /// "ready to cover" for "covering".
     attached: bool,
     def_view: Option<isize>,
+    /// The desktop icon host each desk window should be owned by. `None`
+    /// until `prepare()` has found the shell once.
+    host: Option<isize>,
     desks: Vec<(String, isize)>,
 }
 
@@ -855,4 +1101,34 @@ pub fn desk_hit(app: &AppHandle) -> Option<DeskHit> {
 
 pub fn spawn_emergency_hotkey(app: AppHandle) {
     win::spawn_desktop_threads(app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn already_armed_needs_no_rearm() {
+        assert!(!owner_needs_rearm(Some(7), Some(7)));
+    }
+
+    #[test]
+    fn owner_cleared_by_explorer_restart_needs_rearm() {
+        assert!(owner_needs_rearm(None, Some(7)));
+    }
+
+    #[test]
+    fn host_changed_needs_rearm() {
+        assert!(owner_needs_rearm(Some(7), Some(9)));
+    }
+
+    #[test]
+    fn no_host_known_needs_no_rearm() {
+        assert!(!owner_needs_rearm(Some(7), None));
+    }
+
+    #[test]
+    fn no_host_known_and_no_owner_needs_no_rearm() {
+        assert!(!owner_needs_rearm(None, None));
+    }
 }

@@ -1,0 +1,25 @@
+{
+  "change": "desktop-zorder-owner",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "boot",
+      "cmd": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/e2e/desk-boot.ps1",
+      "expect": "desk attached and owned by icon host"
+    },
+    {
+      "name": "show-desktop",
+      "cmd": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/e2e/desk-showdesktop.ps1",
+      "expect": "samples"
+    },
+    {
+      "name": "assert-desk-held-its-place",
+      "cmd": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/e2e/desk-assert.ps1",
+      "expect": "PASS"
+    },
+    {
+      "name": "teardown",
+      "cmd": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/e2e/desk-teardown.ps1"
+    }
+  ]
+}

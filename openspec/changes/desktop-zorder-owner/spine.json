@@ -1,0 +1,33 @@
+{
+  "change": "desktop-zorder-owner",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Desk windows are owned by the desktop icon host",
+      "library": "src-tauri/src/desktop.rs (own_desktop / disown_desktop / arm_one_desk)",
+      "runtimeOwner": "reveal() and sync_desks() arm; detach() releases. Reached from the attach_to_desktop and detach_from_desktop commands (src-tauri/src/lib.rs), the main-window close and RunEvent::Exit handlers, the Ctrl+Shift+F12 hotkey (src-tauri/src/desktop_events.rs), and the desk sweep thread",
+      "writes": "GWLP_HWNDPARENT on each live desk window HWND; Inner.host records the icon host",
+      "reads": "find_shell() -> ShellWindows::host (the window owning SHELLDLL_DefView), current_owner() per desk window",
+      "uiConsumer": "the desk itself -- the window the user sees behind their drawers",
+      "evidence": "cargo test desktop::tests (5 owner_needs_rearm cases). Runtime: forge e2e run GREEN against a binary containing this change - reveal() armed the desk window itself, observed owner = the icon host (0x18024C, and 0x201FA after an Explorer restart). Detach verified to release it to 0."
+    },
+    {
+      "capability": "Show Desktop does not displace the surface",
+      "library": "src-tauri/src/desktop.rs -- satisfied by removal: raise_over_wallpaper, wallpaper_is_covering, belongs_to and is_desktop_class are deleted",
+      "runtimeOwner": "the desk sweep thread in spawn_desktop_threads. Its only remaining per-tick action is needs_restore() -> restore_to_desktop(), which issues ShowWindow and never a z-order call. raise_once() exists but is reachable only from rearm_desks, never from the Show Desktop path",
+      "writes": "nothing on the Show Desktop path -- that is the requirement",
+      "reads": "needs_restore(): IsIconic, IsWindowVisible, window rect, DWMWA_CLOAKED",
+      "uiConsumer": "the desk -- it stays put through Win+D instead of being covered and pulsed back",
+      "evidence": "forge e2e run GREEN: 31 samples across a real ToggleDesktop, centerOwner never WorkerW/Progman and iconic false throughout, with the desk one z-order slot above the icon host. The pre-change behaviour was captured by hand on the shipped v0.2.6 desk: covered at +150ms, pulse recovery at +300ms, 1 of 13 samples covered."
+    },
+    {
+      "capability": "Ownership is restored after the shell restarts",
+      "library": "src-tauri/src/desktop.rs (owner_needs_rearm + rearm_desks + raise_once)",
+      "runtimeOwner": "the 2s branch of the desk sweep thread in spawn_desktop_threads, immediately after refresh_def_view, which re-points Inner.host at the new icon host first",
+      "writes": "GWLP_HWNDPARENT re-set, then one SetWindowPos(HWND_TOP), on any live desk window whose owner drifted from the recorded host",
+      "reads": "GetWindowLongPtrW(GWLP_HWNDPARENT) and IsWindow per desk window, Inner.host",
+      "uiConsumer": "the desk -- it comes back above the wallpaper after an Explorer restart instead of being buried under the new WorkerW",
+      "evidence": "cargo test desktop::tests::owner_cleared_by_explorer_restart_needs_rearm and host_changed_needs_rearm. Runtime: Explorer killed and restarted with Alcove attached - the desk window survived with the same HWND, the icon host returned as a different class (Progman rather than WorkerW), and the owner was re-armed to it with the icon list still hidden."
+    }
+  ]
+}
