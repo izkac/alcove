@@ -36,6 +36,7 @@ import {
 } from "@/lib/storage"
 import { DEFAULT_STRIP_TOOL_IDS, uniqueKnown } from "@/lib/strip-tools"
 import { invoke, isTauri } from "@/lib/tauri"
+import { samePersistentState } from "@/lib/persistent-state"
 import type {
   Alcove,
   AlcoveColor,
@@ -182,6 +183,8 @@ export function useAlcoveDesktop() {
   )
   const [hydrated, setHydrated] = useState(!isTauri())
   const applyingRemote = useRef(false)
+  const lastPersistentState = useRef<DesktopState | null>(null)
+  const liveRequests = useRef(new Map<string, symbol>())
 
   useEffect(() => {
     let cancelled = false
@@ -200,11 +203,14 @@ export function useAlcoveDesktop() {
 
   useEffect(() => {
     if (!hydrated) return
+    const previous = lastPersistentState.current
+    lastPersistentState.current = state
     if (applyingRemote.current) {
       applyingRemote.current = false
       return
     }
     if (isSampleMock(state)) return
+    if (previous && samePersistentState(previous, state)) return
     void persistDesktopState(state)
   }, [state, hydrated])
 
@@ -218,6 +224,8 @@ export function useAlcoveDesktop() {
           )
           return {
             ...next,
+            focusedAlcoveId: current.focusedAlcoveId,
+            highlightedIconId: current.highlightedIconId,
             icons: next.icons.map((icon) => ({
               ...icon,
               imageUrl: icon.imageUrl ?? images.get(icon.id),
@@ -256,35 +264,25 @@ export function useAlcoveDesktop() {
     const lives = state.alcoves.filter(
       (alcove): alcove is Alcove & { folderPath: string } => Boolean(alcove.folderPath),
     )
-    Promise.allSettled(
-      lives.map((alcove) =>
-        invoke<HarvestedIcon[]>("list_folder_icons", { path: alcove.folderPath }).then(
-          (harvested) => ({ id: alcove.id, harvested }),
-        ),
-      ),
-    )
-      .then((results) => {
-        if (cancelled) return
-        const missing = lives.filter(
-          (_, index) => results[index].status === "rejected",
-        )
-        if (missing.length > 0) {
-          console.error("Could not read live folder", missing)
-          toast(
-            `Could not read ${missing.map((alcove) => alcove.name).join(", ")}`,
-          )
-        }
-        const ok = results.flatMap((result) =>
-          result.status === "fulfilled" ? [result.value] : [],
-        )
-        if (ok.length === 0) return
-        setState((current) =>
-          ok.reduce(
-            (next, item) => mergeLiveFolder(next, item.id, item.harvested),
-            current,
-          ),
-        )
-      })
+    // Expanded drawers first. Every result becomes usable independently.
+    lives.sort((a, b) => Number(a.collapsed) - Number(b.collapsed))
+    for (const alcove of lives) {
+      const request = Symbol()
+      liveRequests.current.set(alcove.id, request)
+      void invoke<HarvestedIcon[]>("list_folder_icons", { path: alcove.folderPath })
+        .then((harvested) => {
+          if (cancelled || liveRequests.current.get(alcove.id) !== request) return
+          setState((current) => {
+            if (current.alcoves.find((item) => item.id === alcove.id)?.folderPath !== alcove.folderPath) return current
+            return mergeLiveFolder(current, alcove.id, harvested)
+          })
+        })
+        .catch((error) => {
+          if (cancelled) return
+          console.error("Could not read live folder", alcove.folderPath, error)
+          toast(`Could not read ${alcove.name}`)
+        })
+    }
     return () => {
       cancelled = true
     }
@@ -556,9 +554,13 @@ export function useAlcoveDesktop() {
     if (!isTauri()) return
     const alcove = state.alcoves.find((item) => item.id === alcoveId)
     if (!alcove?.folderPath) return
-    invoke<HarvestedIcon[]>("list_folder_icons", { path: alcove.folderPath })
+    const request = Symbol()
+    liveRequests.current.set(alcoveId, request)
+    invoke<HarvestedIcon[]>("list_folder_icons", { path: alcove.folderPath, refresh: true })
       .then((harvested) => {
-        setState((current) => mergeLiveFolder(current, alcoveId, harvested))
+        if (liveRequests.current.get(alcoveId) !== request) return
+        setState((current) => current.alcoves.find((item) => item.id === alcoveId)?.folderPath === alcove.folderPath
+          ? mergeLiveFolder(current, alcoveId, harvested) : current)
       })
       .catch((error) => {
         console.error("Could not read live folder", error)
@@ -1101,7 +1103,7 @@ export function useAlcoveDesktop() {
   }, [])
 
   const setFocusedAlcove = useCallback((alcoveId: string | null) => {
-    setState((current) => ({ ...current, focusedAlcoveId: alcoveId }))
+    setState((current) => current.focusedAlcoveId === alcoveId ? current : { ...current, focusedAlcoveId: alcoveId })
   }, [])
 
   const setAutoDriveDrawers = useCallback((enabled: boolean) => {
@@ -1183,6 +1185,7 @@ export function useAlcoveDesktop() {
 
   return {
     state,
+    hydrated,
     sortedAlcoves,
     iconsIn,
     inboxCount,

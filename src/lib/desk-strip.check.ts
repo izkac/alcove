@@ -6,6 +6,8 @@ import {
   alcovesOnDesk,
   ghostStaysHere,
   homeDeskId,
+  sameDesk,
+  sameDesks,
   type DeskHit,
   type DeskInfo,
 } from "./desk-strip.ts"
@@ -14,6 +16,13 @@ import type { Alcove } from "../types.ts"
 const left: DeskInfo = { id: "DISPLAY1", name: "Display 1", primary: true }
 const right: DeskInfo = { id: "DISPLAY2", name: "Display 2", primary: false }
 const desks = [left, right]
+
+assert.equal(sameDesks(desks, JSON.parse(JSON.stringify(desks))), true, "deserialized equal polls preserve React state")
+assert.equal(sameDesks(desks, [left]), false, "unplug is observed")
+assert.equal(sameDesks(desks, [right, left]), false, "monitor order changes are observed")
+assert.equal(sameDesk(left, { ...left, primary: false }), false, "primary changes are observed")
+assert.equal(sameDesk(left, { ...left, name: "Renamed" }), false)
+assert.equal(sameDesk(left, { ...left, id: "new" }), false)
 
 function drawer(id: string, stripId?: string | null, isInbox = false): Alcove {
   return {

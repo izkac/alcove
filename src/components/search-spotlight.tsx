@@ -35,6 +35,18 @@ import { cn } from "@/lib/utils"
 import type { Alcove, DesktopIcon, RunningApp } from "@/types"
 import { AppWindow, ChevronRight, Search } from "lucide-react"
 
+// Shared by launcher mounts in this webview; native cancellation is scoped by window.
+let searchGeneration = 0
+let searchSession: Promise<number> | undefined
+
+function getSearchSession() {
+  searchSession ??= invoke<number>("start_search_session").catch((error) => {
+    searchSession = undefined
+    throw error
+  })
+  return searchSession
+}
+
 /**
  * What the user chose. One callback instead of eight, because every caller has
  * to handle every case anyway and a union says so out loud.
@@ -175,16 +187,26 @@ function useLauncher({
    * walks for it. Debounced, because it touches the disk on every keystroke.
    */
   useEffect(() => {
-    if (palette !== null || term.length < DEEP_MIN_QUERY || !rootKey || !isTauri()) {
+    if (!open || palette !== null || term.length < DEEP_MIN_QUERY || !rootKey || !isTauri()) {
       setDeep([])
       return
     }
     let alive = true
+    const generation = ++searchGeneration
+    let started = false
+    let session: number | undefined
     const timer = window.setTimeout(() => {
-      invoke<HarvestedIcon[]>("search_folders", {
-        roots: rootKey.split("|"),
-        query: term,
-        limit: DEEP_LIMIT,
+      void getSearchSession().then((id) => {
+        if (!alive) return []
+        session = id
+        started = true
+        return invoke<HarvestedIcon[]>("search_folders", {
+          roots: rootKey.split("|"),
+          query: term,
+          limit: DEEP_LIMIT,
+          session,
+          generation,
+        })
       })
         .then((list) => {
           if (alive) setDeep(list.map((item) => toDesktopIcon(item, null)))
@@ -192,11 +214,17 @@ function useLauncher({
         .catch(() => undefined)
       // Long enough that a typed word costs one walk rather than five.
     }, 300)
-    return () => {
+    const cancel = () => {
       alive = false
       window.clearTimeout(timer)
+      if (started) void invoke("cancel_search", { session, generation }).catch(() => undefined)
     }
-  }, [term, palette, rootKey])
+    window.addEventListener("blur", cancel)
+    return () => {
+      cancel()
+      window.removeEventListener("blur", cancel)
+    }
+  }, [term, palette, rootKey, open])
 
   const deepIcons = useMemo(
     () => (palette === null ? newDeepHits(icons, deep) : []),

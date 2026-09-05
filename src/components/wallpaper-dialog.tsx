@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -198,12 +198,22 @@ function PictureTile({
   active: boolean
   onPick: () => void
 }) {
-  const thumb = useThumbnail(picture.path)
+  const tile = useRef<HTMLButtonElement>(null)
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const element = tile.current
+    if (!element) return
+    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+  const thumb = useThumbnail(visible ? picture.path : undefined)
   const src = thumb || picture.imageUrl
   return (
     <button
       type="button"
       title={picture.name}
+      ref={tile}
       disabled={busy}
       onClick={onPick}
       className={cn(

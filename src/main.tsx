@@ -1,9 +1,6 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import "./index.css"
-import App from "./App.tsx"
-import { BarStrip } from "./components/bar-strip.tsx"
-import { SearchOverlay } from "./components/search-overlay.tsx"
 import { applySavedTheme } from "./lib/wallpaper.ts"
 
 const params = new URLSearchParams(window.location.search)
@@ -15,8 +12,12 @@ const isSearch = params.has("search")
 applySavedTheme()
 if (isSearch) document.documentElement.classList.add("search-window")
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    {isSearch ? <SearchOverlay /> : isBar ? <BarStrip /> : <App />}
-  </StrictMode>,
-)
+// Each WebView imports only its own interface. Hidden helpers are prewarmed
+// by native code after the desktop has mounted and attached.
+const Screen = isSearch
+  ? (await import("./components/search-overlay.tsx")).SearchOverlay
+  : isBar
+    ? (await import("./components/bar-strip.tsx")).BarStrip
+    : (await import("./App.tsx")).default
+
+createRoot(document.getElementById("root")!).render(<StrictMode><Screen /></StrictMode>)

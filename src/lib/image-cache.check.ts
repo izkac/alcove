@@ -1,0 +1,42 @@
+import assert from "node:assert/strict"
+import { ImageCache, ImageRequests } from "./image-cache.ts"
+
+const cache = new ImageCache(512, 2)
+cache.set("a", "art-a")
+cache.set("b", null)
+cache.touch("a")
+cache.set("c", "art-c")
+assert.equal(cache.has("b"), false)
+assert.equal(cache.get("a"), "art-a")
+cache.set("oversized", "x".repeat(1000))
+assert.equal(cache.has("oversized"), false)
+for (let i = 0; i < 1000; i++) cache.set(`path-${i}`, "x".repeat(100))
+assert.ok(cache.byteSize <= 512)
+assert.ok(cache.size <= 2)
+
+const shared = new ImageCache(4096, 10)
+const starts: string[] = []
+const finish = new Map<string, (art: string | null) => void>()
+const requests = new ImageRequests(shared, 1, (key) => {
+  starts.push(key)
+  return new Promise((resolve) => finish.set(key, resolve))
+})
+const received: string[] = []
+const releaseA = requests.subscribe("a", () => received.push("released"))
+requests.subscribe("a", (art) => received.push(`a:${art}`))
+const releaseB = requests.subscribe("b", () => received.push("cancelled"))
+requests.subscribe("c", (art) => received.push(`c:${art}`))
+releaseA()
+releaseB()
+await new Promise((resolve) => setImmediate(resolve))
+assert.deepEqual(starts, ["a"], "duplicates share work and the queue respects concurrency")
+finish.get("a")!("A")
+await new Promise((resolve) => setImmediate(resolve))
+assert.deepEqual(starts, ["a", "c"], "unmounted queued work never starts")
+assert.deepEqual(received, ["a:A"])
+finish.get("c")!(null)
+await new Promise((resolve) => setImmediate(resolve))
+requests.subscribe("c", (art) => assert.equal(art, null))
+assert.deepEqual(starts, ["a", "c"], "thumbnail misses are reused")
+assert.deepEqual(received, ["a:A", "c:null"])
+console.log("image cache checks passed")

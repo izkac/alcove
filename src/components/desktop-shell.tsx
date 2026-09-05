@@ -140,6 +140,16 @@ export function DesktopShell({ desktop }: DesktopShellProps) {
     }
   }, [])
 
+  useEffect(() => {
+    if (!isTauri() || !desktopAttached || !desktop.hydrated) return
+    let cancelled = false
+    // Allow the restored layout to paint before building the helper WebViews.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (!cancelled) void invoke("prewarm_auxiliary").catch(() => undefined)
+    }))
+    return () => { cancelled = true }
+  }, [desktopAttached, desktop.hydrated])
+
   return (
     <div className="relative flex h-svh min-h-0 flex-col overflow-hidden text-ink">
       <DesktopWorkspace
@@ -351,19 +361,28 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
    * Show another folder inside the open drawer. Look-and-leave: no window, no
    * taskbar button, and the drawer forgets where it was as soon as it closes.
    */
+  const drillRequest = useRef(0)
+  const resetDrill = useCallback(() => {
+    drillRequest.current += 1
+    setDrill(null)
+  }, [])
   const drillInto = useCallback(
     (alcoveId: string, path: string) => {
       if (!isTauri()) return
+      const request = ++drillRequest.current
       setSelectedIds([])
-      invoke<HarvestedIcon[]>("list_folder_icons", { path })
+      invoke<HarvestedIcon[]>("list_folder_icons", { path, refresh: true })
         .then((harvested) => {
+          if (drillRequest.current !== request) return
           setDrill({
             alcoveId,
             path,
             icons: harvested.map((item) => toDesktopIcon(item, alcoveId, null)),
           })
         })
-        .catch(() => toast(`Could not open ${folderLeaf(path)}`))
+        .catch(() => {
+          if (drillRequest.current === request) toast(`Could not open ${folderLeaf(path)}`)
+        })
     },
     [],
   )
@@ -476,8 +495,8 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
 
   // Closing a drawer resets it to its own folder — the cursor is never saved.
   useEffect(() => {
-    setDrill(null)
-  }, [openAlcoveId])
+    resetDrill()
+  }, [openAlcoveId, openAlcove?.folderPath, resetDrill])
 
   // Every delete route -- menu, Delete key, parked icons -- lands here, so the
   // question gets asked once and cannot be skipped by taking another road.
@@ -536,7 +555,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
         if (up && up.toLowerCase() !== openAlcove.folderPath.toLowerCase()) {
           drillInto(openAlcove.id, up)
         } else {
-          setDrill(null)
+          resetDrill()
         }
         return
       }
@@ -582,7 +601,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [desktop, drill, drillIcons, drillInto, openAlcove, selectedIds, state.icons])
+  }, [desktop, drill, drillIcons, drillInto, openAlcove, resetDrill, selectedIds, state.icons])
 
   const applyDrop = useCallback(
     (icons: DesktopIcon[], target: IconDropTarget) => {
@@ -1108,7 +1127,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                             openAlcove.folderPath &&
                             path.toLowerCase() === openAlcove.folderPath.toLowerCase()
                           ) {
-                            setDrill(null)
+                            resetDrill()
                             setSelectedIds([])
                           } else {
                             drillInto(openAlcove.id, path)
@@ -1188,7 +1207,7 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
                             openAlcove.folderPath &&
                             path.toLowerCase() === openAlcove.folderPath.toLowerCase()
                           ) {
-                            setDrill(null)
+                            resetDrill()
                             setSelectedIds([])
                           } else {
                             drillInto(openAlcove.id, path)

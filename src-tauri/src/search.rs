@@ -41,13 +41,12 @@ mod win {
     }
 
     pub fn show(app: &AppHandle) -> Result<(), String> {
-        let window = app
-            .get_webview_window("search")
-            .ok_or_else(|| "search window missing".to_string())?;
+        let window = crate::auxiliary::ensure(app, "search")?;
         place(&window);
         let _ = window.set_shadow(false);
         let _ = window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)));
         window.show().map_err(|err| err.to_string())?;
+        crate::auxiliary::visibility(&window, true);
         let _ = window.unminimize();
         let _ = window.set_focus();
         if let Some(hwnd) = hwnd_of(&window) {
@@ -71,14 +70,13 @@ mod win {
         let Some(window) = app.get_webview_window("search") else {
             return Ok(());
         };
-        window.hide().map_err(|err| err.to_string())
+        window.hide().map_err(|err| err.to_string())?;
+        crate::auxiliary::visibility(&window, false);
+        Ok(())
     }
 
     pub fn toggle(app: &AppHandle) {
-        let Some(window) = app.get_webview_window("search") else {
-            return;
-        };
-        if window.is_visible().unwrap_or(false) {
+        if app.get_webview_window("search").is_some_and(|window| window.is_visible().unwrap_or(false)) {
             let _ = hide(app);
             return;
         }

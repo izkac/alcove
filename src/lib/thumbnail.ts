@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { invoke, isTauri } from "./tauri.ts"
+import { ImageCache, ImageRequests } from "./image-cache.ts"
 
 // Path -> data URL, or null for "Windows has no thumbnail for this type".
 // Misses are remembered too: selecting an exe should ask the shell once, not on
@@ -7,15 +8,11 @@ import { invoke, isTauri } from "./tauri.ts"
 // touch thousands of files; the Rust side keeps its own disk cache, so evicting
 // here is cheap.
 export const THUMB_LIMIT = 64
-export const THUMBS = new Map<string, string | null>()
+export const THUMBS = new ImageCache(24 * 1024 * 1024, THUMB_LIMIT)
+const requests = new ImageRequests(THUMBS, 2, (path) => invoke<string | null>("thumbnail", { path }))
 
 export function remember(path: string, art: string | null) {
-  THUMBS.delete(path)
   THUMBS.set(path, art)
-  if (THUMBS.size > THUMB_LIMIT) {
-    const oldest = THUMBS.keys().next()
-    if (!oldest.done) THUMBS.delete(oldest.value)
-  }
 }
 
 /**
@@ -24,19 +21,10 @@ export function remember(path: string, art: string | null) {
  * provider, and in the browser mock.
  */
 export function useThumbnail(path?: string) {
-  const [, redraw] = useState(0)
+  const [result, setResult] = useState<{ path: string; art: string | null } | null>(null)
   useEffect(() => {
-    if (!path || THUMBS.has(path) || !isTauri()) return
-    let alive = true
-    invoke<string | null>("thumbnail", { path })
-      .then((art) => {
-        remember(path, art ?? null)
-        if (alive) redraw((n) => n + 1)
-      })
-      .catch(() => remember(path, null))
-    return () => {
-      alive = false
-    }
+    if (!path || !isTauri()) return
+    return requests.subscribe(path, (art) => setResult({ path, art }))
   }, [path])
-  return path ? THUMBS.get(path) ?? null : null
+  return path ? result?.path === path ? result.art : THUMBS.get(path) ?? null : null
 }

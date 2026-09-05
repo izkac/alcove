@@ -1,14 +1,14 @@
 {
   "name": "alcove",
   "private": true,
-  "version": "0.2.5",
+  "version": "0.2.6",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "check": "node src/lib/frecency.check.ts && node src/lib/harvest.check.ts && node src/lib/folder-view.check.ts && node src/lib/strip-tools.check.ts && node src/lib/desk-strip.check.ts && node src/lib/weight.check.ts && node src/lib/alcove-order.check.ts && node src/lib/icon-select.check.ts && node src/lib/thumbnail.check.ts && node src/lib/crumbs.check.ts && node src/lib/launcher.check.ts && node src/lib/pin-grid.check.ts && node src/lib/wallpaper-pictures.check.ts && node src/lib/wallpaper.check.ts && node src/lib/search-hits.check.ts && node src/lib/removable-drawers.check.ts",
+    "check": "node src/lib/image-cache.check.ts && node src/lib/persistent-state.check.ts && node src/lib/frecency.check.ts && node src/lib/harvest.check.ts && node src/lib/folder-view.check.ts && node src/lib/strip-tools.check.ts && node src/lib/desk-strip.check.ts && node src/lib/weight.check.ts && node src/lib/alcove-order.check.ts && node src/lib/icon-select.check.ts && node src/lib/thumbnail.check.ts && node src/lib/crumbs.check.ts && node src/lib/launcher.check.ts && node src/lib/pin-grid.check.ts && node src/lib/wallpaper-pictures.check.ts && node src/lib/wallpaper.check.ts && node src/lib/search-hits.check.ts && node src/lib/removable-drawers.check.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "desktop": "tauri dev",

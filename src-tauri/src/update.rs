@@ -51,6 +51,11 @@ pub async fn install(app: &AppHandle) -> Result<(), String> {
         .await
         .map_err(|err| err.to_string())?;
 
+    // The installer can terminate us without delivering a normal Exit event.
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || handle.state::<crate::persist::Writer>().flush())
+        .await
+        .map_err(|err| err.to_string())??;
     if let Some(main) = app.get_webview_window("main") {
         let state = app.state::<crate::desktop::DesktopState>();
         let _ = crate::desktop::detach(&main, &state);

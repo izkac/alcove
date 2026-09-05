@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { Dock } from "@/components/taskbar"
 import { hydrateDesktopState, loadDesktopState } from "@/lib/storage"
-import { invoke, isTauri } from "@/lib/tauri"
+import { invoke } from "@/lib/tauri"
+import { useWindowVisible } from "@/hooks/use-window-visible"
 import { applyText, applyTone, followDeskTheme } from "@/lib/wallpaper"
 import { pulseLaunch } from "@/lib/launch-pulse"
 import type { DesktopIcon } from "@/types"
@@ -10,6 +11,7 @@ import { SquareStack } from "lucide-react"
 // Slim always-on-top window summoned at the bottom screen edge while the
 // Windows taskbar is hidden. Read-only view of the desktop state.
 export function BarStrip() {
+  const visible = useWindowVisible()
   const [state, setState] = useState(loadDesktopState)
   const [clock, setClock] = useState(() =>
     new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
@@ -22,43 +24,44 @@ export function BarStrip() {
     const onStorage = () => setState(loadDesktopState())
     window.addEventListener("storage", onStorage)
     const stopTheme = followDeskTheme()
+    return () => {
+      window.removeEventListener("storage", onStorage)
+      stopTheme()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!visible) return
+    let alive = true
+    void hydrateDesktopState().then((saved) => {
+      if (alive && saved) setState(saved)
+    })
+    const tick = () => setClock(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))
+    tick()
     const timer = window.setInterval(
       () =>
         setClock(
           new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
         ),
-      1000,
+      10000,
     )
     return () => {
-      window.removeEventListener("storage", onStorage)
-      stopTheme()
+      alive = false
       window.clearInterval(timer)
     }
-  }, [])
+  }, [visible])
 
   useEffect(() => {
     applyTone(state?.surfaceTone ?? "tinted")
     applyText(state?.textSize ?? "default", state?.strongText === true)
   }, [state?.surfaceTone, state?.textSize, state?.strongText])
 
-  // Saved state drops imageUrl to stay small; fetch real icon art directly.
-  const [iconArt, setIconArt] = useState<Record<string, string>>({})
-  useEffect(() => {
-    if (!isTauri()) return
-    invoke<{ id: string; imageUrl: string }[]>("list_desktop_icons")
-      .then((list) =>
-        setIconArt(Object.fromEntries(list.map((item) => [item.id, item.imageUrl]))),
-      )
-      .catch(() => undefined)
-  }, [])
-
   const pinnedIcons = useMemo(() => {
     if (!state) return []
     return state.pinIds
       .map((id) => state.icons.find((icon) => icon.id === id))
       .filter((icon): icon is DesktopIcon => Boolean(icon))
-      .map((icon) => ({ ...icon, imageUrl: icon.imageUrl ?? iconArt[icon.id] }))
-  }, [state, iconArt])
+  }, [state])
 
   function openIcon(icon: DesktopIcon) {
     if (icon.path) {
@@ -79,7 +82,7 @@ export function BarStrip() {
         <SquareStack className="size-5" />
       </button>
       <div className="flex min-w-0 flex-1 items-center justify-center">
-        <Dock pinnedIcons={pinnedIcons} onOpenIcon={openIcon} />
+        {visible && <Dock pinnedIcons={pinnedIcons} onOpenIcon={openIcon} active={visible} />}
       </div>
       <span className="shrink-0 px-1.5 text-meta text-ink-muted">
         {clock}

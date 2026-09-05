@@ -1,13 +1,19 @@
 mod autostart;
+mod auxiliary;
 mod crash;
 mod desktop;
+mod desktop_events;
+mod folder_search;
 mod harvest;
+mod icon_cache;
 mod persist;
 mod removable;
 mod search;
 mod taskbar;
 mod update;
+mod wallpaper_cache;
 mod watch;
+mod work;
 
 use desktop::DesktopState;
 use tauri::{Manager, WebviewWindow};
@@ -36,13 +42,17 @@ fn desktop_attached(state: tauri::State<'_, DesktopState>) -> bool {
 }
 
 #[tauri::command]
-fn list_desktop_icons() -> Result<Vec<harvest::HarvestedIcon>, String> {
-    harvest::list_icons()
+async fn list_desktop_icons() -> Result<Vec<harvest::HarvestedIcon>, String> {
+    let _desktop = work::DESKTOP.lock().await;
+    work::run(&work::LISTINGS, harvest::list_icons).await?
 }
 
 #[tauri::command]
-fn list_folder_icons(path: String) -> Result<Vec<harvest::HarvestedIcon>, String> {
-    harvest::list_folder(&path)
+async fn list_folder_icons(
+    path: String,
+    refresh: Option<bool>,
+) -> Result<Vec<harvest::HarvestedIcon>, String> {
+    work::folder(path, refresh.unwrap_or(false)).await
 }
 
 /// Blocking thread, not the main one. Extracting an icon is COM per file and the
@@ -51,9 +61,7 @@ fn list_folder_icons(path: String) -> Result<Vec<harvest::HarvestedIcon>, String
 /// going sluggish.
 #[tauri::command]
 async fn shell_icon(target: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || harvest::shell_icon(&target))
-        .await
-        .map_err(|err| err.to_string())?
+    work::run(&work::ICONS, move || harvest::shell_icon(&target)).await?
 }
 
 /// Walks the disk and fires while the user is still typing, so it goes on a
@@ -62,13 +70,34 @@ async fn shell_icon(target: String) -> Result<String, String> {
 /// thumbnails included — which is most of what "the launcher is slow" felt like.
 #[tauri::command]
 async fn search_folders(
+    window: WebviewWindow,
+    jobs: tauri::State<'_, work::SearchJobs>,
     roots: Vec<String>,
     query: String,
     limit: usize,
+    session: u64,
+    generation: u64,
 ) -> Result<Vec<harvest::HarvestedIcon>, String> {
-    tauri::async_runtime::spawn_blocking(move || harvest::search_folder(&roots, &query, limit))
-        .await
-        .map_err(|err| err.to_string())
+    let cancelled = jobs.begin(window.label(), session, generation);
+    work::run(&work::SEARCHES, move || {
+        harvest::search_folder(&roots, &query, limit.min(100), &cancelled)
+    })
+    .await
+}
+
+#[tauri::command]
+fn cancel_search(
+    window: WebviewWindow,
+    jobs: tauri::State<'_, work::SearchJobs>,
+    session: u64,
+    generation: u64,
+) {
+    jobs.cancel(window.label(), session, generation);
+}
+
+#[tauri::command]
+fn start_search_session(window: WebviewWindow, jobs: tauri::State<'_, work::SearchJobs>) -> u64 {
+    jobs.session(window.label())
 }
 
 #[tauri::command]
@@ -80,7 +109,10 @@ fn reveal_desktop_item(path: String) -> Result<(), String> {
 /// this fires on every selection change and must never stall the desktop.
 #[tauri::command]
 async fn thumbnail(path: String) -> Result<Option<String>, String> {
-    harvest::thumb_data_url(std::path::Path::new(&path))
+    work::run(&work::THUMBNAILS, move || {
+        harvest::thumb_data_url(std::path::Path::new(&path))
+    })
+    .await?
 }
 
 #[tauri::command]
@@ -239,8 +271,11 @@ fn windows_taskbar_hidden() -> bool {
 }
 
 #[tauri::command]
-fn list_running_windows() -> Result<Vec<taskbar::RunningApp>, String> {
-    taskbar::list_running()
+async fn list_running_windows(window: WebviewWindow) -> Result<Vec<taskbar::RunningApp>, String> {
+    if matches!(window.label(), "bar" | "search") && !window.is_visible().unwrap_or(false) {
+        return Ok(Vec::new());
+    }
+    work::run(&work::APPLICATIONS, taskbar::list_running).await?
 }
 
 #[tauri::command]
@@ -276,8 +311,22 @@ fn focus_desktop(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn show_search_window(app: tauri::AppHandle) -> Result<(), String> {
-    search::show(&app)
+async fn show_search_window(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || search::show(&app))
+        .await
+        .map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
+async fn prewarm_auxiliary(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || auxiliary::prewarm(&app))
+        .await
+        .map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
+fn window_visible(window: WebviewWindow) -> bool {
+    window.is_visible().unwrap_or(false)
 }
 
 #[tauri::command]
@@ -321,13 +370,18 @@ fn desktop_revision() -> u64 {
 }
 
 #[tauri::command]
-fn load_desktop_state(app: tauri::AppHandle) -> Result<Option<String>, String> {
-    persist::load(&app)
+async fn load_desktop_state(
+    writer: tauri::State<'_, persist::Writer>,
+) -> Result<Option<String>, String> {
+    writer.load().await
 }
 
 #[tauri::command]
-fn save_desktop_state(app: tauri::AppHandle, json: String) -> Result<(), String> {
-    persist::save(&app, json)
+async fn save_desktop_state(
+    writer: tauri::State<'_, persist::Writer>,
+    json: String,
+) -> Result<(), String> {
+    writer.save(json).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -343,6 +397,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(DesktopState::default())
+        .manage(work::SearchJobs::default())
         .invoke_handler(tauri::generate_handler![
             attach_to_desktop,
             detach_from_desktop,
@@ -372,8 +427,12 @@ pub fn run() {
             activate_window,
             focus_desktop,
             search_folders,
+            cancel_search,
+            start_search_session,
             reveal_desktop_item,
             show_search_window,
+            prewarm_auxiliary,
+            window_visible,
             hide_search_window,
             autostart_enabled,
             set_autostart,
@@ -387,6 +446,7 @@ pub fn run() {
             install_update,
         ])
         .setup(|app| {
+            app.manage(persist::Writer::new(app.handle())?);
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -416,10 +476,19 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                window
+                    .app_handle()
+                    .state::<work::SearchJobs>()
+                    .remove(window.label());
+            }
             if window.label() == "search" {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window.hide();
+                    if let Some(webview) = window.app_handle().get_webview_window("search") {
+                        auxiliary::visibility(&webview, false);
+                    }
                 }
                 return;
             }
@@ -446,6 +515,9 @@ pub fn run() {
             // Second net under on_window_event: a quit that never destroys the
             // main window must still hand the desktop back.
             if matches!(event, tauri::RunEvent::Exit) {
+                if let Err(err) = handle.state::<persist::Writer>().flush() {
+                    log::error!("could not flush desktop state on exit: {err}");
+                }
                 if let Some(main) = handle.get_webview_window("main") {
                     let state = handle.state::<DesktopState>();
                     let _ = desktop::detach(&main, &state);

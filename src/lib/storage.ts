@@ -3,6 +3,7 @@ import { toast } from "sonner"
 import { clampSlotCount, resizeSlots } from "@/lib/frecency"
 import { invoke, isTauri } from "@/lib/tauri"
 import { stripRemovable } from "@/lib/removable-drawers"
+import { serializeDesktopState } from "./persistent-state.ts"
 import { migrateStripToolIds } from "@/lib/strip-tools"
 import {
   FOLDER_VIEWS,
@@ -74,20 +75,9 @@ export function loadDesktopState(): DesktopState | null {
   }
 }
 
-function serialize(state: DesktopState): string {
-  // Removable drawers are a live mirror of whatever is plugged in right now;
-  // a drive that was here last Tuesday must not come back as an empty drawer.
-  const clean = stripRemovable(state)
-  const slim: DesktopState = {
-    ...clean,
-    icons: clean.icons.map(({ imageUrl: _imageUrl, ...icon }) => icon),
-  }
-  return JSON.stringify(slim)
-}
-
 export function saveDesktopState(state: DesktopState) {
   try {
-    localStorage.setItem(STORAGE_KEY, serialize(state))
+    localStorage.setItem(STORAGE_KEY, serializeDesktopState(state))
   } catch (error) {
     console.error("Could not save Alcove desktop", error)
   }
@@ -107,9 +97,11 @@ export async function hydrateDesktopState(): Promise<DesktopState | null> {
 }
 
 export async function persistDesktopState(state: DesktopState) {
-  const json = serialize(state)
+  const json = serializeDesktopState(state)
+  if (json === lastSubmitted) return
+  lastSubmitted = json
   try {
-    localStorage.setItem(STORAGE_KEY, json)
+    if (localStorage.getItem(STORAGE_KEY) !== json) localStorage.setItem(STORAGE_KEY, json)
   } catch (error) {
     console.error("Could not save Alcove desktop", error)
   }
@@ -119,6 +111,7 @@ export async function persistDesktopState(state: DesktopState) {
     warnedAboutDisk = false
   } catch (error) {
     console.error("Could not save Alcove desktop to disk", error)
+    if (lastSubmitted === json) lastSubmitted = null
     if (!warnedAboutDisk) {
       warnedAboutDisk = true
       toast("Alcove cannot save to disk; this session's changes may be lost", {
@@ -130,6 +123,7 @@ export async function persistDesktopState(state: DesktopState) {
 
 /** One complaint per outage, not one per keystroke. */
 let warnedAboutDisk = false
+let lastSubmitted: string | null = null
 
 export function subscribeDesktopState(
   onChange: (state: DesktopState) => void,
@@ -137,6 +131,8 @@ export function subscribeDesktopState(
   function onStorage(event: StorageEvent) {
     if (event.key !== STORAGE_KEY || !event.newValue) return
     try {
+      // Another desk may have superseded our last submitted layout.
+      lastSubmitted = null
       onChange(migrate(JSON.parse(event.newValue) as DesktopState))
     } catch {
       // ignore a corrupt write from another window

@@ -13,8 +13,33 @@ pub struct RunningApp {
 #[cfg(windows)]
 mod win {
     use super::RunningApp;
+    use crate::icon_cache::{Fingerprint, IconCache};
     use std::collections::HashMap;
     use std::path::Path;
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration, Instant};
+
+    fn cached_icon(exe: &str) -> Option<String> {
+        static CACHE: OnceLock<Mutex<IconCache>> = OnceLock::new();
+        let path = Path::new(exe);
+        let fingerprint = std::fs::metadata(path).ok().and_then(|metadata| {
+            Some(Fingerprint {
+                path: exe.into(),
+                size: metadata.len(),
+                modified: metadata.modified().ok()?,
+            })
+        });
+        let Some(key) = fingerprint else {
+            return crate::harvest::icon_data_url(path).ok();
+        };
+        CACHE
+            .get_or_init(|| Mutex::new(IconCache::new(8 * 1024 * 1024, 128)))
+            .lock()
+            .ok()?
+            .get_or_load(key, Instant::now(), || {
+                crate::harvest::icon_data_url(path).ok()
+            })
+    }
 
     use windows::core::{w, BOOL, PCWSTR};
     use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, POINT};
@@ -136,9 +161,7 @@ mod win {
         }
         let foreground = unsafe { GetForegroundWindow() }.0 as isize;
 
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        }
+        let com_initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.is_ok();
         // ponytail: icon per unique exe, cached for this call; UWP hosts show
         // ApplicationFrameHost's icon — per-package icons if it ever matters.
         let mut icon_cache: HashMap<String, Option<String>> = HashMap::new();
@@ -166,7 +189,7 @@ mod win {
             let Some(exe) = exe_path(hwnd) else { continue };
             let icon_url = icon_cache
                 .entry(exe.clone())
-                .or_insert_with(|| crate::harvest::icon_data_url(Path::new(&exe)).ok())
+                .or_insert_with(|| cached_icon(&exe))
                 .clone();
             apps.push(RunningApp {
                 hwnd: raw,
@@ -176,8 +199,10 @@ mod win {
                 foreground: raw == foreground,
             });
         }
-        unsafe {
-            CoUninitialize();
+        if com_initialized {
+            unsafe {
+                CoUninitialize();
+            }
         }
         Ok(apps)
     }
@@ -195,37 +220,53 @@ mod win {
 
     // Edge peek: while the Windows taskbar is auto-hidden, pushing the mouse
     // to the bottom screen edge summons the "bar" strip window over any app;
-    // moving away hides it again. ponytail: primary monitor only, 60ms poll.
+    // moving away hides it again. Primary monitor only. Cursor sampling remains
+    // lightweight; shell configuration and window geometry are read less often.
     pub fn spawn_bar_peek(app: tauri::AppHandle) {
         use tauri::Manager;
         std::thread::spawn(move || {
             let mut visible = false;
+            let mut autohidden = false;
+            let mut next_shell_check = Instant::now();
+            let mut geometry = (0, 0, 0);
+            let mut next_geometry_check = Instant::now();
             loop {
-                std::thread::sleep(std::time::Duration::from_millis(if visible {
-                    120
-                } else {
-                    60
-                }));
+                std::thread::sleep(Duration::from_millis(if autohidden { 120 } else { 500 }));
                 let Some(bar) = app.get_webview_window("bar") else {
                     std::thread::sleep(std::time::Duration::from_secs(1));
                     continue;
                 };
-                if !taskbar_autohidden() {
+                if Instant::now() >= next_shell_check {
+                    autohidden = taskbar_autohidden();
+                    next_shell_check = Instant::now() + Duration::from_secs(1);
+                }
+                if !autohidden {
                     if visible {
                         let _ = bar.hide();
+                        crate::auxiliary::visibility(&bar, false);
                         visible = false;
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(500));
                     continue;
                 }
                 let mut point = POINT::default();
                 if unsafe { GetCursorPos(&mut point) }.is_err() {
                     continue;
                 }
-                let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
-                let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
-                let scale = bar.scale_factor().unwrap_or(1.0);
-                let bar_px = (52.0 * scale).round() as i32;
+                if Instant::now() >= next_geometry_check {
+                    let next = (
+                        unsafe { GetSystemMetrics(SM_CXSCREEN) },
+                        unsafe { GetSystemMetrics(SM_CYSCREEN) },
+                        (52.0 * bar.scale_factor().unwrap_or(1.0)).round() as i32,
+                    );
+                    if visible && next != geometry {
+                        let _ =
+                            bar.set_size(tauri::PhysicalSize::new(next.0 as u32, next.2 as u32));
+                        let _ = bar.set_position(tauri::PhysicalPosition::new(0, next.1 - next.2));
+                    }
+                    geometry = next;
+                    next_geometry_check = Instant::now() + Duration::from_secs(1);
+                }
+                let (screen_w, screen_h, bar_px) = geometry;
                 if !visible && point.y >= screen_h - 2 {
                     let _ = bar.set_size(tauri::PhysicalSize::new(screen_w as u32, bar_px as u32));
                     let _ = bar.set_position(tauri::PhysicalPosition::new(0, screen_h - bar_px));
@@ -245,6 +286,7 @@ mod win {
                         }
                     }
                     visible = true;
+                    crate::auxiliary::visibility(&bar, true);
                 } else if visible && point.y < screen_h - bar_px - 8 {
                     if let Ok(handle) = bar.hwnd() {
                         let hwnd = HWND(handle.0 as *mut core::ffi::c_void);
@@ -253,6 +295,7 @@ mod win {
                         }
                     }
                     visible = false;
+                    crate::auxiliary::visibility(&bar, false);
                 }
             }
         });

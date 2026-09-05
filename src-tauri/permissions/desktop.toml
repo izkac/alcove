@@ -11,7 +11,7 @@ commands.allow = ["detach_from_desktop"]
 [[permission]]
 identifier = "allow-desktop-attached"
 description = "Read whether Alcove is pinned to the desktop"
-commands.allow = ["desktop_attached"]
+commands.allow = ["desktop_attached", "prewarm_auxiliary", "window_visible"]
 
 [[permission]]
 identifier = "allow-list-desktop-icons"
@@ -51,7 +51,7 @@ commands.allow = ["open_desktop_item"]
 [[permission]]
 identifier = "allow-search-folders"
 description = "Walk drawer folders for launcher results"
-commands.allow = ["search_folders"]
+commands.allow = ["search_folders", "cancel_search", "start_search_session"]
 
 [[permission]]
 identifier = "allow-reveal-desktop-item"

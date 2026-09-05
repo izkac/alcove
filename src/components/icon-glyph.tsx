@@ -108,7 +108,7 @@ export const IconGlyph = memo(function IconGlyph({ icon, size, className }: Icon
   // Saved state drops imageUrl to stay small, and harvest misses the odd file;
   // ask Windows for the real art rather than showing a lettered tile.
   const fallback = useShellIcon(icon.imageUrl ? "" : (icon.path ?? ""))
-  const art = icon.imageUrl ?? fallback
+  const art = icon.imageUrl || fallback
   if (art) {
     return (
       <img

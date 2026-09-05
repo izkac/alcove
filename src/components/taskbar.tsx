@@ -19,26 +19,34 @@ type AppGroup = {
   windows: RunningApp[]
 }
 
-function RunningApps() {
+function RunningApps({ active }: { active: boolean }) {
   const [apps, setApps] = useState<RunningApp[]>([])
 
   useEffect(() => {
-    if (!isTauri()) return
+    if (!isTauri() || !active) return
     let alive = true
+    let pending = false
     const tick = () => {
+      // Native visibility drives `active`; the non-activating bar does not
+      // depend on WebView2 updating document.hidden before its first poll.
+      if (pending) return
+      pending = true
       invoke<RunningApp[]>("list_running_windows")
         .then((list) => {
           if (alive) setApps(list)
         })
         .catch(() => undefined)
+        .finally(() => { pending = false })
     }
     tick()
     const timer = window.setInterval(tick, 2500)
+    document.addEventListener("visibilitychange", tick)
     return () => {
       alive = false
       window.clearInterval(timer)
+      document.removeEventListener("visibilitychange", tick)
     }
-  }, [])
+  }, [active])
 
   const groups = useMemo(() => {
     const map = new Map<string, AppGroup>()
@@ -113,9 +121,11 @@ function RunningApps() {
 export function Dock({
   pinnedIcons,
   onOpenIcon,
+  active = true,
 }: {
   pinnedIcons: DesktopIcon[]
   onOpenIcon: (icon: DesktopIcon) => void
+  active?: boolean
 }) {
   return (
     <div
@@ -137,7 +147,7 @@ export function Dock({
       {pinnedIcons.length > 0 ? (
         <span className="mx-1 h-6 w-px shrink-0 bg-hairline" />
       ) : null}
-      <RunningApps />
+      <RunningApps active={active} />
     </div>
   )
 }

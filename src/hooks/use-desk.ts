@@ -3,6 +3,8 @@ import {
   LOCAL_DESK,
   deskChannel,
   injectedDesk,
+  sameDesk,
+  sameDesks,
   type DeskChannelMessage,
   type DeskInfo,
 } from "@/lib/desk-strip"
@@ -15,9 +17,11 @@ export function useDesk() {
 
   const refresh = useCallback(() => {
     if (!isTauri()) return
-    invoke<DeskInfo>("this_desk").then(setDesk).catch(() => undefined)
+    invoke<DeskInfo>("this_desk").then((next) => {
+      setDesk((previous) => sameDesk(previous, next) ? previous : next)
+    }).catch(() => undefined)
     invoke<DeskInfo[]>("list_desks").then((list) => {
-      if (list.length > 0) setDesks(list)
+      if (list.length > 0) setDesks((previous) => sameDesks(previous, list) ? previous : list)
     }).catch(() => undefined)
   }, [])
 

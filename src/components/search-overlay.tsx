@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { SearchOverlayCard } from "@/components/search-spotlight"
+import { useWindowVisible } from "@/hooks/use-window-visible"
 import { deskChannel, type DeskChannelMessage } from "@/lib/desk-strip"
 import { parentPath } from "@/lib/search-hits"
 import { hydrateDesktopState, loadDesktopState } from "@/lib/storage"
@@ -25,8 +26,8 @@ function tellDesks(message: DeskChannelMessage) {
 }
 
 export function SearchOverlay() {
+  const visible = useWindowVisible()
   const [state, setState] = useState<DesktopState | null>(() => loadDesktopState())
-  const [iconArt, setIconArt] = useState<Record<string, string>>({})
   const [session, setSession] = useState(0)
 
   useEffect(() => {
@@ -39,24 +40,6 @@ export function SearchOverlay() {
     return () => {
       window.removeEventListener("storage", onStorage)
       stopTheme()
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!isTauri()) return
-    function loadArt() {
-      invoke<{ id: string; imageUrl: string }[]>("list_desktop_icons")
-        .then((list) =>
-          setIconArt(Object.fromEntries(list.map((item) => [item.id, item.imageUrl]))),
-        )
-        .catch(() => undefined)
-    }
-    // Hidden at boot: don't compete with the desk's first wallpaper fit.
-    const idle = window.setTimeout(loadArt, 2000)
-    window.addEventListener("focus", loadArt)
-    return () => {
-      window.clearTimeout(idle)
-      window.removeEventListener("focus", loadArt)
     }
   }, [])
 
@@ -101,11 +84,8 @@ export function SearchOverlay() {
   const alcoves: Alcove[] = state?.alcoves ?? []
   const icons: DesktopIcon[] = useMemo(() => {
     if (!state) return []
-    return state.icons.map((icon) => ({
-      ...icon,
-      imageUrl: icon.imageUrl ?? iconArt[icon.id],
-    }))
-  }, [state, iconArt])
+    return state.icons
+  }, [state])
 
   function openIcon(icon: DesktopIcon, how: "open" | "reveal" | "folder") {
     if (!icon.path || !isTauri()) return
@@ -150,14 +130,15 @@ export function SearchOverlay() {
         className="flex h-full flex-col overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-pop ring-1 ring-hairline"
         onClick={(event) => event.stopPropagation()}
       >
-        <SearchOverlayCard
+        {visible && <SearchOverlayCard
           key={session}
+          open={visible}
           icons={icons}
           alcoves={alcoves}
           frecency={state?.frecency}
           hide={state?.topHide}
           onPick={pick}
-        />
+        />}
       </div>
     </div>
   )

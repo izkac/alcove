@@ -7,6 +7,14 @@ export type DeskInfo = {
   primary: boolean
 }
 
+export function sameDesk(a: DeskInfo, b: DeskInfo): boolean {
+  return a.id === b.id && a.name === b.name && a.primary === b.primary
+}
+
+export function sameDesks(a: DeskInfo[], b: DeskInfo[]): boolean {
+  return a.length === b.length && a.every((desk, index) => sameDesk(desk, b[index]))
+}
+
 export type DeskHit = {
   id: string
   x: number

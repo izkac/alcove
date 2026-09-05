@@ -66,12 +66,9 @@ mod win {
     use windows::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MonitorFromWindow, ScreenToClient, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        GetAsyncKeyState, VK_CONTROL, VK_F12, VK_LWIN, VK_RWIN, VK_SHIFT,
-    };
     use windows::Win32::UI::WindowsAndMessaging::{
         EnumWindows, FindWindowExW, FindWindowW, GetAncestor, GetClassNameW, GetCursorPos,
-        GetForegroundWindow, GetParent, GetWindowRect, IsIconic, IsWindowVisible, SetWindowPos,
+        GetParent, GetWindowRect, IsIconic, IsWindowVisible, SetWindowPos,
         ShowWindow, WindowFromPoint, GA_ROOT, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST,
         SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_RESTORE, SW_SHOW,
     };
@@ -222,14 +219,6 @@ mod win {
         class == "Progman" || class == "WorkerW"
     }
 
-    fn desktop_is_in_front() -> bool {
-        let fg = unsafe { GetForegroundWindow() };
-        if !valid(fg) {
-            return false;
-        }
-        is_desktop_class(&class_name(fg)) && is_large(fg)
-    }
-
     fn belongs_to(root: HWND, at: HWND) -> bool {
         if !valid(at) {
             return false;
@@ -258,14 +247,6 @@ mod win {
         is_desktop_class(&class_name(probe)) && is_large(probe)
     }
 
-    fn win_d_pressed() -> bool {
-        unsafe {
-            let win =
-                GetAsyncKeyState(VK_LWIN.0 as i32) < 0 || GetAsyncKeyState(VK_RWIN.0 as i32) < 0;
-            win && GetAsyncKeyState(0x44) < 0
-        }
-    }
-
     fn needs_restore(hwnd: HWND) -> bool {
         unsafe {
             let mut rect = RECT::default();
@@ -274,8 +255,6 @@ mod win {
                 || !IsWindowVisible(hwnd).as_bool()
                 || rect.left <= -10_000
                 || is_cloaked(hwnd)
-                || desktop_is_in_front()
-                || wallpaper_is_covering(hwnd)
         }
     }
 
@@ -320,11 +299,10 @@ mod win {
 
     /// Call Win32 here, not Tauri — this runs off the UI thread.
     ///
-    /// Every branch is guarded, because the watchdog calls this thirty times a
-    /// second for as long as the desktop holds focus after Win+D — and
-    /// `desktop_is_in_front` stays true the whole time, since we raise without
-    /// taking focus. Showing and re-pulsing the z-order unconditionally is what
-    /// made the desk visibly redraw itself over and over instead of once.
+    /// Only when the desk is actually gone (minimized, hidden, cloaked) or the
+    /// wallpaper just jumped over us. "The desktop holds focus" is the idle
+    /// state — we never take focus — and treating it as a restore made the
+    /// full-screen WebView paint thirty times a second.
     fn restore_to_desktop(hwnd: HWND, def_view: Option<isize>, raise: bool) {
         let mut woke = false;
         unsafe {
@@ -666,14 +644,14 @@ mod win {
         std::thread::spawn({
             let app = app.clone();
             move || {
-                let mut win_d_was_down = false;
+                crate::desktop_events::listen(std::thread::current());
                 let mut burst_left = 0u8;
-                let mut ticks = 0u32;
+                let mut next_sync = std::time::Instant::now();
                 let mut covering: std::collections::HashSet<isize> =
                     std::collections::HashSet::new();
                 loop {
-                    std::thread::sleep(Duration::from_millis(30));
-                    ticks = ticks.saturating_add(1);
+                    std::thread::park_timeout(Duration::from_millis(if burst_left > 0 { 30 } else { 250 }));
+                    let notified = crate::desktop_events::take_notification();
                     let (attached, def_view, labels) =
                         match app.state::<super::DesktopState>().inner.lock() {
                             Ok(inner) => (
@@ -688,7 +666,6 @@ mod win {
                             _ => continue,
                         };
                     if !attached {
-                        win_d_was_down = false;
                         burst_left = 0;
                         covering.clear();
                         continue;
@@ -696,7 +673,8 @@ mod win {
                     if crate::harvest::desktop_restore_paused() {
                         continue;
                     }
-                    if ticks % 67 == 0 {
+                    if std::time::Instant::now() >= next_sync {
+                        next_sync = std::time::Instant::now() + Duration::from_secs(2);
                         let state = app.state::<super::DesktopState>();
                         if let Err(err) = sync_desks(&app, &state) {
                             log::warn!("desk sync: {err}");
@@ -708,11 +686,9 @@ mod win {
                         // on top of us. Re-find it.
                         refresh_def_view(&state);
                     }
-                    let win_d = win_d_pressed();
-                    let just_pressed = win_d && !win_d_was_down;
-                    win_d_was_down = win_d;
-                    if just_pressed {
-                        // Explorer finishes Show Desktop a beat after the key.
+                    if notified {
+                        // Explorer finishes Show Desktop a beat after its
+                        // foreground/minimize notification. Keep the fast burst.
                         burst_left = 12;
                         covering.clear();
                     }
@@ -735,7 +711,7 @@ mod win {
                             covering.remove(&key);
                         }
                         let raise = newly_covering;
-                        if burst_left > 0 || needs_restore(hwnd) {
+                        if burst_left > 0 || needs_restore(hwnd) || newly_covering {
                             restore_to_desktop(hwnd, def_view, raise);
                         }
                     }
@@ -744,22 +720,7 @@ mod win {
             }
         });
 
-        std::thread::spawn(move || loop {
-            std::thread::sleep(Duration::from_millis(100));
-            let pressed = unsafe {
-                GetAsyncKeyState(VK_CONTROL.0 as i32) < 0
-                    && GetAsyncKeyState(VK_SHIFT.0 as i32) < 0
-                    && GetAsyncKeyState(VK_F12.0 as i32) < 0
-            };
-            if !pressed {
-                continue;
-            }
-            if let Some(window) = app.get_webview_window("main") {
-                let state = app.state::<super::DesktopState>();
-                let _ = detach(&window, &state);
-            }
-            std::thread::sleep(Duration::from_secs(1));
-        });
+        crate::desktop_events::emergency_hotkey(app);
     }
 }
 

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Alcove",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "identifier": "com.alcove.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -30,6 +30,7 @@
       },
       {
         "label": "bar",
+        "create": false,
         "url": "index.html?bar=1",
         "title": "Alcove Bar",
         "width": 1200,
@@ -44,6 +45,7 @@
       },
       {
         "label": "search",
+        "create": false,
         "url": "index.html?search=1",
         "title": "Alcove Search",
         "width": 544,
