@@ -1262,6 +1262,11 @@ const DesktopWorkspace = memo(function DesktopWorkspace({
               ) : null}
             </ContextMenuSubContent>
           </ContextMenuSub>
+          {isTauri() ? (
+            <ContextMenuItem onSelect={() => openInExplorer("ms-settings:display")}>
+              Display settings…
+            </ContextMenuItem>
+          ) : null}
           {isTauri() ? null : (
             <>
               <ContextMenuSeparator />

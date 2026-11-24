@@ -247,11 +247,15 @@ function StripTab(props: SettingsDialogProps) {
   )
 }
 
+type SearchHotkey = { choice: string; active: string }
+
 function SystemTab(props: SettingsDialogProps) {
   const [winTaskbarHidden, setWinTaskbarHidden] = useState(false)
   const [autostartOn, setAutostartOn] = useState(false)
+  const [hotkey, setHotkey] = useState<SearchHotkey>({ choice: "ctrl-space", active: "" })
   useEffect(() => {
     if (!isTauri()) return
+    invoke<SearchHotkey>("search_hotkey").then(setHotkey).catch(() => undefined)
     invoke<boolean>("windows_taskbar_hidden")
       .then(setWinTaskbarHidden)
       .catch(() => undefined)
@@ -316,6 +320,30 @@ function SystemTab(props: SettingsDialogProps) {
         <>
           <section className="flex flex-col gap-3">
             <p className="text-xs font-medium text-muted-foreground">Startup</p>
+            <section className="flex flex-col gap-2">
+              <p className="text-xs font-medium">Search shortcut</p>
+              <p className="text-xs text-muted-foreground">
+                Opens search from anywhere in Windows.{" "}
+                {hotkey.active ? `Now: ${hotkey.active}.` : "Now: none."} Ctrl+Space is
+                also autocomplete in most code editors.
+              </p>
+              <Segmented
+                value={hotkey.choice}
+                options={[
+                  { value: "ctrl-space", label: "Ctrl+Space" },
+                  { value: "ctrl-alt-space", label: "Ctrl+Alt+Space" },
+                  { value: "off", label: "Off" },
+                ]}
+                onChange={(choice) => {
+                  invoke<SearchHotkey>("set_search_hotkey", { choice })
+                    .then(setHotkey)
+                    .catch((err) => {
+                      toast(err instanceof Error ? err.message : String(err))
+                      invoke<SearchHotkey>("search_hotkey").then(setHotkey).catch(() => undefined)
+                    })
+                }}
+              />
+            </section>
             <SettingRow
               label="Start when I sign in"
               description="Launch Alcove automatically at Windows sign-in"

@@ -42,22 +42,26 @@ mod win {
     }
 
     use windows::core::{w, BOOL, PCWSTR};
-    use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, POINT};
+    use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, POINT, RECT};
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+    use windows::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromRect, MONITORINFO, MONITOR_DEFAULTTOPRIMARY,
+    };
     use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
     use windows::Win32::System::Threading::{
         GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
         PROCESS_QUERY_LIMITED_INFORMATION,
     };
     use windows::Win32::UI::Shell::{
-        SHAppBarMessage, ABM_GETSTATE, ABM_SETSTATE, ABS_ALWAYSONTOP, ABS_AUTOHIDE, APPBARDATA,
+        SHAppBarMessage, ABE_BOTTOM, ABE_TOP, ABM_GETSTATE, ABM_GETTASKBARPOS, ABM_SETSTATE,
+        ABS_ALWAYSONTOP, ABS_AUTOHIDE, APPBARDATA,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, FindWindowW, GetClassNameW, GetCursorPos, GetForegroundWindow,
-        GetSystemMetrics, GetWindow, GetWindowLongW, GetWindowTextW, GetWindowThreadProcessId,
-        IsIconic, IsWindowVisible, SetForegroundWindow, SetWindowPos, ShowWindow, GWL_EXSTYLE,
-        GW_OWNER, HWND_TOPMOST, SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE,
-        SW_RESTORE, SW_SHOWNOACTIVATE, WS_EX_TOOLWINDOW,
+        EnumWindows, FindWindowW, GetClassNameW, GetCursorPos, GetForegroundWindow, GetWindow,
+        GetWindowLongW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
+        IsWindowVisible, SetForegroundWindow, SetWindowPos, ShowWindow, GWL_EXSTYLE, GW_OWNER,
+        HWND_TOPMOST, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, SW_RESTORE, SW_SHOWNOACTIVATE,
+        WS_EX_TOOLWINDOW,
     };
 
     fn appbar_data() -> APPBARDATA {
@@ -218,9 +222,60 @@ mod win {
         Ok(())
     }
 
+    /// Where the bar may peek: the monitor holding the Windows taskbar, and
+    /// whether that taskbar sits on its top edge. `None` for a taskbar on the
+    /// left or right -- the bar is a horizontal strip.
+    // ponytail: left/right taskbars get no peek; a vertical bar layout if
+    // anyone asks for it.
+    fn peek_place() -> Option<(RECT, bool)> {
+        let mut data = appbar_data();
+        if unsafe { SHAppBarMessage(ABM_GETTASKBARPOS, &mut data) } == 0 {
+            return None;
+        }
+        let top = match data.uEdge {
+            ABE_BOTTOM => false,
+            ABE_TOP => true,
+            _ => return None,
+        };
+        let monitor = unsafe { MonitorFromRect(&data.rc, MONITOR_DEFAULTTOPRIMARY) };
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        unsafe { GetMonitorInfoW(monitor, &mut info) }.ok().ok()?;
+        Some((info.rcMonitor, top))
+    }
+
+    /// True while some other program fills the whole monitor -- a game, a
+    /// video, a slideshow. The taskbar stays out of their way, so the bar
+    /// must too. Our own desk is never counted, however large it is.
+    fn fullscreen_app_on(monitor: &RECT) -> bool {
+        let hwnd = unsafe { GetForegroundWindow() };
+        if hwnd.0.is_null() {
+            return false;
+        }
+        let mut pid = 0u32;
+        unsafe {
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        }
+        if pid == unsafe { GetCurrentProcessId() }
+            || matches!(class_name(hwnd).as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd")
+        {
+            return false;
+        }
+        let mut rect = RECT::default();
+        if unsafe { GetWindowRect(hwnd, &mut rect) }.is_err() {
+            return false;
+        }
+        rect.left <= monitor.left
+            && rect.top <= monitor.top
+            && rect.right >= monitor.right
+            && rect.bottom >= monitor.bottom
+    }
+
     // Edge peek: while the Windows taskbar is auto-hidden, pushing the mouse
-    // to the bottom screen edge summons the "bar" strip window over any app;
-    // moving away hides it again. Primary monitor only. Cursor sampling remains
+    // to the taskbar's edge summons the "bar" strip window over any app that
+    // is not full screen; moving away hides it again. Cursor sampling remains
     // lightweight; shell configuration and window geometry are read less often.
     pub fn spawn_bar_peek(app: tauri::AppHandle) {
         use tauri::Manager;
@@ -228,8 +283,7 @@ mod win {
             let mut visible = false;
             let mut autohidden = false;
             let mut next_shell_check = Instant::now();
-            let mut geometry = (0, 0, 0);
-            let mut next_geometry_check = Instant::now();
+            let mut place: Option<(RECT, bool)> = None;
             loop {
                 std::thread::sleep(Duration::from_millis(if autohidden { 120 } else { 500 }));
                 let Some(bar) = app.get_webview_window("bar") else {
@@ -238,38 +292,40 @@ mod win {
                 };
                 if Instant::now() >= next_shell_check {
                     autohidden = taskbar_autohidden();
+                    place = if autohidden { peek_place() } else { None };
                     next_shell_check = Instant::now() + Duration::from_secs(1);
                 }
-                if !autohidden {
+                let Some((screen, at_top)) = place else {
                     if visible {
                         let _ = bar.hide();
                         crate::auxiliary::visibility(&bar, false);
                         visible = false;
                     }
                     continue;
-                }
+                };
                 let mut point = POINT::default();
                 if unsafe { GetCursorPos(&mut point) }.is_err() {
                     continue;
                 }
-                if Instant::now() >= next_geometry_check {
-                    let next = (
-                        unsafe { GetSystemMetrics(SM_CXSCREEN) },
-                        unsafe { GetSystemMetrics(SM_CYSCREEN) },
-                        (52.0 * bar.scale_factor().unwrap_or(1.0)).round() as i32,
-                    );
-                    if visible && next != geometry {
-                        let _ =
-                            bar.set_size(tauri::PhysicalSize::new(next.0 as u32, next.2 as u32));
-                        let _ = bar.set_position(tauri::PhysicalPosition::new(0, next.1 - next.2));
-                    }
-                    geometry = next;
-                    next_geometry_check = Instant::now() + Duration::from_secs(1);
-                }
-                let (screen_w, screen_h, bar_px) = geometry;
-                if !visible && point.y >= screen_h - 2 {
-                    let _ = bar.set_size(tauri::PhysicalSize::new(screen_w as u32, bar_px as u32));
-                    let _ = bar.set_position(tauri::PhysicalPosition::new(0, screen_h - bar_px));
+                let bar_px = (52.0 * bar.scale_factor().unwrap_or(1.0)).round() as i32;
+                let bar_y = if at_top { screen.top } else { screen.bottom - bar_px };
+                let on_monitor = point.x >= screen.left && point.x < screen.right;
+                let at_edge = on_monitor
+                    && if at_top {
+                        point.y <= screen.top + 1
+                    } else {
+                        point.y >= screen.bottom - 2
+                    };
+                let left_bar = !on_monitor
+                    || if at_top {
+                        point.y > screen.top + bar_px + 8
+                    } else {
+                        point.y < screen.bottom - bar_px - 8
+                    };
+                if !visible && at_edge && !fullscreen_app_on(&screen) {
+                    let width = screen.right - screen.left;
+                    let _ = bar.set_size(tauri::PhysicalSize::new(width as u32, bar_px as u32));
+                    let _ = bar.set_position(tauri::PhysicalPosition::new(screen.left, bar_y));
                     if let Ok(handle) = bar.hwnd() {
                         let hwnd = HWND(handle.0 as *mut core::ffi::c_void);
                         unsafe {
@@ -277,9 +333,9 @@ mod win {
                             let _ = SetWindowPos(
                                 hwnd,
                                 Some(HWND_TOPMOST),
-                                0,
-                                screen_h - bar_px,
-                                screen_w,
+                                screen.left,
+                                bar_y,
+                                width,
                                 bar_px,
                                 SWP_SHOWWINDOW | SWP_NOACTIVATE,
                             );
@@ -287,7 +343,7 @@ mod win {
                     }
                     visible = true;
                     crate::auxiliary::visibility(&bar, true);
-                } else if visible && point.y < screen_h - bar_px - 8 {
+                } else if visible && left_bar {
                     if let Ok(handle) = bar.hwnd() {
                         let hwnd = HWND(handle.0 as *mut core::ffi::c_void);
                         unsafe {

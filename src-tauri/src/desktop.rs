@@ -77,7 +77,8 @@ mod win {
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
     use windows::Win32::Graphics::Gdi::{
-        GetMonitorInfoW, MonitorFromWindow, ScreenToClient, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+        GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, ScreenToClient, HMONITOR,
+        MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         EnumWindows, FindWindowExW, FindWindowW, GetClassNameW, GetCursorPos, GetParent,
@@ -403,7 +404,10 @@ mod win {
     }
 
     unsafe fn work_area_for(hwnd: HWND) -> Result<RECT, String> {
-        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        work_area_of(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST))
+    }
+
+    unsafe fn work_area_of(monitor: HMONITOR) -> Result<RECT, String> {
         let mut info = MONITORINFO {
             cbSize: std::mem::size_of::<MONITORINFO>() as u32,
             ..Default::default()
@@ -411,7 +415,18 @@ mod win {
         GetMonitorInfoW(monitor, &mut info)
             .ok()
             .map_err(|err| err.to_string())?;
-        Ok(info.rcWork)
+        let mut area = info.rcWork;
+        // With the taskbar auto-hidden (or on a monitor without one) the work
+        // area is the whole monitor, and a window that size is a full-screen
+        // app to Windows: the taskbar refuses to come up over it while it
+        // has the focus. One pixel short is no longer full screen, and the
+        // sliver is wallpaper anyway.
+        // ponytail: always the bottom edge; take it from the taskbar's edge
+        // if a top-docked auto-hide taskbar ever won't come up.
+        if area == info.rcMonitor {
+            area.bottom -= 1;
+        }
+        Ok(area)
     }
 
     fn cover_work_area(window: &WebviewWindow, hwnd: HWND, show: bool) -> Result<(), String> {
@@ -440,6 +455,54 @@ mod win {
             );
         });
         Ok(())
+    }
+
+    /// Put a desk back on its monitor's work area if the two have drifted
+    /// apart. The work area moves under us -- a resolution change, an RDP
+    /// session from a smaller screen, a taskbar that was resized, moved or
+    /// came back after an Explorer restart -- and the desk was only ever
+    /// sized at attach.
+    ///
+    /// A stale desk is not just untidy. One left as large as the whole
+    /// monitor is what Windows calls a full-screen app: every time it takes
+    /// the focus the taskbar drops behind everything, and stays gone until
+    /// some other window is activated.
+    ///
+    /// Win32 only, and no z-order change: this runs on the sweep thread.
+    fn keep_fitted(hwnd: HWND, monitor: &Monitor) {
+        let origin = monitor.position();
+        let origin = POINT {
+            x: origin.x,
+            y: origin.y,
+        };
+        let mut rect = RECT::default();
+        unsafe {
+            // A minimized window reports a parking rectangle, not its own.
+            if IsIconic(hwnd).as_bool() || GetWindowRect(hwnd, &mut rect).is_err() {
+                return;
+            }
+            let Ok(area) = work_area_of(MonitorFromPoint(origin, MONITOR_DEFAULTTONEAREST)) else {
+                return;
+            };
+            if rect == area {
+                return;
+            }
+            // ponytail: a work area under the window's 800x500 minimum never
+            // matches, so this repeats each sweep there. Harmless; compare
+            // against the clamped size if anyone runs a screen that small.
+            moving_ourselves(hwnd, || {
+                let _ = SetWindowPos(
+                    hwnd,
+                    None,
+                    area.left,
+                    area.top,
+                    area.right - area.left,
+                    area.bottom - area.top,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            });
+        }
+        log::info!("re-fitted a desk window to its work area");
     }
 
     fn is_cloaked(hwnd: HWND) -> bool {
@@ -652,6 +715,9 @@ mod win {
             if let Ok(hwnd) = window_hwnd(&main) {
                 remember_desk(state, "main", hwnd);
                 arm_one_desk(host, hwnd);
+                if let Some(primary) = &primary {
+                    keep_fitted(hwnd, primary);
+                }
             }
         }
 
@@ -668,6 +734,7 @@ mod win {
                 if let Ok(hwnd) = window_hwnd(&existing) {
                     remember_desk(state, &label, hwnd);
                     arm_one_desk(host, hwnd);
+                    keep_fitted(hwnd, monitor);
                 }
                 continue;
             }

@@ -239,7 +239,8 @@ the end only. Nothing that stays moves position.
 | Setting | What it does |
 | --- | --- |
 | Use as the desktop | Alcove covers the Windows desktop instead of floating in a window |
-| Hide the Windows taskbar | Hides the taskbar; move the mouse to the screen edge to peek at it |
+| Hide the Windows taskbar | Hides the taskbar; move the mouse to its edge (top or bottom, on the screen it lives on) to peek at it. Never over a full-screen game or video |
+| Search shortcut | Ctrl+Space, Ctrl+Alt+Space, or off |
 | Open a drawer for USB drives | Plugging a removable drive in opens it as a drawer; unplugging closes it |
 | Start when I sign in | Launches Alcove automatically at Windows sign-in |
 | Reload desktop icons | Re-reads your Desktop now. Rarely needed; new files arrive on their own. Keeps your drawers |
@@ -269,9 +270,10 @@ the end only. Nothing that stays moves position.
 | **Esc** | Clear the selection, or close search |
 | **Ctrl+Shift+F12** | Emergency release — hands the desktop back to Explorer |
 
-If another program has already claimed Ctrl+Space, Alcove falls back to
-**Ctrl+Shift+Space**. The startup log line `search hotkey …` tells you which one it
-got — the rail's Search button always says Ctrl+Space regardless.
+Ctrl+Space is also autocomplete in most code editors, so **Settings → System →
+Search shortcut** lets you pick **Ctrl+Alt+Space** instead, or turn the shortcut
+off. If another program has already claimed Ctrl+Space, Alcove falls back to
+**Ctrl+Shift+Space**; Settings and the rail's Search button show the one in use.
 
 Ctrl+Space opens a standalone search window that works from anywhere in Windows. It
 reads your last saved arrangement, so a drawer you created seconds ago may take a
@@ -344,7 +346,7 @@ runs the way **Win+R** would, and there is always a web search at the bottom.
 | Right-click a drawer tile | Its menu — edit, move up/down, icon, colour, mirror a folder, move to another screen, delete |
 | Right-click an icon | Open, Put on the desktop, Move to, New Alcove, Delete apply to the whole selection. Rename is one at a time |
 | Right-click a frequent strip slot | Open, Show in its Alcove, Keep in this slot, Never show here |
-| Right-click the wallpaper | Paste, New Alcove, Collapse all, Background |
+| Right-click the wallpaper | Paste, New Alcove, Collapse all, Background, Display settings |
 
 ---
 

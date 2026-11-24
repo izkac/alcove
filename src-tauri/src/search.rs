@@ -9,13 +9,18 @@ const SEARCH_HEIGHT: f64 = 512.0;
 #[cfg(windows)]
 mod win {
     use super::*;
-    use windows::Win32::Foundation::HWND;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{mpsc, Mutex};
+    use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+    use windows::Win32::System::Threading::GetCurrentThreadId;
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        RegisterHotKey, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, VK_SPACE,
+        RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT,
+        MOD_SHIFT, VK_SPACE,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        DispatchMessageW, GetMessageW, SetForegroundWindow, SetWindowPos, TranslateMessage,
-        HWND_TOPMOST, MSG, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, WM_HOTKEY,
+        DispatchMessageW, GetMessageW, PeekMessageW, PostThreadMessageW, SetForegroundWindow,
+        SetWindowPos, TranslateMessage, HWND_TOPMOST, MSG, PM_NOREMOVE, SWP_NOMOVE, SWP_NOSIZE,
+        SWP_SHOWWINDOW, WM_APP, WM_HOTKEY,
     };
 
     fn hwnd_of(window: &WebviewWindow) -> Option<HWND> {
@@ -83,42 +88,66 @@ mod win {
         let _ = show(app);
     }
 
-    fn register_hotkey() -> Result<&'static str, String> {
+    /// The hotkey belongs to the thread that registered it, so a change of
+    /// shortcut is posted to that thread rather than done from the command.
+    static THREAD: AtomicU32 = AtomicU32::new(0);
+    static REPLY: Mutex<Option<mpsc::Sender<()>>> = Mutex::new(None);
+    const WM_REREGISTER: u32 = WM_APP + 0xA1;
+
+    /// Ctrl+Space is also autocomplete in most editors, so it is a choice,
+    /// not a given. The default keeps the old fallback to Ctrl+Shift+Space.
+    fn register(choice: &str) -> Option<&'static str> {
+        let tries: &[(HOT_KEY_MODIFIERS, &'static str)] = match choice {
+            "off" => &[],
+            "ctrl-alt-space" => &[(MOD_CONTROL | MOD_ALT, "Ctrl+Alt+Space")],
+            _ => &[
+                (MOD_CONTROL, "Ctrl+Space"),
+                (MOD_CONTROL | MOD_SHIFT, "Ctrl+Shift+Space"),
+            ],
+        };
         unsafe {
-            if RegisterHotKey(
-                None,
-                SEARCH_HOTKEY_ID,
-                MOD_CONTROL | MOD_NOREPEAT,
-                VK_SPACE.0 as u32,
-            )
-            .is_ok()
-            {
-                return Ok("Ctrl+Space");
-            }
-            if RegisterHotKey(
-                None,
-                SEARCH_HOTKEY_ID,
-                MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT,
-                VK_SPACE.0 as u32,
-            )
-            .is_ok()
-            {
-                return Ok("Ctrl+Shift+Space");
-            }
+            let _ = UnregisterHotKey(None, SEARCH_HOTKEY_ID);
         }
-        Err("could not register a search hotkey".into())
+        tries.iter().find_map(|(mods, label)| {
+            unsafe {
+                RegisterHotKey(None, SEARCH_HOTKEY_ID, *mods | MOD_NOREPEAT, VK_SPACE.0 as u32)
+            }
+            .is_ok()
+            .then_some(*label)
+        })
+    }
+
+    fn apply_saved() {
+        let choice = super::saved_choice();
+        let got = register(&choice);
+        log::info!("search hotkey {choice}: {}", got.unwrap_or("none"));
+        if let Ok(mut active) = super::ACTIVE.lock() {
+            *active = got.unwrap_or_default().to_string();
+        }
+    }
+
+    pub fn reregister() -> Result<(), String> {
+        let thread = THREAD.load(Ordering::SeqCst);
+        if thread == 0 {
+            return Err("search hotkey is not running".into());
+        }
+        let (tx, rx) = mpsc::channel();
+        *REPLY.lock().map_err(|err| err.to_string())? = Some(tx);
+        unsafe { PostThreadMessageW(thread, WM_REREGISTER, WPARAM(0), LPARAM(0)) }
+            .map_err(|err| err.to_string())?;
+        rx.recv_timeout(std::time::Duration::from_secs(1))
+            .map_err(|_| "search hotkey did not answer".to_string())
     }
 
     pub fn spawn_hotkey(app: AppHandle) {
         std::thread::spawn(move || {
-            match register_hotkey() {
-                Ok(chord) => log::info!("search hotkey {chord}"),
-                Err(err) => {
-                    log::warn!("{err}");
-                    return;
-                }
-            }
             let mut msg = MSG::default();
+            // Create this thread's queue before anyone can post to it.
+            unsafe {
+                let _ = PeekMessageW(&mut msg, None, 0, 0, PM_NOREMOVE);
+            }
+            THREAD.store(unsafe { GetCurrentThreadId() }, Ordering::SeqCst);
+            apply_saved();
             loop {
                 let got = unsafe { GetMessageW(&mut msg, None, 0, 0) };
                 if got.0 == 0 || got.0 == -1 {
@@ -126,6 +155,13 @@ mod win {
                 }
                 if msg.message == WM_HOTKEY && msg.wParam.0 == SEARCH_HOTKEY_ID as usize {
                     toggle(&app);
+                }
+                if msg.message == WM_REREGISTER {
+                    apply_saved();
+                    if let Some(reply) = REPLY.lock().ok().and_then(|mut slot| slot.take()) {
+                        let _ = reply.send(());
+                    }
+                    continue;
                 }
                 unsafe {
                     let _ = TranslateMessage(&msg);
@@ -149,6 +185,59 @@ mod win {
     }
 
     pub fn spawn_hotkey(_app: AppHandle) {}
+
+    pub fn reregister() -> Result<(), String> {
+        Err("search hotkey is Windows-only".into())
+    }
+}
+
+const CHOICES: [&str; 3] = ["ctrl-space", "ctrl-alt-space", "off"];
+
+/// The chord actually registered right now, "" when none.
+static ACTIVE: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+fn choice_path() -> std::path::PathBuf {
+    std::path::PathBuf::from(std::env::var_os("APPDATA").unwrap_or_default())
+        .join("com.alcove.desktop")
+        .join("search-hotkey")
+}
+
+fn saved_choice() -> String {
+    std::fs::read_to_string(choice_path())
+        .ok()
+        .map(|text| text.trim().to_string())
+        .filter(|text| CHOICES.contains(&text.as_str()))
+        .unwrap_or_else(|| CHOICES[0].to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct SearchHotkey {
+    pub choice: String,
+    pub active: String,
+}
+
+pub fn hotkey() -> SearchHotkey {
+    SearchHotkey {
+        choice: saved_choice(),
+        active: ACTIVE.lock().map(|active| active.clone()).unwrap_or_default(),
+    }
+}
+
+pub fn set_hotkey(choice: &str) -> Result<SearchHotkey, String> {
+    if !CHOICES.contains(&choice) {
+        return Err(format!("unknown shortcut: {choice}"));
+    }
+    let path = choice_path();
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|err| err.to_string())?;
+    }
+    std::fs::write(&path, choice).map_err(|err| err.to_string())?;
+    win::reregister()?;
+    let now = hotkey();
+    if choice != "off" && now.active.is_empty() {
+        return Err("Another program already uses that shortcut".into());
+    }
+    Ok(now)
 }
 
 pub fn show(app: &AppHandle) -> Result<(), String> {

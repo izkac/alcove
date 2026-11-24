@@ -330,6 +330,16 @@ fn window_visible(window: WebviewWindow) -> bool {
 }
 
 #[tauri::command]
+fn search_hotkey() -> search::SearchHotkey {
+    search::hotkey()
+}
+
+#[tauri::command]
+fn set_search_hotkey(choice: String) -> Result<search::SearchHotkey, String> {
+    search::set_hotkey(&choice)
+}
+
+#[tauri::command]
 fn hide_search_window(app: tauri::AppHandle) -> Result<(), String> {
     search::hide(&app)
 }
@@ -434,6 +444,8 @@ pub fn run() {
             prewarm_auxiliary,
             window_visible,
             hide_search_window,
+            search_hotkey,
+            set_search_hotkey,
             autostart_enabled,
             set_autostart,
             this_desk,

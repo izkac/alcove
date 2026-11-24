@@ -17,7 +17,8 @@ import { cn } from "@/lib/utils"
 import type { Alcove, AlcoveColor } from "@/types"
 import type { DeskInfo } from "@/lib/desk-strip"
 import { Plus, Search, Settings } from "lucide-react"
-import type { PointerEvent as ReactPointerEvent } from "react"
+import { useState, type PointerEvent as ReactPointerEvent } from "react"
+import { invoke, isTauri } from "@/lib/tauri"
 
 type ShelfRailProps = {
   alcoves: Alcove[]
@@ -87,6 +88,7 @@ export function ShelfRail({
   skipAlcoveClick,
   onReorder,
 }: ShelfRailProps) {
+  const [searchChord, setSearchChord] = useState("Ctrl+Space")
   const inbox = alcoves.find((alcove) => alcove.isInbox)
   const rest = alcoves.filter((alcove) => !alcove.isInbox)
   const inboxCount = countFor(INBOX_ID)
@@ -301,7 +303,13 @@ export function ShelfRail({
       </button>
       <button
         type="button"
-        title="Search (Ctrl+Space)"
+        title={searchChord ? `Search (${searchChord})` : "Search"}
+        onPointerEnter={() => {
+          if (!isTauri()) return
+          invoke<{ active: string }>("search_hotkey")
+            .then((hotkey) => setSearchChord(hotkey.active))
+            .catch(() => undefined)
+        }}
         aria-label="Search"
         onClick={onSearch}
         className={RAIL_BUTTON}
